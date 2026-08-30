@@ -81,6 +81,23 @@ their reasoning rather than silently replacing earlier assumptions.
 - Should a user's home relay act as the durable mobile mailbox?
 - How should delivery behave when every recipient device is offline?
 
+## PWA distribution and migration
+
+- Which release-signing threshold and key-rotation process should mirrors and
+  clients require before importing identity material?
+- Which reproducible-build environment and transparency log format should make
+  mirror builds independently auditable?
+- What exact service-worker update policy balances security fixes, rollback,
+  and user control?
+- What encrypted export format and KDF parameters protect portable identity
+  bundles across browsers?
+- What QR transfer ceremony prevents wrong-device import without becoming
+  unusable on mobile?
+- Which history fields are included by default in portable export, and which
+  require explicit user selection?
+- What external verifier UX is acceptable for first install from an unfamiliar
+  mirror?
+
 ## Governance and heritage
 
 - Which open-source license best protects independent implementation and

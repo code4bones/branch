@@ -137,6 +137,57 @@ A mirror is an independent distributor, not a member of a centrally
 administered application. Wake-up signaling remains separate from message
 transport and must not become a mandatory GCM/APNs dependency.
 
+## PWA mirror trust and migration
+
+PWA mirrors improve availability but do not remove first-install trust, as
+recorded in D-BRANCH-022. Browser storage, service workers, and installed PWA
+state are origin-scoped, so a mirror change is a migration between application
+instances, not transparent roaming inside one shared app. Protocol identity
+therefore never includes the mirror origin.
+
+A pure PWA cannot securely prove that malicious JavaScript served by its own
+origin is honest. Release signatures, reproducible builds, Subresource
+Integrity for static subresources, restrictive Content Security Policy, pinned
+build manifests, and transparency logs can help users and external tools verify
+what was intended to ship, but a compromised first-loaded application can lie
+about its own checks. Strong verification requires either a trusted existing
+installation, browser or operating-system assistance, an external verifier, or
+manual comparison of signed release material.
+
+First install records the chosen mirror, release version, build manifest hash,
+release signature set, and supported protocol versions in local user-owned
+state. The client treats updates as explicit state transitions: download the
+candidate manifest, verify release signatures and reproducible-build metadata
+where available, stage service-worker and asset changes, preserve the previous
+working cache until the new version activates, and provide rollback or reinstall
+guidance when verification fails. Service workers cache and launch the app; they
+do not own keys, plaintext history, capabilities, or protocol state.
+
+Offline execution uses a bounded cache of the verified application shell and
+static assets for the current origin. Cached code keeps the client available
+when its mirror disappears, but it cannot receive security fixes or new
+capabilities until an update source is reachable and verified.
+
+Identity migration between mirrors is explicit. The old origin cannot silently
+grant the new origin access to IndexedDB, service-worker state, or keys. A user
+exports a portable encrypted identity bundle, imports it at the new mirror, and
+confirms the target release or mirror trust state before activation. QR device
+transfer is a short-lived encrypted handoff between two user-present devices and
+requires an authenticated confirmation code or equivalent ceremony.
+
+The portable bundle may contain identity keys, device keys, contacts, trust
+history, known routes, outbox metadata, and encrypted conversation history
+according to user choice. It is encrypted before leaving the origin, bound to a
+versioned export format, protected by a user secret or receiving-device key
+agreement, and never uploaded automatically. Relays, mirrors, and public
+carriers do not become backup authorities.
+
+History recovery is user-owned. If no encrypted export, synced personal device,
+or user-chosen storage carrier exists, a new mirror can recover network identity
+only by importing keys or establishing a new identity. It cannot reconstruct
+conversation history from relays because the reference relay baseline is
+non-durable live transit.
+
 ## Source architecture and dependency direction
 
 The reference implementation follows protocol-core plus ports and adapters.

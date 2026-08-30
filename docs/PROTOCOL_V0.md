@@ -771,6 +771,31 @@ Example:
 GitHub board -> relay A -> direct QUIC -> relay B
 ```
 
+## Mirror migration boundary
+
+PWA mirror origins distribute client code; they are not protocol identities, as
+recorded in D-BRANCH-022. Changing mirrors does not change the user's
+B.R.A.N.C.H. identity, peer trust relationships, or Connectivity Protocol
+version. It does change the browser origin that owns IndexedDB, service
+workers, caches, and local key access, so migration is an explicit export/import
+or device-transfer protocol outside the wire session.
+
+The portable identity export format is versioned and encrypted before it leaves
+the source origin. It may carry identity keys, device keys, contacts, local
+trust history, known routes, outbox metadata, and encrypted message history
+according to user choice. It must not depend on a relay, board, mirror, or
+project-operated backup service. A receiving mirror validates the release it is
+running according to local trust policy before importing sensitive material.
+
+QR or local device transfer is a short-lived encrypted transfer between
+user-present devices. It requires explicit user confirmation and does not grant
+a web origin ambient access to another origin's storage.
+
+No protocol behaviour assumes that JavaScript can verify a malicious copy of
+itself. Release signatures, reproducible builds, and service-worker update
+control are distribution safeguards; they do not replace user choice, external
+verification, or an already trusted installation.
+
 ## Capability-based delivery
 
 A relay should not accept arbitrary traffic addressed to a globally enumerable
