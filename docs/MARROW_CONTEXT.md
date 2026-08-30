@@ -23,12 +23,33 @@ implementation order. Marrow remains the source of truth.
   complete. Work inside this task may create only the foundation and conformance
   scaffold.
 
+### T-BRANCH-014 — Реализовать безопасный observability plane для dev и операторов
+
+- Status: todo.
+- Milestone: Foundation.
+- Priority: 2.
+- Scope: foundation/observability.
+- Depends on: `T-BRANCH-013`.
+- Allowed files: `AGENTS.md`, `docs/ARCHITECTURE.md`,
+  `docs/ENGINEERING.md`, `docs/OBSERVABILITY.md`,
+  `internal/observability/`, `internal/admin/`, `web/src/diagnostics/`,
+  `deployments/observability/`, `compose.yaml`, `compose.observability.yaml`.
+- Acceptance: stable event taxonomy and schema; structured slog events,
+  health/readiness and bounded-cardinality metrics on a protected admin
+  listener; optional OpenTelemetry/OTLP exporter; dev profile with Collector,
+  Prometheus, Loki, Tempo and Grafana; bounded PWA diagnostic journal with
+  manual redacted export; separated development, operator-production and
+  time-boxed diagnostic modes; no payloads, keys, capability tokens, portable
+  identity or permanent user identifiers in telemetry; monitoring disabled must
+  not affect connectivity.
+
 ### T-BRANCH-005 — Build the two-client carrier-hopping proof of concept
 
 - Status: todo.
 - Milestone: Proof of concept.
 - Priority: 60.
-- Current constraint: PoC relay/PWA work waits behind T-BRANCH-013.
+- Current constraint: PoC relay/PWA work waits behind T-BRANCH-013, and the PoC
+  is not diagnosable until T-BRANCH-014 is complete.
 
 ## Accepted architecture decisions
 
@@ -41,6 +62,16 @@ interfaces are small and declared by consumers; dependencies are explicit; UI is
 outside protocol core. Relay is a non-persistent live conduit without a
 database. Foundation task T-BRANCH-013 and `docs/ENGINEERING.md` are required
 before production implementation.
+
+### D-BRANCH-017 — Observability is centralized in dev, operator-owned in production
+
+Controlled development environments may centralize logs, metrics and traces
+through an optional OpenTelemetry stack. In production, each operator owns their
+telemetry and may disable it. Monitoring is not part of the Connectivity
+Protocol, discovery root or data plane. Node telemetry uses structured events,
+bounded-cardinality metrics and local traces; PWA telemetry is a bounded local
+diagnostic journal with manual redacted export. Payloads, keys, capabilities,
+portable identity and permanent user identifiers are never collected.
 
 ### D-BRANCH-015 — Relays are non-durable transit
 
@@ -69,6 +100,12 @@ domain, directory server, or relay address.
 
 - I-BRANCH-025: engineering contract is already recorded in Marrow; next step is
   repository/conformance scaffold and CI gates for T-BRANCH-013.
+- I-BRANCH-026: observability contract is recorded in Marrow; implementation
+  starts with typed event schema/reason codes and no-op sink, then metrics and
+  optional exporters.
+- I-BRANCH-027: after T-BRANCH-013 and before the two-client PoC is considered
+  ready, complete T-BRANCH-014 so carrier search, beacon validation, handshake,
+  route selection, relay hopping, queue overflow and restart are diagnosable.
 - I-BRANCH-024: production relay/PWA implementation is blocked until
   T-BRANCH-013 is complete.
 - I-BRANCH-022: reference Go node uses process memory for live routing, bounded
@@ -80,4 +117,3 @@ domain, directory server, or relay address.
   PWA and companion relay/search bridge.
 - I-BRANCH-010: PoC must close the first-relay bootstrap loop via an explicit
   mirror-local first-hop rule.
-

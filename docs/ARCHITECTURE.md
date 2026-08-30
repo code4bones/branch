@@ -132,6 +132,31 @@ The reference implementation follows protocol-core plus ports and adapters.
 The complete repository layout, coding rules, concurrency model, testing
 strategy, and CI gates are normative in docs/ENGINEERING.md.
 
+## Observability plane
+
+Observability is a separate operator plane, not part of the control or data
+plane. Development deployments may centralize logs, metrics, and traces for the
+nodes and clients controlled by the project. Production operators independently
+choose whether and where to collect telemetry for their own nodes.
+
+The reference implementation exposes structured events, bounded-cardinality
+metrics, health/readiness state, and optional traces through a protected
+administrative boundary. The PWA maintains a bounded local diagnostic journal
+and can produce a manually exported redacted diagnostic bundle.
+
+No collector, dashboard, exporter, monitoring account, or project-operated
+backend is required for protocol operation. Removing the entire monitoring stack
+must not change discovery, handshake, routing, carrier hopping, or message
+transport.
+
+Cross-relay trace correlation is permitted inside an explicitly controlled
+development environment. It is not propagated as a mandatory wire field in
+production. Telemetry never contains plaintext payloads, cryptographic keys,
+capability tokens, portable identity material, or permanent user identifiers.
+
+The normative modes, schemas, event taxonomy, metrics, redaction rules, and
+development stack are defined in docs/OBSERVABILITY.md.
+
 ## Trust boundaries
 
 - Identity keys authenticate people, devices, nodes, and signed announcements.
@@ -155,5 +180,7 @@ The architecture is proven at v0 when:
 4. the active relay is disabled and the session migrates to another path;
 5. no B.R.A.N.C.H.-owned server is required;
 6. the Go and TypeScript implementations pass the same protocol vectors;
-7. restarting relays restores no user messages, files, or conversation state.
-
+7. restarting relays restores no user messages, files, or conversation state;
+8. route selection, carrier failure, relay hopping, queue overflow, and restart
+   can be diagnosed without recording message contents or permanent user
+   identifiers.

@@ -4,8 +4,8 @@ Status: normative foundation draft, 2026-08-30.
 Tracks: T-BRANCH-013.
 
 This document defines how the reference B.R.A.N.C.H. implementation is
-structured, reviewed, tested, and evolved. It complements
-docs/ARCHITECTURE.md and the versioned protocol specifications.
+structured, reviewed, tested, and evolved. It complements docs/ARCHITECTURE.md,
+docs/OBSERVABILITY.md, and the versioned protocol specifications.
 
 ## 1. Design approach
 
@@ -65,6 +65,7 @@ branch/
 │   │   ├── npm/
 │   │   └── image/
 │   ├── identity/             # node identity, signer and verification
+│   ├── observability/        # event schema, metrics, tracing and redaction
 │   └── admin/                # protected operator API
 ├── web/
 │   └── src/
@@ -75,6 +76,7 @@ branch/
 │       ├── identity/         # local identity operations
 │       ├── storage/          # IndexedDB boundary
 │       ├── visual/           # Ribbon Image codec and workers
+│       ├── diagnostics/      # bounded journal and redacted export
 │       ├── client/           # messenger React application
 │       └── admin/            # operator React application
 ├── spec/
@@ -318,3 +320,20 @@ not silently reinterpret an immutable protocol version.
 Readable, boring code is a feature. Prefer explicit duplication at two small
 call sites over a premature abstraction; extract shared behaviour when a stable
 domain concept has emerged.
+
+## 13. Observability gate
+
+Observability is designed with the feature, not added after incidents. New
+connectivity, discovery, carrier, gossip, queue, or lifecycle behaviour must
+define:
+
+- stable structured event names and reason codes;
+- bounded-cardinality metrics;
+- trace spans where latency or causality matters;
+- fields that are allowed, transformed, or forbidden;
+- expected diagnostic evidence for success and failure tests.
+
+The detailed contract is docs/OBSERVABILITY.md. OpenTelemetry and any backend
+remain adapters. Core packages emit typed domain events through a small
+consumer-side port and do not import exporters, dashboards, or vendor SDKs.
+Disabling all telemetry adapters must leave behaviour unchanged.

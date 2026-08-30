@@ -61,3 +61,5 @@ operated relays.
 - [OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — questions intentionally left open.
 - [ENGINEERING.md](docs/ENGINEERING.md) — repository architecture, code style,
   test strategy, and quality gates.
+- [OBSERVABILITY.md](docs/OBSERVABILITY.md) — logs, metrics, traces,
+  diagnostics, privacy boundaries, and optional development monitoring.

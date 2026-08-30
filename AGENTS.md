@@ -22,8 +22,8 @@ Canonical lines:
 Before claiming or implementing a task:
 
 1. Load the current Marrow project context for branch.
-2. Read this file, docs/ARCHITECTURE.md, docs/ENGINEERING.md, and the relevant
-   protocol specification.
+2. Read this file, docs/ARCHITECTURE.md, docs/ENGINEERING.md,
+   docs/OBSERVABILITY.md, and the relevant protocol specification.
 3. Read the task, linked decisions, implementation notes, and failed attempts.
 4. Confirm that proposed work preserves the immutable Connectivity Protocol and
    the non-durable relay boundary.
@@ -34,6 +34,10 @@ shared protocol vectors, and quality gates are accepted. Work performed inside
 T-BRANCH-013 may create only the foundation and conformance scaffold described
 by that task.
 
+T-BRANCH-014 establishes the observability plane and must be completed before
+the two-client PoC is treated as diagnosable. Instrumentation may never become
+a wire-protocol requirement or a runtime dependency for connectivity.
+
 Do not silently invent protocol semantics while writing code. If the
 specification is incomplete, update the specification or record an open
 question before implementation.
@@ -43,6 +47,8 @@ question before implementation.
 - docs/ARCHITECTURE.md is the stable system architecture.
 - docs/ENGINEERING.md is the normative source architecture, code-style, testing,
   and quality-gate contract.
+- docs/OBSERVABILITY.md defines logs, metrics, traces, diagnostic modes,
+  privacy boundaries, and the optional development monitoring stack.
 - docs/PROTOCOL_V0.md and protocol schemas define wire behaviour.
 - Versioned protocol schemas and shared test vectors are normative; Go and
   TypeScript code are implementations of them.
@@ -121,3 +127,7 @@ The defining v0 test is:
   authentication material.
 - A malformed remote packet must return a bounded protocol error or close the
   session; it must never panic the process.
+- Observability is operator-owned and optional. Disabling every collector and
+  monitoring backend must not alter discovery, connectivity, or relay behaviour.
+- Production telemetry must not create a mandatory global correlation surface
+  across independently operated relays.
