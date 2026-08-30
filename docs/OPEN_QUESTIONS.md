@@ -28,7 +28,8 @@ their reasoning rather than silently replacing earlier assumptions.
 - How does a relay behind NAT participate through an upstream relay?
 - Which resource limits make volunteer operation safe by default?
 - How are capability grants revoked without a global revocation service?
-- When is store-and-forward allowed, and who chooses the storage relay?
+- If durable offline delivery is introduced outside the relay baseline, what
+  user-chosen storage-carrier contract owns it?
 
 ## Abuse resistance
 
@@ -61,4 +62,3 @@ their reasoning rather than silently replacing earlier assumptions.
   without implying EFF affiliation?
 - Should conformance require the full name and heritage notice, or should that
   remain a strong brand guideline?
-

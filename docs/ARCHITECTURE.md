@@ -78,6 +78,13 @@ A relay is never an identity authority. Clients may use several relays and move
 between them. Relay access is capability-controlled rather than dependent on a
 global account system.
 
+The minimal relay contract is intentionally narrow: attach authenticated peers,
+admit traffic only through bounded capabilities, forward opaque encrypted frames
+while both sides have live routes, apply explicit quotas and backpressure, and
+forget traffic/session state on disconnect, expiry, or restart. Relay-to-relay
+behaviour is limited to live forwarding and signed control-plane gossip; it is
+not a durable mailbox, global presence directory, or custody layer.
+
 ### 5. Local conversation state
 
 Conversation history belongs to user devices. The PWA stores identity,
