@@ -14,11 +14,21 @@ their reasoning rather than silently replacing earlier assumptions.
 
 - How does a recipient find its events without scanning an entire public feed?
 - How are rendezvous topics rotated after first contact?
-- Which first adapter proves the idea without making a third-party platform a
-  dependency?
 - How do adapters handle surfaces that rewrite, truncate, moderate, or reorder
   content?
 - Should one event be redundantly published to several boards by default?
+- Is `recipient_tag` stable enough for board filtering, or must the signed
+  event envelope define stricter privacy and rotation rules first?
+- What is the maximum rendezvous event size for v0 across browser-native
+  boards?
+- Are delete and replace operations part of a board adapter contract, or do
+  expiry and revocation remain entirely in signed protocol events?
+- How many independent boards must a client try before rendezvous is considered
+  degraded?
+- Should every board adapter support recent `search`, or may live-only adapters
+  satisfy publish and observe with an explicit `unsupported` search result?
+- Which shared fixture format is normative: raw carrier payloads with expected
+  extracted candidates, or adapter-level operation transcripts?
 
 ## Relays and mesh routing
 

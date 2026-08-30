@@ -52,18 +52,158 @@ belong inside the encrypted payload.
 
 ## Board adapter contract
 
-Conceptual interface:
+A RendezvousBoard is an untrusted publication and observation adapter for
+short-lived signed rendezvous events. It is not an identity authority, delivery
+guarantee, mailbox, relay, directory, or B.R.A.N.C.H.-operated service.
+SearchCarrier bootstrap and RendezvousBoard rendezvous are separate ports even
+when one concrete adapter can implement both.
+
+Conceptual TypeScript shape:
 
 ```ts
 interface RendezvousBoard {
-  publish(event: SignedEvent): Promise<PublicationReceipt>;
-  subscribe(filter: EventFilter): AsyncIterable<SignedEvent>;
+  publish(
+    event: SignedEvent,
+    options: PublishOptions,
+  ): Promise<PublicationReceipt>;
+
+  observe(
+    filter: EventFilter,
+    options: ObserveOptions,
+  ): AsyncIterable<ObservedEvent>;
+
+  search(filter: EventFilter, options: SearchOptions): Promise<SearchPage>;
+
+  capabilities(): Promise<BoardCapabilities>;
 }
 ```
 
+`publish` is best-effort publication. A `PublicationReceipt` is carrier-local
+evidence that the adapter attempted or observed carrier acceptance; it never
+proves delivery, authenticity, ordering, freshness, or audience.
+
+`observe` returns live or polling observations and must tolerate gaps,
+disconnects, duplicate records, out-of-order records, and reconnects. The
+iterator has explicit buffer limits, cancellation, and reconnect backoff.
+
+`search` is a bounded recent backfill query for unexpired candidate events. A
+live-only board may report `unsupported` for search while still satisfying the
+publish/observe contract if its capabilities say so.
+
+`capabilities` reports carrier-local behaviour: supported operations, maximum
+event bytes, maximum page size, observation buffer limit, cursor/checkpoint
+support, authentication requirements, rate-limit policy, browser-native
+read/write viability, expiry support, and whether writes require a
+user-supplied credential or proxy.
+
 Adapters must not be assumed to preserve order, availability, exact formatting,
-or authorship metadata. An adapter is responsible only for encoding, publishing,
-discovering, and decoding candidate protocol events.
+or authorship metadata. An adapter is responsible only for encoding,
+publishing, discovering, and decoding candidate protocol events. The protocol
+core validates signatures, expiry, canonical form, recipient decryptability,
+deduplication, and replay policy before any event affects state.
+
+### Filters, cursors, and checkpoints
+
+Filters may use only public, non-sensitive envelope fields:
+
+- protocol version;
+- event type;
+- recipient routing tag when present;
+- bounded creation or expiry time window;
+- carrier-specific topic, kind, tag, or relay-set selector that does not reveal
+  secrets.
+
+Carrier cursors and checkpoints are adapter state, not protocol evidence. They
+may be used to resume polling or observation, but a malicious or broken carrier
+can skip, repeat, rewind, or forge position hints. Clients therefore combine
+cursor use with envelope expiry, deduplication, and redundant board selection.
+
+### Encoding limits
+
+Every adapter declares hard limits before it accepts remote data:
+
+- maximum encoded event bytes;
+- maximum decoded envelope bytes;
+- maximum payload bytes accepted from the carrier;
+- maximum page size and carrier response bytes;
+- maximum observation buffer depth;
+- maximum reconnect delay and retry budget;
+- maximum tolerated carrier clock skew when carrier timestamps are consulted.
+
+Carrier framing may wrap the canonical signed event bytes, for example in a
+text marker or platform event body. The adapter may normalize carrier framing
+only enough to extract candidate signed event bytes. It must not repair,
+reinterpret, or reserialize protocol content to make an invalid event valid.
+
+### Deduplication and error semantics
+
+The protocol deduplication key is the signed event identity defined by the event
+envelope specification. Exact duplicates observed through one or more boards
+are idempotent. The same signed event identity with different canonical bytes is
+an equivocation or corruption candidate and is rejected before processing.
+
+Adapter errors use stable categories rather than carrier-specific strings:
+
+- `unsupported`;
+- `invalid_filter`;
+- `encoded_event_too_large`;
+- `carrier_unavailable`;
+- `rate_limited`;
+- `authentication_required`;
+- `permission_denied`;
+- `cursor_rejected`;
+- `response_too_large`;
+- `malformed_carrier_record`;
+- `cancelled`;
+- `timeout`.
+
+Malformed carrier records are invalid candidates, not process failures. Unknown
+carrier metadata is diagnostic-only and must not be treated as protocol
+authority. Error details are length-limited and scrubbed before telemetry.
+
+### Hostile carrier behaviour
+
+A carrier may rewrite formatting, wrap text, truncate, moderate, duplicate,
+reorder, delay, backdate, delete, rate-limit, inject bogus events, hide selected
+results, or falsely report success. Events should be publishable across several
+independent boards, and clients must expect duplicates when they do so.
+
+Browser adapters must not require secret platform tokens stored in the PWA. If
+a carrier needs privileged API credentials or a CORS proxy, that adapter is not
+baseline browser-native. Proxying through a user-chosen relay or node can be
+optional plumbing, but it cannot become mandatory discovery or rendezvous
+infrastructure.
+
+Live carrier tests are opt-in smoke tests. Ordinary conformance uses recorded
+fixtures or local test servers so CI does not depend on public services or user
+credentials.
+
+### First proof adapter
+
+The first real RendezvousBoard proof adapter is a Nostr relay-set adapter, with
+a local recorded-fixture adapter for conformance, as recorded in D-BRANCH-018.
+Nostr is used as a hostile carrier family because public relay implementations
+expose browser-usable WebSocket publish/subscribe behaviour and relay
+capability metadata. The adapter must use multiple configured relays for
+meaningful tests and must not make any specific relay, Nostr identity, project
+account, or B.R.A.N.C.H.-owned server mandatory.
+
+Nostr event identifiers, signatures, authorship, relay timestamps, and relay
+acceptance messages are carrier metadata around a B.R.A.N.C.H. signed envelope.
+They may help the adapter route, publish, or debug, but they do not replace
+B.R.A.N.C.H. envelope signatures, expiry, recipient encryption, or
+deduplication.
+
+GitHub Issues or Discussions remain useful SearchCarrier and Carry the Ribbon
+candidates, but they are not the first live RendezvousBoard adapter because
+browser writes normally require account credentials or proxying, indexing is
+slower, and platform moderation/API limits make live rendezvous harder to
+evaluate.
+
+Shared fixtures for board adapters should include publish encoding, observed
+carrier payloads, malformed wrapped payloads, duplicate pages, out-of-order
+pages, missing or deleted records, rate-limit responses, CORS or proxy failure,
+oversized records, unsupported search, and non-event noise.
 
 ## Relay descriptor
 
