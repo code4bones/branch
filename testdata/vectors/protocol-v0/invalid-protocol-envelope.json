@@ -1,0 +1,13 @@
+{
+  "protocol": "branch/unknown",
+  "id": "evt_00000000000000000000000002",
+  "type": "rendezvous.offer",
+  "sender": "branch:identity-public-key:test-sender",
+  "recipient_tag": "recipient-tag-test-002",
+  "created_at": 1700000000,
+  "expires_at": 1700000300,
+  "nonce": "nonce-test-002",
+  "payload": "recipient-encrypted-bytes-placeholder",
+  "signature": "sender-signature-placeholder"
+}
+

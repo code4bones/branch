@@ -1,0 +1,31 @@
+# Local agent/session artifacts
+.resume
+.resume*
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Go build and test output
+bin/
+coverage.out
+*.test
+
+# JavaScript/TypeScript dependencies and build output
+node_modules/
+web/node_modules/
+web/dist/
+web/dist-test/
+web/coverage/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+

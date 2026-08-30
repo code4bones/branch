@@ -1,0 +1,25 @@
+{
+  "schema": "branch.testvectors/0",
+  "protocol": "branch/0",
+  "status": "draft",
+  "published": false,
+  "notes": [
+    "These fixtures validate draft envelope structure only.",
+    "They do not define canonical serialization, signature bytes, encryption, or final wire semantics."
+  ],
+  "cases": [
+    {
+      "name": "valid-rendezvous-offer-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "valid-rendezvous-offer-envelope.json",
+      "expect": "accept-structure"
+    },
+    {
+      "name": "invalid-protocol-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "invalid-protocol-envelope.json",
+      "expect": "reject-structure"
+    }
+  ]
+}
+
