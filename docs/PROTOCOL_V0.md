@@ -17,20 +17,37 @@ security-sensitive deployment.
 
 ## Signed event envelope
 
-Illustrative JSON only; canonical encoding is undecided.
+The signed event envelope is the carrier-neutral object exchanged through
+RendezvousBoard adapters, SearchCarrier records where applicable, relay route
+announcements, and future control-plane gossip. It is authenticated before its
+payload is used and remains valid or invalid independent of the carrier that
+transported it.
+
+The canonical protocol identifier for this draft is `branch/connectivity/0`, as
+recorded in D-BRANCH-019. Earlier scaffold vectors that used `branch/0` are
+legacy draft material and must be replaced before any v0 publication claim.
+
+### Diagnostic shape
+
+JSON below is diagnostic only. Ordinary JSON serialization is not signed and is
+not normative.
 
 ```json
 {
-  "protocol": "branch/0",
-  "id": "event-id",
+  "protocol": "branch/connectivity/0",
+  "event_id": "base64url-32-byte-random-id",
   "type": "rendezvous.offer",
-  "sender": "branch:identity-public-key",
-  "recipient_tag": "short-routing-tag",
-  "created_at": 0,
-  "expires_at": 0,
-  "nonce": "random-value",
-  "payload": "recipient-encrypted-bytes",
-  "signature": "sender-signature"
+  "sender": {
+    "key_alg": "ed25519",
+    "public_key": "base64url-32-byte-public-key"
+  },
+  "recipient_tag": "base64url-16-or-32-byte-routing-tag",
+  "created_at": 1700000000,
+  "expires_at": 1700000300,
+  "payload_mode": "sealed",
+  "payload": "base64url-canonical-payload-bytes",
+  "signature_alg": "ed25519",
+  "signature": "base64url-64-byte-signature"
 }
 ```
 
@@ -38,17 +55,142 @@ The outer envelope provides filtering, expiry, replay defence, and
 authentication. Sensitive endpoints, device information, and session material
 belong inside the encrypted payload.
 
-## Initial event types
+### Canonical encoding and signed bytes
 
-| Event | Purpose |
-| --- | --- |
-| `identity.announce` | Publish a signed identity descriptor or discovery hint. |
-| `rendezvous.offer` | Offer a connection to a recipient. |
-| `rendezvous.answer` | Answer an offer, possibly through another carrier. |
-| `route.update` | Announce new signed routes to an established contact. |
-| `relay.announce` | Advertise a community relay and its capabilities. |
-| `capability.grant` | Permit bounded delivery through a relay. |
-| `capability.revoke` | Revoke a previously granted capability. |
+The normative envelope encoding is deterministic CBOR. It must use the RFC 8949
+core deterministic encoding requirements: preferred serialization, definite
+lengths, deterministic map ordering, no duplicate map keys, and no non-minimal
+integer or length encodings. Tags, floating point values, indefinite length
+items, duplicate top-level fields, and unknown top-level fields are rejected for
+`branch/connectivity/0`.
+
+The signature input is:
+
+```text
+"BRANCH signed event v0\n" || deterministic_cbor(unsigned_event)
+```
+
+`unsigned_event` contains every envelope field except `signature`. A decoder
+must verify the exact canonical bytes; decoding and re-encoding through a
+different representation must not alter the signed object.
+
+Text carriers wrap the canonical signed envelope bytes as:
+
+```text
+BRANCH0.<base64url(deterministic_cbor(signed_event))>
+```
+
+Base64url values are unpadded. Carriers may wrap this text in platform-specific
+records, but adapter extraction never changes the signed bytes.
+
+### Field rules
+
+- `protocol` is exactly `branch/connectivity/0`; unknown protocols are ignored
+  as unsupported versions during carrier scanning and are never reinterpreted as
+  v0.
+- `event_id` is a random 256-bit value encoded as unpadded base64url. It is
+  signed and provides event identity, deduplication, and replay separation.
+- `type` is a controlled enum. Unknown event types are rejected or ignored with
+  a stable unsupported-type reason before payload processing.
+- `sender.key_alg` is `ed25519` for this draft.
+- `sender.public_key` is the 32-byte Ed25519 public signing key encoded as
+  unpadded base64url. It is self-contained sender authentication material, not
+  a server account or carrier identity.
+- `recipient_tag` is required for recipient-filtered rendezvous, route, and
+  relay capability events. It is absent for public announcement events.
+- `created_at` and `expires_at` are Unix seconds represented as integers where
+  `0 <= created_at < expires_at <= 9007199254740991`.
+- `payload_mode` is `sealed` for recipient-specific events. `public` is allowed
+  only for explicitly public announcement types.
+- `payload` is opaque bytes to the envelope layer and is encoded as unpadded
+  base64url in diagnostic JSON. Sealed payload encryption must use a reviewed
+  construction specified separately, such as HPKE if accepted; the envelope
+  does not invent ECIES-like or ad hoc cryptography.
+- `signature_alg` is `ed25519` for this draft unless a registry decision adds
+  another algorithm before publication.
+- `signature` is the 64-byte Ed25519 signature over the domain-separated
+  canonical unsigned envelope.
+
+The envelope has no separate `nonce` field. Event-level replay separation comes
+from `event_id`. Any nonce required by the payload encryption suite belongs to
+the sealed payload construction and is authenticated by that construction.
+
+### Event type constraints
+
+| Event | Recipient tag | Payload mode | Notes |
+| --- | --- | --- | --- |
+| `identity.announce` | Absent unless recipient-filtered | `public` or `sealed` | Public form contains no secrets. |
+| `rendezvous.offer` | Required | `sealed` | Offers connection material to one recipient. |
+| `rendezvous.answer` | Required | `sealed` | Answers an offer, possibly through another board. |
+| `route.update` | Required or session-bound | `sealed` | Updates routes after contact exists. |
+| `relay.announce` | Absent | `public` | Advertises relay capabilities, not honesty or storage. |
+| `capability.grant` | Required | `sealed` | Grants bounded live relay delivery capability. |
+| `capability.revoke` | Required | `sealed` | Revokes or replaces a previous capability. |
+
+### Validation order
+
+Structural validation is deterministic and clock-free:
+
+1. bound encoded size before decoding;
+2. decode deterministic CBOR and reject non-canonical forms;
+3. reject unknown fields, duplicate keys, unknown enum values, unsafe integers,
+   empty required strings, invalid base64url, and wrong key or signature sizes;
+4. validate event type constraints, recipient tag presence, and payload mode;
+5. construct the unsigned canonical bytes and verify the Ed25519 signature;
+6. return an authenticated envelope candidate to the caller.
+
+Acceptance-time validation is separate because it uses local policy and a local
+clock. It checks expiry, future-created events, clock skew tolerance, local
+capability support, deduplication state, and whether the recipient can decrypt a
+sealed payload. A malformed remote packet returns a typed protocol error or is
+ignored as an invalid carrier candidate; it must never panic the process.
+
+### Expiry, replay, and deduplication
+
+The protocol deduplication key is:
+
+```text
+(protocol, sender.public_key, event_id)
+```
+
+Exact duplicate valid events are idempotent and processed at most once. The same
+deduplication key with different canonical bytes is rejected as an equivocation
+or corruption candidate. Expired events are ignored, never refreshed by a
+carrier, and never republished as current. Future-created events outside the
+accepted skew window are rejected in v0.
+
+Relay, board, and carrier adapter caches for replay or deduplication are
+bounded and may be memory-only. A relay restart has no requirement to remember
+seen event IDs and must not restore user messages, payloads, delivery queues, or
+conversation state. Clients may persist seen event IDs in local user-owned state
+when a product flow needs longer replay protection.
+
+### Size limits
+
+The default maximum encoded signed envelope is 64 KiB. The default maximum
+payload inside that envelope is 48 KiB. Specific carriers, boards, relays, and
+paths may advertise smaller limits, and senders must obey the smallest limit on
+the chosen path. Decoders enforce limits before allocation or payload parsing.
+
+### Test-vector requirements
+
+Shared Go and TypeScript vectors must include:
+
+- canonical deterministic CBOR signed envelope bytes;
+- unsigned signature-input bytes;
+- Ed25519 seed, public key, and expected signature for test-only keys;
+- diagnostic JSON rendering, clearly marked non-normative;
+- text carrier wrapper string;
+- valid public `relay.announce`;
+- valid sealed `rendezvous.offer` and `rendezvous.answer`;
+- invalid unknown field, wrong protocol, unknown event type, invalid base64url,
+  wrong key length, wrong signature length, non-canonical CBOR, mutated payload,
+  public rendezvous payload, expired event, future-created event, and unsafe
+  integer cases;
+- deduplication cases for exact duplicate, same ID with changed payload, and the
+  same event observed through multiple carriers;
+- relay invariant case proving that relay restart restores no user traffic and
+  has no durable seen-event requirement.
 
 ## Board adapter contract
 
