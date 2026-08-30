@@ -120,6 +120,7 @@ the sealed payload construction and is authenticated by that construction.
 | Event | Recipient tag | Payload mode | Notes |
 | --- | --- | --- | --- |
 | `identity.announce` | Absent unless recipient-filtered | `public` or `sealed` | Public form contains no secrets. |
+| `bootstrap.beacon` | Absent | `public` | Publishes searchable bootstrap hints. |
 | `rendezvous.offer` | Required | `sealed` | Offers connection material to one recipient. |
 | `rendezvous.answer` | Required | `sealed` | Answers an offer, possibly through another board. |
 | `route.update` | Required or session-bound | `sealed` | Updates routes after contact exists. |
@@ -181,6 +182,7 @@ Shared Go and TypeScript vectors must include:
 - Ed25519 seed, public key, and expected signature for test-only keys;
 - diagnostic JSON rendering, clearly marked non-normative;
 - text carrier wrapper string;
+- valid public `bootstrap.beacon`;
 - valid public `relay.announce`;
 - valid sealed `rendezvous.offer` and `rendezvous.answer`;
 - invalid unknown field, wrong protocol, unknown event type, invalid base64url,
@@ -191,6 +193,176 @@ Shared Go and TypeScript vectors must include:
   same event observed through multiple carriers;
 - relay invariant case proving that relay restart restores no user traffic and
   has no durable seen-event requirement.
+
+## Bootstrap discovery
+
+Bootstrap discovery is the slow control-plane entry path, recorded in
+D-BRANCH-021, for a client that has no content URL, no configured relay, and no
+project-operated directory. The client starts with the B.R.A.N.C.H. query
+grammar and several SearchCarrier adapters, searches public indexes for signed
+`bootstrap.beacon` events, and validates candidate beacons before using any
+rendezvous board or relay hint.
+
+A SearchCarrier is not an authority, mailbox, relay, delivery layer, or
+presence directory. Search result ordering, timestamps, snippets, repository
+metadata, package metadata, and account names are carrier evidence only. The
+signed beacon and its referenced signed records remain the authority.
+
+### BootstrapBeacon v0
+
+A BootstrapBeacon is a public signed event envelope:
+
+- `protocol = branch/connectivity/0`;
+- `type = bootstrap.beacon`;
+- no `recipient_tag`;
+- `payload_mode = public`;
+- short enough for all selected SearchCarrier publication surfaces;
+- signed and encoded by the signed event envelope rules in D-BRANCH-019.
+
+The public payload is deterministic CBOR and contains no secrets, capability
+tokens, plaintext contact graph, user messages, private endpoints, identity
+exports, or authentication material. The payload fields are:
+
+| Field | Requirement | Meaning |
+| --- | --- | --- |
+| `beacon_id` | Required | Content identity for this beacon payload. |
+| `subject` | Required | Identity, relay, mirror, board set, or curator subject being advertised. |
+| `issuer` | Required | Signing identity authorized by the subject or identical to it. |
+| `sequence` | Required | Monotonic unsigned integer scoped to issuer and subject. |
+| `issued_at` | Required | Unix seconds when this beacon payload was issued. |
+| `expires_at` | Required | Unix seconds after which the beacon is stale. |
+| `previous_beacon_id` | Optional | Continuity link to the previous beacon for this issuer and subject. |
+| `revokes` | Optional | Bounded list of beacon IDs or sequence ranges revoked by this issuer. |
+| `protocol_versions` | Required | Supported connectivity protocol versions. |
+| `capabilities` | Optional | Public bounded capability names, never tokens. |
+| `rendezvous_boards` | Optional | Public board hints such as Nostr relay-set descriptors. |
+| `relay_announcements` | Optional | Embedded relay descriptors or content-addressed references. |
+| `mirror_hints` | Optional | Independent PWA mirror hints, never required for identity. |
+| `search_markers` | Required | Public marker strings used to rediscover equivalent records. |
+| `proofs` | Optional | Cross-publication hints or bundle proofs, not authority. |
+
+`expires_at` in the payload must match the outer signed envelope expiry. If both
+are present and differ, the beacon is invalid. `issued_at` must not be later
+than the outer `created_at`. Relay liveness is never inferred from publication;
+clients actively probe relay endpoints before treating them as usable.
+
+### SearchCarrier contract
+
+Conceptual TypeScript shape:
+
+```ts
+interface SearchCarrier {
+  search(query: SearchQuery, options: SearchOptions): Promise<SearchPage>;
+
+  recognize(
+    record: CarrierRecord,
+    options: RecognitionOptions,
+  ): CandidateBeacon[];
+
+  capabilities(): Promise<SearchCarrierCapabilities>;
+}
+```
+
+`search` performs a bounded public query against one carrier failure domain.
+`recognize` extracts candidate `BRANCH0.` wrappers from carrier records without
+repairing or reserializing signed bytes. `capabilities` reports maximum query
+length, maximum response bytes, maximum result count, authentication
+requirements, CORS/browser-native read viability, rate-limit class, freshness
+expectations, pagination style, and publication constraints when known.
+
+Adapters return candidates. Protocol core validates deterministic CBOR,
+signature, expiry, sequence, revocation, deduplication, and payload schema.
+
+### Query grammar
+
+The baseline query grammar uses public markers only:
+
+- `BRANCH0`;
+- `branch/connectivity/0`;
+- `branch-bootstrap-v0`;
+- optional public subject or capability terms chosen by the user or local
+  policy.
+
+No query may require a specific project repository, organization, domain, raw
+URL, official account, relay, or board. Direct URLs and known repositories are
+allowed as hints after discovery begins, but they are never the sole bootstrap
+root.
+
+### Initial public-search profiles
+
+The initial independent SearchCarrier profiles are:
+
+| Profile | Baseline use | Notes |
+| --- | --- | --- |
+| GitHub public repository/search surfaces | Search repository metadata, topics, README text, and committed `.branch` payloads where the chosen surface exposes them. | Unauthenticated public search may be limited by surface and rate limit; credentialed code/API search is optional and uses the operator's own account. |
+| npm package registry search | Search package metadata for marker terms and package pages that carry beacon wrappers. | Publication requires a package owner account; bootstrap reading must not require a B.R.A.N.C.H. credential. |
+| crates.io package search | Search crate metadata using unauthenticated registry search and package pages carrying beacon wrappers. | Publication requires a crate owner account; the adapter treats package ownership as carrier metadata. |
+
+GitLab search is a candidate credentialed profile, but current GitLab Search API
+documentation requires authentication for API calls. Such a profile can be
+useful through user-supplied credentials or a user-chosen proxy, but it is not a
+baseline browser-native bootstrap dependency.
+
+Multiple frontends, mirrors, or API wrappers over the same underlying platform
+count as one failure domain. A discovery result set should include valid beacons
+from at least three configured independent profiles before it is considered
+healthy. A client may still proceed with fewer when local policy allows degraded
+bootstrap.
+
+### Validation, freshness, and merge
+
+SearchCarrier adapters bound response size before parsing and ignore carrier
+records that exceed local limits. Candidate wrappers are decoded as exact
+signed event bytes. Unknown protocols, non-canonical encodings, invalid
+signatures, expired beacons, future-created beacons outside skew policy, payload
+schema failures, and unsupported required capabilities are rejected before the
+beacon affects state.
+
+Deduplication first uses the signed envelope key
+`(protocol, sender.public_key, event_id)`, then the beacon payload `beacon_id`
+for content identity across republications. For the same issuer and subject,
+clients prefer the highest valid sequence that is not expired or revoked. A
+lower sequence can be retained as historical evidence but not as current
+bootstrap state. Carrier ranking and timestamps never override signed sequence
+or expiry.
+
+Search poisoning and eclipse resistance require querying several independent
+failure domains, bounding per-carrier influence, merging by signature and
+subject rather than carrier rank, and surfacing degraded discovery when too few
+independent valid results remain. A result from one carrier cannot suppress a
+valid result from another carrier unless the signed issuer/subject revocation
+rules say so.
+
+### Republication and bundles
+
+Anyone may republish a bit-identical valid BootstrapBeacon or bundle of valid
+beacons. Republication does not extend expiry, change sequence, alter payload,
+or add authority. Curator bundles may help distribution, but a bundle signature
+never replaces the subject or issuer signatures of the contained beacons.
+
+Relay search-proxy caches, when used for browser CORS boundaries, are bounded,
+memory-only, short-lived, and untrusted. Proxy output is validated by the
+client exactly like direct carrier output.
+
+### Bootstrap fixtures
+
+Shared Go and TypeScript fixtures must cover:
+
+- valid canonical `bootstrap.beacon` envelope and payload;
+- text carrier wrapper and diagnostic JSON rendering;
+- the same beacon found through GitHub, npm, and crates.io carrier fixtures;
+- duplicate republication across carriers;
+- expired beacon, future-created beacon, revoked old sequence, and lower
+  sequence merge;
+- higher sequence replacing current state for the same issuer and subject;
+- mutated payload with reused signature;
+- carrier truncation, wrapping, snippets, HTML noise, and non-event records;
+- oversized response, oversized record, rate limit, auth-required, and CORS or
+  proxy failure;
+- poisoned search results with invalid signatures;
+- relay announced by a valid beacon but rejected by active liveness probe;
+- degraded discovery when fewer than three independent failure domains return
+  valid beacons.
 
 ## Board adapter contract
 

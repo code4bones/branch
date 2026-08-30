@@ -32,11 +32,24 @@ their reasoning rather than silently replacing earlier assumptions.
 - Which shared fixture format is normative: raw carrier payloads with expected
   extracted candidates, or adapter-level operation transcripts?
 
+## Bootstrap search
+
+- What default BootstrapBeacon expiry window and republish cadence should v0
+  publish for operators?
+- Is `bootstrap.beacon` always one subject per beacon, or can one subject issue
+  a bounded multi-subject bundle directly?
+- How do sequence numbers work when an operator rotates keys or delegates
+  publication to several devices?
+- Should revocation address exact `beacon_id` values, sequence ranges, or both?
+- What minimum independent failure-domain count should default clients require
+  before treating bootstrap as healthy rather than degraded?
+- Which carrier-specific query profiles become normative fixtures first beyond
+  GitHub, npm, and crates.io?
+
 ## Relays and mesh routing
 
 - Should relay-to-relay routing exist in v0, or should senders know the final
   recipient relay directly?
-- How are relay announcements discovered and expired?
 - How does a relay behind NAT participate through an upstream relay?
 - Which resource limits make volunteer operation safe by default?
 - How are capability grants revoked without a global revocation service?

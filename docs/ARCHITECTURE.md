@@ -23,9 +23,11 @@ export and import.
 
 ### 2. Public rendezvous fabric
 
-A SearchCarrier is an adapter capable of finding signed bootstrap records on a
-publicly searchable surface. A RendezvousBoard is an optional adapter capable of
-publishing and observing signed rendezvous events.
+A SearchCarrier is an adapter capable of finding signed BootstrapBeacon records
+on a publicly searchable surface. Search bootstrap is slow, redundant, and
+eventual; it is not live rendezvous, presence, delivery, or authority. A
+RendezvousBoard is an optional adapter capable of publishing and observing
+signed rendezvous events.
 
 Candidate surfaces include:
 
@@ -40,6 +42,13 @@ Candidate surfaces include:
 Carriers are untrusted. They may delay, reorder, duplicate, rewrite, hide,
 transform, or delete records. Authenticity comes from signatures;
 confidentiality comes from recipient encryption.
+
+Initial SearchCarrier profiles are GitHub public repository/search surfaces, npm
+package registry search, and crates.io package search. Equivalent future
+profiles may be added, but multiple frontends over the same underlying platform
+count as one failure domain. Credentialed or CORS-blocked search, such as some
+GitLab API modes, can be optional adapter plumbing but not the only bootstrap
+path.
 
 First contact uses this fabric only as a rendezvous control plane. A sender
 discovers a recipient's signed bootstrap material, selects one or more public
