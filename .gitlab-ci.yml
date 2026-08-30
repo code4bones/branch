@@ -5,12 +5,12 @@ go:
   stage: test
   image: golang:1.24
   script:
-    - test -z "$(gofmt -l protocol)"
+    - test -z "$(gofmt -l internal protocol)"
     - go install golang.org/x/tools/cmd/goimports@v0.36.0
-    - test -z "$(goimports -l protocol)"
+    - test -z "$(goimports -l internal protocol)"
     - go test ./...
     - go test -race ./...
-    - go test ./... -run=^$ -fuzz=Fuzz -fuzztime=10s
+    - go test ./protocol/v0 -run=^$ -fuzz=Fuzz -fuzztime=10s
     - go vet ./...
     - go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
     - staticcheck ./...

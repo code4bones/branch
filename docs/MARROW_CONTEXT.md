@@ -106,6 +106,10 @@ domain, directory server, or relay address.
 - I-BRANCH-027: after T-BRANCH-013 and before the two-client PoC is considered
   ready, complete T-BRANCH-014 so carrier search, beacon validation, handshake,
   route selection, relay hopping, queue overflow and restart are diagnosable.
+- Local T-BRANCH-014 scaffold currently includes typed Go observability events,
+  bounded metric labels, protected admin response contracts, TypeScript bounded
+  diagnostic journal, manual redacted export, and an opt-in compose
+  observability profile.
 - I-BRANCH-024: production relay/PWA implementation is blocked until
   T-BRANCH-013 is complete.
 - I-BRANCH-022: reference Go node uses process memory for live routing, bounded

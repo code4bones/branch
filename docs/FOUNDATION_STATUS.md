@@ -19,6 +19,10 @@ or decisions.
 - TypeScript strict mode, `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, ESLint, and Node test runner conformance checks.
 - GitHub Actions and GitLab CI definitions.
+- Initial T-BRANCH-014 observability scaffold: typed Go event and reason-code
+  registry, no-op sink, bounded metric label registry, protected admin response
+  contracts, TypeScript bounded diagnostic journal, manual redacted export, and
+  optional local compose observability profile.
 
 ## Explicit Scaffold Limits
 
@@ -30,7 +34,8 @@ or decisions.
   yet because production relay/PWA runtime is intentionally blocked until
   T-BRANCH-013 is accepted.
 - Observability implementation is blocked behind T-BRANCH-013 and tracked by
-  T-BRANCH-014.
+  T-BRANCH-014. The current implementation remains a foundation scaffold, not a
+  relay/PWA runtime integration.
 
 ## Next Foundation Work
 
@@ -40,4 +45,3 @@ or decisions.
   are selected.
 - Add integration and Playwright gates with the first real runtime surfaces,
   without adding durable relay storage or mandatory project infrastructure.
-
