@@ -9,6 +9,8 @@ their reasoning rather than silently replacing earlier assumptions.
 - How are additional devices authorised and removed?
 - How can a person recover from key loss without creating a central authority?
 - Should human-readable names exist in the protocol or only in optional layers?
+- What user-verifiable first-contact ceremony confirms that a cryptographic
+  identity belongs to the intended person?
 
 ## Public boards
 
@@ -47,6 +49,8 @@ their reasoning rather than silently replacing earlier assumptions.
 - Are proof-of-work, invitations, local trust, quotas, or combinations useful?
 - How can operators prevent the relay from becoming a generic open proxy?
 - What information may an operator retain for reliability and abuse control?
+- What invitation or introduction proof format can be checked before revealing
+  richer route hints?
 
 ## Connectivity
 
@@ -54,6 +58,8 @@ their reasoning rather than silently replacing earlier assumptions.
 - How should a live session migrate between direct and relayed paths?
 - What is the minimum interoperable relay protocol?
 - How should duplicate messages be reconciled during overlapping paths?
+- What default first-contact expiry, retry, and accepted clock-skew values
+  should v0 publish in conformance fixtures?
 
 ## Mobile
 

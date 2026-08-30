@@ -41,6 +41,13 @@ Carriers are untrusted. They may delay, reorder, duplicate, rewrite, hide,
 transform, or delete records. Authenticity comes from signatures;
 confidentiality comes from recipient encryption.
 
+First contact uses this fabric only as a rendezvous control plane. A sender
+discovers a recipient's signed bootstrap material, selects one or more public
+boards allowed by both sides, publishes a sealed signed offer, and accepts a
+sealed signed answer from the recipient through the same or another board. Once
+an authenticated direct or relayed session is established, the original board is
+no longer required for ordinary message transport.
+
 ### 3. Connectivity
 
 After discovery or rendezvous, clients attempt connectivity according to policy

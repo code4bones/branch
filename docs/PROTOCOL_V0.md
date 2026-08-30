@@ -347,6 +347,146 @@ carrier payloads, malformed wrapped payloads, duplicate pages, out-of-order
 pages, missing or deleted records, rate-limit responses, CORS or proxy failure,
 oversized records, unsupported search, and non-event noise.
 
+## First-contact rendezvous flow
+
+First contact is a control-plane sequence, recorded in D-BRANCH-020, that lets
+two clients establish an authenticated direct or relayed session without a
+mandatory project-operated server, directory, board, or relay. Public carriers
+help peers find candidate events, but they do not authenticate identity,
+guarantee delivery, or become conversation state.
+
+The roles below are Alice as initiator and Bob as recipient. The same sequence
+applies when either side is a browser PWA, native client, or node-mediated
+client, subject to local policy and available adapters.
+
+### Preconditions
+
+- Alice has local identity and signing material controlled by the user.
+- Bob has published or directly shared signed bootstrap material sufficient for
+  Alice to learn Bob's identity key, supported protocol versions, recipient tag
+  derivation or current rendezvous tags, candidate RendezvousBoards, and relay
+  or direct-route hints.
+- Alice and Bob may have no prior trust relationship. A first-contact session
+  is authenticated to cryptographic keys before it is socially trusted by a
+  user.
+- All bootstrap records, board observations, route hints, and relay
+  announcements are untrusted until signature, expiry, and policy checks pass.
+
+### Sequence
+
+1. Alice discovers Bob's bootstrap material through SearchCarrier results, a
+   carried repository payload, QR/manual import, a contact export, or another
+   non-authoritative carrier.
+2. Alice validates Bob's signed material: protocol version, issuer signature,
+   expiry, sequence or freshness policy when present, supported capabilities,
+   and absence of mandatory project infrastructure.
+3. Alice selects a board set from Bob's advertised boards, Alice's local policy,
+   and adapter capabilities. Selection prefers multiple independent failure
+   domains when available and rejects boards that require unsupported credentials
+   or exceed local privacy policy.
+4. Alice creates a fresh first-contact attempt with local state: offer ID,
+   selected boards, expiry, retry budget, route candidates, and deduplication
+   state. This state is user-owned client state, not relay or board state.
+5. Alice builds a `rendezvous.offer` signed envelope for Bob's current
+   `recipient_tag`. The envelope uses `payload_mode = sealed`, a fresh
+   `event_id`, short expiry, and Alice's signing key.
+6. The sealed offer payload contains only encrypted first-contact material:
+   Alice's identity proof or contact-introduction proof, an ephemeral handshake
+   contribution, supported connectivity protocol versions, supported
+   capabilities, route candidates, optional relay capability requests, answer
+   board hints, and the offer transcript binding needed by the reviewed
+   handshake construction.
+7. Alice publishes the same canonical offer, or independent equivalent offers
+   with distinct `event_id` values, to the selected boards. Publication
+   receipts are recorded only as carrier-local diagnostics.
+8. Bob observes or searches his selected boards using public non-secret filters
+   such as protocol, event type, recipient tag, and bounded time windows.
+9. Bob extracts candidate envelopes and performs structural validation,
+   signature verification, expiry checks, deduplication, payload-mode checks,
+   and recipient decryptability checks before the payload affects state.
+10. Bob applies first-contact policy. Policy may require local user approval,
+    proof-of-work, invitation material, mutual contacts, local allowlists, rate
+    limits, or other anti-abuse controls before responding or revealing richer
+    route information.
+11. Bob creates a `rendezvous.answer` signed envelope sealed to Alice. The
+    answer may be published through the same board, through one of Alice's
+    answer board hints, or through another mutually supported board. It binds to
+    Alice's offer transcript and contains Bob's selected route candidates,
+    supported protocol version, and any relay capability grant needed for live
+    forwarding.
+12. Alice observes or searches her answer boards, validates Bob's answer using
+    the same envelope rules, decrypts it, checks transcript binding, and
+    confirms Bob's identity key matches the discovered bootstrap material or an
+    explicitly accepted replacement.
+13. Both clients attempt connection establishment according to route policy:
+    existing authenticated direct route, direct IPv6, ICE-assisted UDP or TCP,
+    shared relay, then relay-to-relay route when supported. Direct routes are
+    preferred when viable.
+14. The chosen data-plane handshake authenticates both peer identities, binds
+    the offer and answer transcripts, negotiates the highest mutually supported
+    compatible protocol version and capabilities, and derives session keys using
+    a reviewed construction.
+15. After the authenticated session is established, ordinary encrypted message
+    transport uses the selected direct or live relay path. The original
+    RendezvousBoard is no longer required. Boards may still be used later for
+    route recovery or wake-up signaling, not as conversation storage.
+
+### Expiry, replay, and retry
+
+Offers and answers are short-lived. Expired events are ignored even if a carrier
+keeps returning them. A carrier cannot refresh an event by republishing or
+moving it. Future-created events outside the accepted skew window are rejected
+for v0.
+
+Duplicate valid offers or answers are idempotent. The same deduplication key
+with different canonical bytes is rejected as equivocation or corruption.
+Retries use new event IDs and remain bounded by local retry policy. The sender
+retains pending outbound attempt state locally; relays and boards do not provide
+durable delivery queues.
+
+### Board disappearance and path recovery
+
+If the original board disappears before Bob sees the offer, Alice retries on
+another selected board until the attempt expires or retry policy stops. If Bob
+has seen the offer but cannot publish an answer on the same board, Bob may use
+Alice's answer board hints or another mutually supported board.
+
+If a board disappears after session establishment, the session continues over
+the active data-plane path. If that path later fails, peers use authenticated
+route migration and fresh rendezvous events on remaining boards as needed. A
+new board event may help discover a route, but it does not change peer identity
+or overwrite the authenticated session transcript.
+
+### First-contact security boundaries
+
+- A public board proves only that some carrier record was observed.
+- A relay proves only live reachability under its advertised limits.
+- Peer authentication is cryptographic first and user-trust policy second.
+- No first-contact step may require a B.R.A.N.C.H. account, official board,
+  official relay, project domain, or durable relay storage.
+- Sensitive endpoints, capabilities, introductions, and device details remain
+  inside sealed payloads.
+- Logs, metrics, diagnostics, and board metadata never include plaintext
+  payloads, keys, capabilities, identity exports, or authentication material.
+
+### First-contact fixtures
+
+Conformance fixtures must cover:
+
+- discovery of Bob's signed bootstrap material through at least two carrier
+  records with one stale or invalid record;
+- offer publication to multiple boards with duplicate observation;
+- answer through a different board than the offer;
+- expired offer ignored;
+- same offer ID with mutated canonical bytes rejected;
+- unsupported board search with observe fallback;
+- original board unavailable before answer publication;
+- original board unavailable after session establishment while the session
+  continues;
+- relay unavailable during initial route selection followed by another route;
+- peer identity mismatch between bootstrap material and answer rejected;
+- first-contact policy rejection without leaking sealed payload contents.
+
 ## Relay descriptor
 
 ```json
