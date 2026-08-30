@@ -1,5 +1,7 @@
 export const protocolID = "branch/0" as const;
 export const maxDraftEnvelopeBytes = 64 * 1024;
+export const maxDraftStringBytes = 1024;
+export const maxDraftTimestamp = Number.MAX_SAFE_INTEGER;
 
 const eventTypes = [
   "identity.announce",
@@ -42,7 +44,12 @@ export function decodeDraftEnvelopeText(text: string): DraftEnvelope {
     throw new ProtocolError("oversized draft envelope");
   }
 
-  const decoded: unknown = JSON.parse(text);
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(text);
+  } catch {
+    throw new ProtocolError("invalid draft envelope");
+  }
   return validateDraftEnvelope(decoded);
 }
 
@@ -110,7 +117,11 @@ function readLiteral<T extends string>(
 
 function readString(record: Record<string, unknown>, key: string): string {
   const value = record[key];
-  if (typeof value !== "string" || value.length === 0) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    new TextEncoder().encode(value).byteLength > maxDraftStringBytes
+  ) {
     throw new ProtocolError(`missing ${key}`);
   }
   return value;
@@ -118,7 +129,12 @@ function readString(record: Record<string, unknown>, key: string): string {
 
 function readInteger(record: Record<string, unknown>, key: string): number {
   const value = record[key];
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > maxDraftTimestamp
+  ) {
     throw new ProtocolError(`invalid ${key}`);
   }
   return value;

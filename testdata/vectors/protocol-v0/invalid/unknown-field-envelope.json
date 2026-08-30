@@ -1,0 +1,14 @@
+{
+  "protocol": "branch/0",
+  "id": "evt_00000000000000000000000003",
+  "type": "rendezvous.offer",
+  "sender": "branch:identity-public-key:test-sender",
+  "recipient_tag": "recipient-tag-test-003",
+  "created_at": 1700000000,
+  "expires_at": 1700000300,
+  "nonce": "nonce-test-003",
+  "payload": "recipient-encrypted-bytes-placeholder",
+  "signature": "sender-signature-placeholder",
+  "unexpected": "must be rejected by the draft decoder"
+}
+

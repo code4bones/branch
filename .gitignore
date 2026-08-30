@@ -18,6 +18,7 @@ coverage.out
 # JavaScript/TypeScript dependencies and build output
 node_modules/
 web/node_modules/
+web/.npm/
 web/dist/
 web/dist-test/
 web/coverage/
@@ -28,4 +29,3 @@ web/coverage/
 .vscode/
 *.swp
 *.swo
-

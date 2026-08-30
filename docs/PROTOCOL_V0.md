@@ -75,7 +75,7 @@ discovering, and decoding candidate protocol events.
     "quic://relay.example:443",
     "wss://relay.example/connect"
   ],
-  "features": ["forward", "store-and-forward"],
+  "features": ["forward"],
   "limits": {
     "max_packet_bytes": 0,
     "max_ttl_seconds": 0
@@ -86,7 +86,9 @@ discovering, and decoding candidate protocol events.
 ```
 
 Relay announcements describe capabilities; they do not prove honesty,
-availability, privacy, or capacity.
+availability, privacy, or capacity. The reference relay baseline is live
+transit only and does not advertise durable message, file, mailbox, or
+store-and-forward storage.
 
 ## Carrier hopping
 
@@ -116,4 +118,3 @@ semantics are unresolved.
 - cryptocurrency, token incentives, and relay markets;
 - permanent cloud history;
 - a universal solution to mobile push restrictions.
-

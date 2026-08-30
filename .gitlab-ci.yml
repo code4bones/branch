@@ -1,0 +1,35 @@
+stages:
+  - test
+
+go:
+  stage: test
+  image: golang:1.24
+  script:
+    - test -z "$(gofmt -l protocol)"
+    - go install golang.org/x/tools/cmd/goimports@v0.36.0
+    - test -z "$(goimports -l protocol)"
+    - go test ./...
+    - go test -race ./...
+    - go test ./... -run=^$ -fuzz=Fuzz -fuzztime=10s
+    - go vet ./...
+    - go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+    - staticcheck ./...
+    - go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+    - govulncheck ./...
+
+web:
+  stage: test
+  image: node:24
+  cache:
+    key:
+      files:
+        - web/package-lock.json
+    paths:
+      - web/.npm/
+  before_script:
+    - cd web
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npm run typecheck
+    - npm run lint
+    - npm test

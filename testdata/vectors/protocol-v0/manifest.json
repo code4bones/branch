@@ -19,7 +19,42 @@
       "kind": "draft_envelope_json",
       "fixture": "invalid-protocol-envelope.json",
       "expect": "reject-structure"
+    },
+    {
+      "name": "unknown-field-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "invalid/unknown-field-envelope.json",
+      "expect": "reject-structure"
+    },
+    {
+      "name": "missing-recipient-tag-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "invalid/missing-recipient-tag-envelope.json",
+      "expect": "reject-structure"
+    },
+    {
+      "name": "expired-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "invalid/expired-envelope.json",
+      "expect": "reject-structure"
+    },
+    {
+      "name": "negative-created-at-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "invalid/negative-created-at-envelope.json",
+      "expect": "reject-structure"
+    },
+    {
+      "name": "unsafe-expires-at-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "invalid/unsafe-expires-at-envelope.json",
+      "expect": "reject-structure"
+    },
+    {
+      "name": "trailing-json-envelope",
+      "kind": "draft_envelope_json",
+      "fixture": "invalid/trailing-json-envelope.json",
+      "expect": "reject-structure"
     }
   ]
 }
-

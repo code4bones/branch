@@ -16,6 +16,14 @@ const (
 	// MaxDraftEnvelopeBytes bounds local fixture parsing and future hostile
 	// input tests. It is not a negotiated relay frame limit.
 	MaxDraftEnvelopeBytes = 64 * 1024
+
+	// MaxDraftStringBytes bounds draft string fields before the final wire
+	// format defines per-field sizes.
+	MaxDraftStringBytes = 1024
+
+	// MaxDraftTimestamp is the largest integer timestamp accepted by both Go
+	// and TypeScript draft conformance checks.
+	MaxDraftTimestamp = 1<<53 - 1
 )
 
 // EventType names the draft signed event envelope types described in
@@ -90,25 +98,28 @@ func (envelope DraftEnvelope) ValidateStructure() error {
 	if !KnownEventType(envelope.Type) {
 		return fmt.Errorf("%w: unsupported event type %q", ErrInvalidEnvelope, envelope.Type)
 	}
-	if envelope.ID == "" {
+	if !validDraftString(envelope.ID) {
 		return fmt.Errorf("%w: missing id", ErrInvalidEnvelope)
 	}
-	if envelope.Sender == "" {
+	if !validDraftString(envelope.Sender) {
 		return fmt.Errorf("%w: missing sender", ErrInvalidEnvelope)
 	}
-	if envelope.RecipientTag == "" {
+	if !validDraftString(envelope.RecipientTag) {
 		return fmt.Errorf("%w: missing recipient tag", ErrInvalidEnvelope)
 	}
 	if envelope.ExpiresAt <= envelope.CreatedAt {
 		return fmt.Errorf("%w: expiry must be after creation", ErrInvalidEnvelope)
 	}
-	if envelope.Nonce == "" {
+	if envelope.CreatedAt < 0 || envelope.ExpiresAt > MaxDraftTimestamp {
+		return fmt.Errorf("%w: timestamp out of range", ErrInvalidEnvelope)
+	}
+	if !validDraftString(envelope.Nonce) {
 		return fmt.Errorf("%w: missing nonce", ErrInvalidEnvelope)
 	}
-	if envelope.Payload == "" {
+	if !validDraftString(envelope.Payload) {
 		return fmt.Errorf("%w: missing payload", ErrInvalidEnvelope)
 	}
-	if envelope.Signature == "" {
+	if !validDraftString(envelope.Signature) {
 		return fmt.Errorf("%w: missing signature", ErrInvalidEnvelope)
 	}
 	return nil
@@ -129,4 +140,8 @@ func KnownEventType(eventType EventType) bool {
 	default:
 		return false
 	}
+}
+
+func validDraftString(value string) bool {
+	return len(value) > 0 && len(value) <= MaxDraftStringBytes
 }

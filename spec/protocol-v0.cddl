@@ -1,0 +1,35 @@
+; B.R.A.N.C.H. draft protocol-v0 CDDL scaffold.
+;
+; Status: draft scaffold for T-BRANCH-013 only.
+; This file does not publish immutable v0 wire semantics. Canonical
+; serialization, signature input bytes, and encryption payload format remain
+; unresolved in docs/OPEN_QUESTIONS.md and must be decided before a numbered
+; wire version is declared stable.
+
+branch-draft-envelope = {
+  protocol: "branch/0",
+  id: non-empty-text,
+  type: event-type,
+  sender: non-empty-text,
+  recipient_tag: non-empty-text,
+  created_at: draft-timestamp,
+  expires_at: draft-timestamp,
+  nonce: non-empty-text,
+  payload: non-empty-text,
+  signature: non-empty-text,
+}
+
+event-type =
+  "identity.announce" /
+  "rendezvous.offer" /
+  "rendezvous.answer" /
+  "route.update" /
+  "relay.announce" /
+  "capability.grant" /
+  "capability.revoke"
+
+non-empty-text = text .size (1..1024)
+
+; The draft JSON scaffold is intentionally bounded to the integer range shared
+; by Go int64 and TypeScript Number.safeInteger.
+draft-timestamp = 0..9007199254740991
