@@ -53,7 +53,8 @@ join without project approval.
 
 - Prototype Android background behaviour.
 - Separate wake-up signals from encrypted message delivery.
-- Add store-and-forward with strict quotas and expiry.
+- Explore sender-owned retry, always-online personal devices, or separate
+  user-chosen storage carriers without adding relay mailboxes.
 - Explore multi-device identity and recovery.
 - Test carrier changes between Wi-Fi and mobile networks.
 
@@ -65,4 +66,3 @@ assumed away.
 Groups, calls, large files, public channels, sophisticated anonymity, reputation,
 and incentive systems begin only after the two-party carrier-hopping path is
 proven.
-

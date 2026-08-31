@@ -1,6 +1,6 @@
 {
   "schema": "branch.testvectors/0",
-  "protocol": "branch/0",
+  "protocol": "branch/connectivity/0",
   "status": "draft",
   "published": false,
   "notes": [

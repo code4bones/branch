@@ -1,4 +1,4 @@
-export const protocolID = "branch/0" as const;
+export const protocolID = "branch/connectivity/0" as const;
 export const maxDraftEnvelopeBytes = 64 * 1024;
 export const maxDraftStringBytes = 1024;
 export const maxDraftTimestamp = Number.MAX_SAFE_INTEGER;

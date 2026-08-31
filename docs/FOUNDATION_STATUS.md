@@ -26,8 +26,8 @@ or decisions.
 
 ## Explicit Scaffold Limits
 
-- `branch/0` is still a draft identifier used by test fixtures, not a published
-  immutable wire version.
+- `branch/connectivity/0` is the accepted draft identifier used by test
+  fixtures, not a published immutable wire version.
 - Canonical serialization, signature input bytes, encryption payload format,
   algorithm choices, and relay frame format remain open.
 - Integration and Playwright critical-path gates are documented but not active
@@ -39,7 +39,6 @@ or decisions.
 
 ## Next Foundation Work
 
-- Resolve the canonical protocol identifier before publishing v0.
 - Add canonical and non-canonical encoding vectors after the encoding decision.
 - Add signature input and signature vectors after cryptographic constructions
   are selected.

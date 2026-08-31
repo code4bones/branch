@@ -27,7 +27,7 @@ Connectivity v0 is expected to define:
 
 - UI semantics;
 - persistent message history;
-- relay store-and-forward;
+- relay-side store-and-forward, mailbox, or offline delivery queues;
 - global presence directories;
 - monitoring, tracing, dashboard, or exporter protocols;
 - carrier-specific APIs;
@@ -53,4 +53,3 @@ Connectivity v0 is expected to define:
 - path migration state machine;
 - capability token format and revocation semantics;
 - exact protocol error code registry.
-

@@ -7,7 +7,7 @@
 ; wire version is declared stable.
 
 branch-draft-envelope = {
-  protocol: "branch/0",
+  protocol: "branch/connectivity/0",
   id: non-empty-text,
   type: event-type,
   sender: non-empty-text,

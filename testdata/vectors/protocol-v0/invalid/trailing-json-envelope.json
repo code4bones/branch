@@ -1,5 +1,5 @@
 {
-  "protocol": "branch/0",
+  "protocol": "branch/connectivity/0",
   "id": "evt_00000000000000000000000006",
   "type": "rendezvous.offer",
   "sender": "branch:identity-public-key:test-sender",
@@ -11,4 +11,3 @@
   "signature": "sender-signature-placeholder"
 }
 {}
-

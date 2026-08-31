@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	// ProtocolID is the draft signed-event protocol identifier used by the
-	// current shared fixtures.
-	ProtocolID = "branch/0"
+	// ProtocolID is the accepted draft signed-event protocol identifier used by
+	// the current shared fixtures.
+	ProtocolID = "branch/connectivity/0"
 
 	// MaxDraftEnvelopeBytes bounds local fixture parsing and future hostile
 	// input tests. It is not a negotiated relay frame limit.
