@@ -625,6 +625,170 @@ GitLab CI, Forgejo/Gitea actions, SourceHut builds, Buildkite, cron jobs, or a
 plain local script can all satisfy the profile when they preserve these
 semantics.
 
+### Ribbon Image carrier
+
+A Ribbon Image is a human-carried visual SearchCarrier payload, recorded in
+D-BRANCH-025. It lets an operator publish a current signed BootstrapBeacon
+inside ordinary artwork and manually move that image through visual platforms,
+screenshots, downloads, chat attachments, printed pages, or offline exchange.
+The visual carrier is a distribution path only. Authenticity is the decoded
+B.R.A.N.C.H. signed event envelope, never the image file, image hash, platform
+account, board, pin, caption, EXIF block, ancillary PNG chunk, or original
+uploaded bytes.
+
+The baseline journey is:
+
+1. an operator opens the local node administration UI;
+2. the operator selects a cover image and a visual profile;
+3. the node constructs a compact current public `bootstrap.beacon`, signs it
+   with the relay or advertised subject's delegated publication key, and wraps
+   the exact signed bytes in a visual frame;
+4. the generator renders the carrier image and immediately runs the local
+   decoder against the generated output;
+5. the operator manually uploads or shares the resulting image using their own
+   platform account, browser session, device, or offline path;
+6. another user imports a downloaded, shared, screenshotted, or photographed
+   copy into a B.R.A.N.C.H. client;
+7. the client extracts the visual frame, decodes exact candidate bytes, validates
+   the signed envelope and beacon freshness, probes advertised relay liveness,
+   and only then adds route material to local user-owned state.
+
+No visual-carrier profile may require automated publishing, a Pinterest API
+credential, a project-operated account, a central image server, a public
+B.R.A.N.C.H. board, or a relay database. Platform captions, alt text, links,
+boards, pins, comments, reposts, and account names are untrusted observation
+metadata.
+
+#### Visual frame
+
+The decoded visual payload is a framed byte string:
+
+```text
+"BRIMG0" || profile_id || frame_flags || payload_len || payload ||
+crc32c(payload) || visual_ecc
+```
+
+`payload` is either an exact `BRANCH0.` text wrapper or exact deterministic CBOR
+signed-event bytes with an explicit payload-kind bit. The receiver must preserve
+the decoded payload bytes exactly. It may retry image preprocessing and symbol
+decoding, but it must not normalize, repair, reserialize, or guess protocol
+bytes after visual decoding. CRC32C is a corruption filter only. It is not
+authentication and it never replaces Ed25519 signature verification.
+
+`visual_ecc` is profile-specific. The MVP profiles use a standard QR Code or
+Data Matrix symbol with its own Reed-Solomon error correction. A future
+branch-aware profile may add an outer Reed-Solomon or BCH code plus interleaving
+around the frame before rendering. Outer ECC is allowed only if it produces a
+single exact candidate payload for signature validation or a bounded small set
+of candidates; unbounded search is invalid.
+
+#### Profiles
+
+`ribbon-seal/0` is the robust visible or semi-visible profile. It renders a
+standards-compatible QR Code or Data Matrix symbol with high error correction,
+preserved finder/timing or equivalent synchronization structures, a quiet zone,
+and enough luminance contrast to survive common social-media recompression. The
+symbol may be styled as Blue Ribbon artwork, but styling must not move module
+centers, erase synchronization marks, or rely only on hue. JPEG chroma
+subsampling and palette conversion can erase chroma-only data.
+
+`ribbon-tint/0` is the branch-aware profile. It keeps the same module grid and
+error-correction assumptions but embeds module values as blue-on-blue
+luminance/gamma modulation over arbitrary artwork. The B.R.A.N.C.H. decoder
+performs local background estimation, channel or luminance extraction, contrast
+stretching, adaptive thresholding, and perspective normalization before handing a
+clean module bitmap to an ordinary barcode decoder. Generic-camera readability
+is not a requirement for this profile.
+
+`ribbon-watermark/0` is experimental and optional. It may use mid-frequency
+luminance modulation or another transform-resistant mark to help B.R.A.N.C.H.
+clients find candidate artwork, but it is not a standalone authority. A
+watermark that cannot recover exact signed bytes is a discovery hint only.
+
+#### Payload capacity and size policy
+
+The visual beacon must be compact enough to fit comfortably inside high-error
+correction symbols. The first generator should target a public relay or mirror
+BootstrapBeacon payload of at most 512 bytes before visual framing and must
+reject payloads above 768 bytes unless a profile-specific corpus proves reliable
+decoding. Larger multi-subject bundles belong in repository drop-ins or ordinary
+SearchCarrier records, not the visual MVP.
+
+Minimum reliable image size is a measured property, not a protocol constant. The
+initial acceptance target for `ribbon-seal/0` is reliable decode from a
+1000 x 1500 px sRGB image after JPEG conversion and resizing, with the carrier
+symbol occupying a square region of at least 640 x 640 px and with the smallest
+module rendered at 6 px or larger in the source image. A generated image must
+declare its profile, source symbol version, module count, module pitch, quiet
+zone, payload length, and ECC level in local diagnostic metadata. That metadata
+is not signed and is not required for decoding.
+
+The measured minimum accepted by v0 is the smallest source and post-transform
+carrier region that passes the repeatable corpus below with the accepted
+payload-size class. Until generator/decoder tests produce that measurement, no
+implementation may claim Ribbon Image v0 conformance.
+
+#### Transformation corpus
+
+The repeatable local corpus starts from generated PNG sRGB fixtures and records
+the exact decoded payload or failure reason for each transform:
+
+- JPEG recompression at quality 95, 85, 75, 65, and 50;
+- WebP recompression at quality 95, 85, 75, 65, and 50;
+- resizing to 1000, 800, 640, 480, and 320 px on the carrier-region short side;
+- platform-style thumbnailing with center crop and fit-inside modes;
+- crop removing 0%, 5%, 10%, and 15% of each edge independently;
+- rotation by 90, 180, and 270 degrees, plus skewed deskew input;
+- brightness, contrast, gamma, saturation, and white-balance shifts;
+- screenshot capture at common desktop and mobile display scales;
+- camera capture with perspective warp, mild blur, sensor noise, and glare;
+- at least one manually executed Pinterest upload/download round trip;
+- negative controls with no visual carrier and with a mutated decoded payload.
+
+As of 2026-08-31, Pinterest's public help says uploaded images may be converted
+to standard 8-bit RGB JPEG for Pins and ads, recommends sRGB PNG upload to
+reduce quality loss, and recommends 2:3 static images around 1000 x 1500 px with
+20 MB desktop upload limit. These are platform observations for the corpus, not
+B.R.A.N.C.H. protocol requirements, and they must be rechecked before declaring
+platform-specific conformance:
+
+- https://help.pinterest.com/en/business/article/pinterest-product-specs
+- https://help.pinterest.com/en/article/review-pin-specs
+
+The Pinterest leg is manual by design. The operator uses their own account and
+browser session. The test records only the before/after image dimensions,
+content type, transform class, decode result, and signature validation result.
+It must not record platform cookies, account identifiers, private board names,
+access tokens, or unrelated image metadata.
+
+#### Verification and failure semantics
+
+Visual decoding returns one of:
+
+- `no_carrier_detected`;
+- `visual_sync_failed`;
+- `visual_ecc_failed`;
+- `visual_crc_failed`;
+- `payload_too_large`;
+- `payload_kind_unsupported`;
+- `payload_not_branch_wrapper`;
+- `signed_event_invalid`;
+- `beacon_expired`;
+- `beacon_signature_invalid`;
+- `beacon_accepted`.
+
+Only `beacon_accepted` can affect discovery state. Any image may be hostile. A
+decoder must bound image dimensions, pixel count, memory, transform attempts,
+candidate count, and decode time before processing. It must strip or ignore
+metadata by default and never log image payload bytes, signed event bytes,
+capability tokens, private endpoints, identity exports, or account material.
+
+If several candidate visual payloads decode from one image, each candidate is
+validated independently by exact bytes and signature. Conflicting valid beacons
+are merged using the normal issuer, subject, sequence, expiry, and revocation
+rules. An invalid visual carrier is a failed SearchCarrier observation, not a
+protocol error against a peer and not evidence of relay misbehaviour.
+
 ### Bootstrap fixtures
 
 Shared Go and TypeScript fixtures must cover:
@@ -653,6 +817,10 @@ Shared Go and TypeScript fixtures must cover:
   `.branch/records.br0`, and `.branch/manifest.json`;
 - workflow refresh cases that update only `.branch` bytes, skip no-op commits,
   and avoid recursive generated commits.
+- visual carrier fixtures for `ribbon-seal/0` and `ribbon-tint/0`, including
+  exact decoded payload bytes, visual corruption failures, no-carrier negatives,
+  transformed images from the corpus above, and signature rejection after a
+  payload mutation.
 
 ## Board adapter contract
 

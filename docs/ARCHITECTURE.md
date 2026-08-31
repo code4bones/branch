@@ -56,6 +56,15 @@ signed bootstrap records. This is a voluntary SearchCarrier publication profile:
 the repository helps discovery, but repository ownership, CI status, badges,
 topics, and mirrors never replace issuer signatures or relay liveness probes.
 
+Ribbon Images are visual SearchCarrier payloads for human-mediated discovery.
+An operator generates an image containing a compact signed bootstrap beacon,
+checks that the local decoder can recover and verify it, then manually shares
+the image through any visual platform or offline path. The image carrier never
+depends on EXIF, ancillary image chunks, original uploaded bytes, platform
+credentials, automated publishing, image hashes, or Pinterest-specific identity.
+The decoded signed beacon is the authority; the artwork and hosting platform
+are distribution evidence only.
+
 First contact uses this fabric only as a rendezvous control plane. A sender
 discovers a recipient's signed bootstrap material, selects one or more public
 boards allowed by both sides, publishes a sealed signed offer, and accepts a
