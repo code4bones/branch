@@ -344,6 +344,113 @@ Relay search-proxy caches, when used for browser CORS boundaries, are bounded,
 memory-only, short-lived, and untrusted. Proxy output is validated by the
 client exactly like direct carrier output.
 
+### Ribbon Bearer gossip
+
+A Ribbon Bearer is any client, node, repository, mirror, or other participant
+that voluntarily carries valid signed bootstrap records. It is a distributor,
+not an authority. Carrying the Ribbon never requires a project-operated account,
+server, registry, board, or relay.
+
+Source records and carrier publications are separate objects:
+
+- the source record is the exact signed event bytes plus the deterministic public
+  payload covered by that signature;
+- the carrier publication is where those bytes were observed, such as a
+  repository file, package metadata field, mirror bundle, board record, or
+  peer-gossip response;
+- carrier URL, carrier account, publication timestamp, search rank, snippet,
+  wrapper formatting, mirror hostname, and retrieval path are untrusted
+  observation metadata;
+- a bearer republishes only exact signed bytes or an exact bundle of signed
+  records. It must not repair, reserialize, refresh, rewrap with changed signed
+  bytes, or merge source records into a new authority claim.
+
+For each source record family, freshness is scoped by
+`(record_type, subject, issuer)`:
+
+- `sequence` is a monotonic unsigned integer chosen by the issuer for that
+  subject and record type;
+- `issued_at` is the signed source-record creation time and must not be later
+  than the outer event `created_at`;
+- `expires_at` is the signed freshness limit and must match the outer event
+  expiry when both are present;
+- `beacon_id` is the signed content identity for a BootstrapBeacon payload and
+  is used to detect exact republication across carriers;
+- `previous_beacon_id` links the issuer's previous current record when known;
+- `revokes` may address exact beacon IDs, inclusive sequence ranges, or both.
+
+Expiry and republication cadence are client and operator policy defaults, not a
+way to reinterpret the signed expiry. Whatever defaults v0 chooses, a client may
+use stricter freshness policy and may mark otherwise valid records as degraded
+when local clock confidence is low. Republishing a record never changes its
+signed `expires_at`; only a new valid issuer sequence can refresh freshness.
+
+Supersession is deterministic after validation. For the same
+`(record_type, subject, issuer)`, the highest valid non-revoked sequence that is
+not expired is current. A lower sequence is historical evidence only. A higher
+sequence from an unauthorized issuer does not supersede a lower sequence from an
+authorized issuer. A revocation is valid only when signed by the issuer
+authorized for that subject and record family; carrier deletion, package
+replacement, repository force-push, or mirror disappearance is not revocation.
+
+Bundles are distribution aids. A bundle contains exact signed records and may
+include unsigned observations such as carrier names, first-seen times, or failure
+domain hints. A bundle signature can say "this curator saw these bytes", but it
+does not replace source signatures, extend expiry, raise sequence, revoke
+records, prove liveness, or authorize a mirror. Multi-subject distribution is
+done by bundling separate signed subject records, not by making one
+BootstrapBeacon authoritative for unrelated subjects.
+
+Mirrors may serve static bundles, repository drop-ins, package metadata, or other
+carrier-readable copies. A mirror must not claim that rehosting a record refreshes
+it. If all contained source records expire, the mirror can still present them as
+historical material, but clients must not treat them as current bootstrap state.
+
+Authenticated peers may exchange bootstrap freshness after session establishment
+using bounded HAVE/WANT gossip:
+
+- `HAVE` carries summaries only: protocol, record type, subject, issuer,
+  sequence, beacon ID, expiry, and the sender's observed failure-domain count;
+- `WANT` asks for exact signed bytes by beacon ID, by subject/issuer current
+  sequence, or by a bounded "newer than sequence" request;
+- responses carry exact signed source bytes or exact bundles and are validated
+  identically to SearchCarrier results;
+- gossip messages have explicit byte, record-count, and rate limits and must not
+  include payload plaintext, private endpoints, capability tokens, identity
+  exports, contact names, or user messages.
+
+Client-to-client gossip helps already connected peers repair discovery state. It
+is not a global directory and it does not help a fresh client unless the user
+already has a trusted peer, local cache, carried bundle, or search path.
+
+SearchCarrier republication is opt-in. A client or node may republish valid
+records to configured carriers only when local policy allows it and any required
+carrier credential belongs to the operator or user. It must use bounded rate
+limits, avoid recursive churn, and never silently publish through a user's
+personal account. Republishing an expired record as current is invalid; only the
+subject or authorized issuer can create a new signed sequence with a new expiry.
+
+Healthy public bootstrap targets at least three independent carrier failure
+domains. The same underlying platform, even through several mirrors or APIs,
+counts as one failure domain. Bearers should prefer carriers that add failure
+domain diversity rather than many copies on one platform. When fewer than three
+independent current records remain, clients surface degraded bootstrap and may
+continue only under explicit local policy.
+
+Relay liveness is probed separately from signed freshness. A valid
+BootstrapBeacon can advertise a relay descriptor, but the client must perform a
+bounded active liveness probe before using that relay for rendezvous or transport.
+Probe results are local, short-lived observations and never extend beacon expiry,
+authorize the relay, or create durable presence.
+
+When no fresh publisher remains, expired signed records are retained only as
+historical evidence. Existing contacts and already authenticated sessions may
+continue using user-owned local state and freshly authenticated routes, but a
+fresh bootstrap client must not treat stale public records as current network
+entry material. Recovery then requires a new signed sequence from the subject or
+authorized issuer, an explicit user-carried bundle that still contains fresh
+records, or another user-chosen trust path.
+
 ### Bootstrap fixtures
 
 Shared Go and TypeScript fixtures must cover:
@@ -362,7 +469,12 @@ Shared Go and TypeScript fixtures must cover:
 - poisoned search results with invalid signatures;
 - relay announced by a valid beacon but rejected by active liveness probe;
 - degraded discovery when fewer than three independent failure domains return
-  valid beacons.
+  valid beacons;
+- peer HAVE/WANT summaries that request exact signed source bytes by beacon ID or
+  sequence;
+- curator bundles that cannot extend expiry or override source signatures;
+- mirror republication of expired records treated as historical, not current;
+- opt-in SearchCarrier republication that preserves exact signed bytes.
 
 ## Board adapter contract
 

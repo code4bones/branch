@@ -111,7 +111,9 @@ canonical conversation state.
 ## Control plane and data plane
 
 Public search carriers, rendezvous events, signed BootstrapBeacons, and
-HAVE/WANT gossip form the control plane.
+Ribbon Bearer HAVE/WANT gossip form the control plane. Gossip carries exact
+signed source records or bounded summaries after authentication; it is not a
+directory, mailbox, relay, or new authority.
 
 Authenticated P2P routes and live relay paths form the data plane. Once a
 session is established, its original discovery carrier is not required for
