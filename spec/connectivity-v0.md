@@ -1,7 +1,6 @@
 # B.R.A.N.C.H. Connectivity v0
 
-Status: scaffold draft for T-BRANCH-013. This file is not a published immutable
-wire version.
+Status: scaffold draft. This file is not a published immutable wire version.
 
 The Connectivity Protocol is the interoperability kernel described by
 D-BRANCH-014. It must remain smaller than the product and independent of the
@@ -44,12 +43,32 @@ Connectivity v0 is expected to define:
 - Observability is not a required wire field and disabling telemetry does not
   change connectivity behaviour.
 
+## Draft Profile Artifact
+
+The current development profile artifact is:
+
+```text
+spec/connectivity-profile-v0.draft.json
+```
+
+It is exact-byte UTF-8 JSON for scaffold testing. Published v0 still requires a
+deterministic CBOR profile artifact and accepted vector manifest. The current
+development multihash is:
+
+```text
+uEiAsgRWhrZFSEDiQjTDP1jrQ4elBW8uK0Q_Cg1_rKK06qw
+```
+
+The current shared vector manifest is
+`testdata/vectors/protocol-v0/manifest.json`. Its transcript bundle is
+development conformance input for Go and TypeScript tests; it does not complete
+the independent two-client and two-relay proof required for published v0.
+
 ## Open Decisions Before Publication
 
-- canonical encoding and signature input bytes;
 - identity and session cryptographic constructions;
-- direct transport baseline;
-- relay frame format and maximum sizes;
-- path migration state machine;
+- direct transport mandatory-to-implement policy;
+- relay frame byte encoding and key schedule;
+- path migration retry limits, timers, and fallback policy defaults;
 - capability token format and revocation semantics;
-- exact protocol error code registry.
+- final protocol error registry included in the published profile.

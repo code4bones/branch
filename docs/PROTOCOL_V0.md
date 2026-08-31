@@ -97,6 +97,23 @@ artifact and vector manifest are generated. Draft implementations may exchange a
 development profile hash for testing, but they must not claim published v0
 conformance until the accepted profile hash and vector set exist.
 
+The current development profile artifact is
+`spec/connectivity-profile-v0.draft.json`. It is exact-byte UTF-8 JSON for
+scaffold testing, not the final published deterministic CBOR profile. Its
+current development multihash is:
+
+```text
+uEiAsgRWhrZFSEDiQjTDP1jrQ4elBW8uK0Q_Cg1_rKK06qw
+```
+
+The current shared development vector manifest is
+`testdata/vectors/protocol-v0/manifest.json`. It links envelope fixtures to the
+profile artifact and to `conformance-transcripts.json`, which covers draft
+negotiation, relay attachment rejection, delivery deduplication during path
+overlap, path migration, and relay restart with no restored user traffic.
+Independent two-client and two-relay conformance is explicitly marked
+`not-yet-demonstrated` until separate implementations run the same manifest.
+
 ### Identifier and algorithm registries
 
 Identifiers are case-sensitive ASCII strings. A published identifier is

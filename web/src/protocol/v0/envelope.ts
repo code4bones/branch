@@ -5,6 +5,7 @@ export const maxDraftTimestamp = Number.MAX_SAFE_INTEGER;
 
 const eventTypes = [
   "identity.announce",
+  "bootstrap.beacon",
   "rendezvous.offer",
   "rendezvous.answer",
   "route.update",
@@ -14,17 +15,24 @@ const eventTypes = [
 ] as const;
 
 export type EventType = (typeof eventTypes)[number];
+export type PayloadMode = "public" | "sealed";
+
+export interface Sender {
+  readonly key_alg: "ed25519";
+  readonly public_key: string;
+}
 
 export interface DraftEnvelope {
   readonly protocol: typeof protocolID;
-  readonly id: string;
+  readonly event_id: string;
   readonly type: EventType;
-  readonly sender: string;
-  readonly recipient_tag: string;
+  readonly sender: Sender;
+  readonly recipient_tag: string | undefined;
   readonly created_at: number;
   readonly expires_at: number;
-  readonly nonce: string;
+  readonly payload_mode: PayloadMode;
   readonly payload: string;
+  readonly signature_alg: "ed25519";
   readonly signature: string;
 }
 
@@ -59,32 +67,40 @@ export function validateDraftEnvelope(value: unknown): DraftEnvelope {
   }
   rejectUnknownKeys(value, [
     "protocol",
-    "id",
+    "event_id",
     "type",
     "sender",
     "recipient_tag",
     "created_at",
     "expires_at",
-    "nonce",
+    "payload_mode",
     "payload",
+    "signature_alg",
     "signature"
   ]);
 
   const envelope = {
     protocol: readLiteral(value, "protocol", protocolID),
-    id: readString(value, "id"),
+    event_id: readBase64URLBytes(value, "event_id", 32),
     type: readEventType(value, "type"),
-    sender: readString(value, "sender"),
-    recipient_tag: readString(value, "recipient_tag"),
+    sender: readSender(value, "sender"),
+    recipient_tag: readOptionalRecipientTag(value, "recipient_tag"),
     created_at: readInteger(value, "created_at"),
     expires_at: readInteger(value, "expires_at"),
-    nonce: readString(value, "nonce"),
-    payload: readString(value, "payload"),
-    signature: readString(value, "signature")
+    payload_mode: readPayloadMode(value, "payload_mode"),
+    payload: readBase64URLString(value, "payload"),
+    signature_alg: readLiteral(value, "signature_alg", "ed25519"),
+    signature: readBase64URLBytes(value, "signature", 64)
   } satisfies DraftEnvelope;
 
   if (envelope.expires_at <= envelope.created_at) {
     throw new ProtocolError("expiry must be after creation");
+  }
+  if (requiresRecipientTag(envelope.type) && envelope.recipient_tag === undefined) {
+    throw new ProtocolError("missing recipient_tag");
+  }
+  if (!validPayloadMode(envelope.type, envelope.payload_mode)) {
+    throw new ProtocolError("invalid payload_mode");
   }
 
   return envelope;
@@ -127,6 +143,54 @@ function readString(record: Record<string, unknown>, key: string): string {
   return value;
 }
 
+function readSender(record: Record<string, unknown>, key: string): Sender {
+  const value = record[key];
+  if (!isRecord(value)) {
+    throw new ProtocolError(`missing ${key}`);
+  }
+  rejectUnknownKeys(value, ["key_alg", "public_key"]);
+  return {
+    key_alg: readLiteral(value, "key_alg", "ed25519"),
+    public_key: readBase64URLBytes(value, "public_key", 32)
+  };
+}
+
+function readOptionalRecipientTag(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  const text = readString(record, key);
+  if (!validBase64URLSize(text, 16) && !validBase64URLSize(text, 32)) {
+    throw new ProtocolError(`invalid ${key}`);
+  }
+  return text;
+}
+
+function readPayloadMode(record: Record<string, unknown>, key: string): PayloadMode {
+  const value = readString(record, key);
+  if (value !== "public" && value !== "sealed") {
+    throw new ProtocolError(`invalid ${key}`);
+  }
+  return value;
+}
+
+function readBase64URLString(record: Record<string, unknown>, key: string): string {
+  const value = readString(record, key);
+  if (!validBase64URL(value)) {
+    throw new ProtocolError(`invalid ${key}`);
+  }
+  return value;
+}
+
+function readBase64URLBytes(record: Record<string, unknown>, key: string, size: number): string {
+  const value = readString(record, key);
+  if (!validBase64URLSize(value, size)) {
+    throw new ProtocolError(`invalid ${key}`);
+  }
+  return value;
+}
+
 function readInteger(record: Record<string, unknown>, key: string): number {
   const value = record[key];
   if (
@@ -146,4 +210,36 @@ function readEventType(record: Record<string, unknown>, key: string): EventType 
     throw new ProtocolError("unsupported event type");
   }
   return value;
+}
+
+function requiresRecipientTag(eventType: EventType): boolean {
+  return (
+    eventType === "rendezvous.offer" ||
+    eventType === "rendezvous.answer" ||
+    eventType === "route.update" ||
+    eventType === "capability.grant" ||
+    eventType === "capability.revoke"
+  );
+}
+
+function validPayloadMode(eventType: EventType, mode: PayloadMode): boolean {
+  if (eventType === "bootstrap.beacon" || eventType === "relay.announce") {
+    return mode === "public";
+  }
+  if (eventType === "identity.announce") {
+    return true;
+  }
+  return mode === "sealed";
+}
+
+function validBase64URL(value: string): boolean {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+    return false;
+  }
+  return value.length % 4 !== 1;
+}
+
+function validBase64URLSize(value: string, size: number): boolean {
+  const encodedLength = Math.ceil((size * 8) / 6);
+  return validBase64URL(value) && value.length === encodedLength;
 }

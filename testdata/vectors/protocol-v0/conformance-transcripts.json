@@ -1,0 +1,90 @@
+{
+  "schema": "branch.conformance.transcripts/0",
+  "protocol": "branch/connectivity/0",
+  "profile_multihash": "uEiAsgRWhrZFSEDiQjTDP1jrQ4elBW8uK0Q_Cg1_rKK06qw",
+  "cases": [
+    {
+      "name": "negotiate-known-v0-profile",
+      "kind": "negotiation_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "steps": [
+        "alice advertises v0 with accepted profile hash and optional v1",
+        "bob ignores unknown v1, verifies v0 profile hash, and selects v0",
+        "both peers bind advertised alternatives and final selection into the session transcript"
+      ]
+    },
+    {
+      "name": "reject-profile-hash-mismatch",
+      "kind": "negotiation_transcript",
+      "expect": "reject",
+      "selected_error": "profile_hash_mismatch",
+      "steps": [
+        "peer advertises branch/connectivity/0 with an unaccepted profile multihash",
+        "receiver rejects before accepting sealed payloads, route candidates, relay capabilities, or frames"
+      ]
+    },
+    {
+      "name": "reject-required-capability",
+      "kind": "negotiation_transcript",
+      "expect": "reject",
+      "selected_error": "required_capability_missing",
+      "steps": [
+        "peer advertises an unknown required capability",
+        "receiver ignores optional unknown capabilities but rejects unknown required capabilities"
+      ]
+    },
+    {
+      "name": "relay-attach-missing-capability",
+      "kind": "relay_attachment_transcript",
+      "expect": "reject",
+      "selected_error": "capability_required",
+      "steps": [
+        "client opens a relay WSS attachment with accepted version and profile",
+        "client omits receiver-issued live forwarding capability",
+        "relay rejects without creating durable route, mailbox, message, or presence state"
+      ]
+    },
+    {
+      "name": "delivery-dedup-overlap",
+      "kind": "delivery_dedup_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "steps": [
+        "session has old relay path and new direct path in overlap",
+        "sender retransmits one encrypted delivery with the same delivery_id on both paths",
+        "receiver accepts the first authenticated frame and treats the second as an idempotent duplicate"
+      ]
+    },
+    {
+      "name": "path-migration-active-to-retire",
+      "kind": "path_migration_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "steps": [
+        "active path carries current path_epoch",
+        "peer proposes higher epoch and enters probing",
+        "old and new paths overlap while delivery_id deduplication remains active",
+        "both peers commit the new epoch",
+        "old path is retired without changing peer identity or session state"
+      ]
+    },
+    {
+      "name": "relay-restart-restores-no-user-traffic",
+      "kind": "relay_restart_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "restores_user_traffic_after_restart": false,
+      "steps": [
+        "relay forwards opaque encrypted frames for live attached peers",
+        "relay restarts",
+        "relay keeps only node identity, operator configuration, and transport material",
+        "relay restores no user messages, files, delivery queues, session routes, contact state, or canonical presence"
+      ]
+    }
+  ],
+  "independent_implementation_requirement": {
+    "status": "not-yet-demonstrated",
+    "reason": "This fixture bundle is now executable by the reference Go and TypeScript protocol tests. Published v0 conformance still requires a second client implementation and a second relay-facing implementation to run the same manifest."
+  }
+}

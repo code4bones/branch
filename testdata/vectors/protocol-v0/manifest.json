@@ -4,9 +4,26 @@
   "status": "draft",
   "published": false,
   "notes": [
-    "These fixtures validate draft envelope structure only.",
-    "They do not define canonical serialization, signature bytes, encryption, or final wire semantics."
+    "These fixtures validate draft envelope and profile structure only.",
+    "They do not define canonical signature bytes, encryption, session keys, or final published wire semantics."
   ],
+  "profile": {
+    "kind": "draft_profile_json",
+    "fixture": "../../../spec/connectivity-profile-v0.draft.json",
+    "hash_algorithm": "multihash.sha2-256",
+    "development_multihash": "uEiAsgRWhrZFSEDiQjTDP1jrQ4elBW8uK0Q_Cg1_rKK06qw"
+  },
+  "transcripts": {
+    "fixture": "conformance-transcripts.json",
+    "required_kinds": [
+      "negotiation_transcript",
+      "relay_attachment_transcript",
+      "delivery_dedup_transcript",
+      "path_migration_transcript",
+      "relay_restart_transcript"
+    ],
+    "independent_implementation_status": "not-yet-demonstrated"
+  },
   "cases": [
     {
       "name": "valid-rendezvous-offer-envelope",

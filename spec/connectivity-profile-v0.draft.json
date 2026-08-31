@@ -1,0 +1,107 @@
+{
+  "schema": "branch.connectivity.profile/0",
+  "status": "draft",
+  "published": false,
+  "decision": "D-BRANCH-026",
+  "wire_version": 0,
+  "protocol": "branch/connectivity/0",
+  "draft_profile_encoding": "json.exact.utf8",
+  "published_profile_encoding": "cbor.det.rfc8949",
+  "profile_hash_algorithm": "multihash.sha2-256",
+  "envelope": {
+    "encoding": "cbor.det.rfc8949",
+    "text_wrapper": "BRANCH0.",
+    "signature_input_domain": "BRANCH signed event v0\n",
+    "max_encoded_bytes": 65536,
+    "max_payload_bytes": 49152
+  },
+  "algorithms": {
+    "identity_key": ["ed25519"],
+    "signature": ["ed25519"],
+    "payload_encryption": [],
+    "session": []
+  },
+  "events": [
+    "identity.announce",
+    "bootstrap.beacon",
+    "rendezvous.offer",
+    "rendezvous.answer",
+    "route.update",
+    "relay.announce",
+    "capability.grant",
+    "capability.revoke"
+  ],
+  "payload_modes": ["public", "sealed"],
+  "capabilities": [
+    "search.direct-browser/0",
+    "board.publish/0",
+    "board.observe/0",
+    "board.search/0",
+    "relay.forward.live/0",
+    "route.direct.webrtc/0",
+    "route.relay.wss/0",
+    "route.migrate/0",
+    "visual.ribbon-seal/0"
+  ],
+  "errors": [
+    "unsupported_version",
+    "unsupported_profile",
+    "profile_hash_mismatch",
+    "required_capability_missing",
+    "required_extension_missing",
+    "malformed_envelope",
+    "signature_invalid",
+    "payload_decrypt_failed",
+    "frame_too_large",
+    "frame_malformed",
+    "frame_replayed",
+    "authentication_failed",
+    "capability_required",
+    "capability_expired",
+    "capability_revoked",
+    "quota_exceeded",
+    "route_unavailable",
+    "migration_rejected",
+    "rate_limited",
+    "timeout",
+    "internal_unavailable"
+  ],
+  "session_frame_contract": {
+    "required_fields": [
+      "session_id",
+      "path_epoch",
+      "stream_id",
+      "delivery_id",
+      "frame_type",
+      "flags",
+      "ciphertext_length"
+    ],
+    "dedupe_key": ["session_id", "sender", "stream_id", "delivery_id"],
+    "relay_payload_visibility": "opaque"
+  },
+  "path_migration_states": ["active", "probing", "overlap", "commit", "retire"],
+  "relay_boundary": {
+    "baseline": "live-transit-only",
+    "durable_user_accounts": false,
+    "durable_messages": false,
+    "durable_files": false,
+    "durable_delivery_queues": false,
+    "restores_user_traffic_after_restart": false
+  },
+  "required_vector_kinds": [
+    "draft_envelope_json",
+    "draft_profile_json",
+    "negotiation_transcript",
+    "relay_attachment_transcript",
+    "delivery_dedup_transcript",
+    "path_migration_transcript",
+    "relay_restart_transcript"
+  ],
+  "publication_blockers": [
+    "accepted payload encryption suite",
+    "accepted authenticated data-plane session suite",
+    "deterministic CBOR profile artifact",
+    "canonical signed envelope vectors",
+    "two client implementations and two relay implementations running the same manifest"
+  ]
+}

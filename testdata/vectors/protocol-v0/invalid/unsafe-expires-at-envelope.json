@@ -1,12 +1,16 @@
 {
   "protocol": "branch/connectivity/0",
-  "id": "evt_00000000000000000000000008",
+  "event_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   "type": "rendezvous.offer",
-  "sender": "branch:identity-public-key:test-sender",
-  "recipient_tag": "recipient-tag-test-008",
+  "sender": {
+    "key_alg": "ed25519",
+    "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  },
+  "recipient_tag": "AAAAAAAAAAAAAAAAAAAAAA",
   "created_at": 1700000000,
   "expires_at": 9007199254740992,
-  "nonce": "nonce-test-008",
-  "payload": "recipient-encrypted-bytes-placeholder",
-  "signature": "sender-signature-placeholder"
+  "payload_mode": "sealed",
+  "payload": "cGF5bG9hZA",
+  "signature_alg": "ed25519",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 }

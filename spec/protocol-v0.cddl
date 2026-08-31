@@ -1,26 +1,34 @@
 ; B.R.A.N.C.H. draft protocol-v0 CDDL scaffold.
 ;
 ; Status: draft scaffold for T-BRANCH-013 only.
-; This file does not publish immutable v0 wire semantics. Canonical
-; serialization, signature input bytes, and encryption payload format remain
-; unresolved in docs/OPEN_QUESTIONS.md and must be decided before a numbered
-; wire version is declared stable.
+; This file does not publish immutable v0 wire semantics. The signed event
+; envelope is specified as deterministic CBOR in docs/PROTOCOL_V0.md; the JSON
+; shape below mirrors diagnostic fixtures. Payload encryption, session keys, and
+; exact frame bytes remain unresolved in docs/OPEN_QUESTIONS.md and must be
+; decided before a numbered wire version is declared stable.
 
 branch-draft-envelope = {
   protocol: "branch/connectivity/0",
-  id: non-empty-text,
+  event_id: b64url-32,
   type: event-type,
-  sender: non-empty-text,
-  recipient_tag: non-empty-text,
+  sender: sender,
+  ? recipient_tag: b64url-recipient-tag,
   created_at: draft-timestamp,
   expires_at: draft-timestamp,
-  nonce: non-empty-text,
-  payload: non-empty-text,
-  signature: non-empty-text,
+  payload_mode: payload-mode,
+  payload: b64url-text,
+  signature_alg: "ed25519",
+  signature: b64url-64,
+}
+
+sender = {
+  key_alg: "ed25519",
+  public_key: b64url-32,
 }
 
 event-type =
   "identity.announce" /
+  "bootstrap.beacon" /
   "rendezvous.offer" /
   "rendezvous.answer" /
   "route.update" /
@@ -28,8 +36,38 @@ event-type =
   "capability.grant" /
   "capability.revoke"
 
+payload-mode = "public" / "sealed"
+
 non-empty-text = text .size (1..1024)
+b64url-text = non-empty-text
+b64url-16 = text .size 22
+b64url-32 = text .size 43
+b64url-64 = text .size 86
+b64url-recipient-tag = b64url-16 / b64url-32
 
 ; The draft JSON scaffold is intentionally bounded to the integer range shared
 ; by Go int64 and TypeScript Number.safeInteger.
 draft-timestamp = 0..9007199254740991
+
+branch-draft-profile = {
+  schema: "branch.connectivity.profile/0",
+  status: "draft",
+  published: false,
+  decision: "D-BRANCH-026",
+  wire_version: 0,
+  protocol: "branch/connectivity/0",
+  draft_profile_encoding: "json.exact.utf8",
+  published_profile_encoding: "cbor.det.rfc8949",
+  profile_hash_algorithm: "multihash.sha2-256",
+  envelope: {* text => any},
+  algorithms: {* text => [* text]},
+  events: [* event-type],
+  payload_modes: [* payload-mode],
+  capabilities: [* text],
+  errors: [* text],
+  session_frame_contract: {* text => any},
+  path_migration_states: [* text],
+  relay_boundary: {* text => any},
+  required_vector_kinds: [* text],
+  publication_blockers: [* text],
+}
