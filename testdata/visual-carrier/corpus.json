@@ -1,0 +1,45 @@
+{
+  "schema": "branch.visual-carrier.corpus/0",
+  "profile": "ribbon-seal/0",
+  "status": "draft",
+  "generated_by": "web/src/visual/ribbon-image.ts",
+  "payload_limit_bytes": 768,
+  "current_automated_cases": [
+    {
+      "name": "canonical-generated-qr",
+      "transform": "none",
+      "expect": "beacon_accepted"
+    },
+    {
+      "name": "blank-image-negative",
+      "transform": "no_carrier",
+      "expect": "no_carrier_detected"
+    },
+    {
+      "name": "mutated-payload-crc",
+      "transform": "payload_byte_flip_before_qr_encoding",
+      "expect": "visual_crc_failed"
+    },
+    {
+      "name": "non-branch-wrapper",
+      "transform": "valid_frame_wrong_payload_kind_content",
+      "expect": "payload_not_branch_wrapper"
+    },
+    {
+      "name": "oversized-payload",
+      "transform": "payload_above_profile_limit",
+      "expect": "payload_too_large"
+    }
+  ],
+  "manual_or_future_cases": [
+    "jpeg-recompression-q95-q85-q75-q65-q50",
+    "webp-recompression-q95-q85-q75-q65-q50",
+    "resize-thumbnail-crop-rotation",
+    "brightness-contrast-gamma-saturation-white-balance",
+    "screenshot-desktop-mobile",
+    "camera-perspective-blur-noise-glare",
+    "manual-pinterest-upload-download-round-trip"
+  ],
+  "manual_round_trip_status": "not-yet-recorded",
+  "privacy_boundary": "Record dimensions, content type, transform class, decode status, and signature status only; never record platform cookies, account identifiers, tokens, private board names, payload plaintext, or unrelated metadata."
+}

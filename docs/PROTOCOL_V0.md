@@ -986,6 +986,24 @@ The decoded visual payload is a framed byte string:
 crc32c(payload) || visual_ecc
 ```
 
+For the `ribbon-seal/0` MVP, the QR/Data Matrix symbol carries the frame before
+visual ECC as exact bytes:
+
+```text
+magic               = "BRIMG0"              ; 6 ASCII bytes
+profile_id_length   = uint8
+profile_id          = UTF-8 profile string  ; initially "ribbon-seal/0"
+frame_flags         = uint8                 ; bit 0 means BRANCH0. text payload
+payload_len         = uint16 big endian
+payload             = exact payload bytes
+crc32c_payload      = uint32 big endian CRC32C(payload)
+```
+
+Receivers reject unknown profile identifiers, unsupported flag combinations,
+payload lengths above the local/profile limit, non-exact frame length, CRC
+failure, and a payload-kind mismatch before attempting signed beacon
+validation.
+
 `payload` is either an exact `BRANCH0.` text wrapper or exact deterministic CBOR
 signed-event bytes with an explicit payload-kind bit. The receiver must preserve
 the decoded payload bytes exactly. It may retry image preprocessing and symbol
