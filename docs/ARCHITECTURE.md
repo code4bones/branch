@@ -209,19 +209,19 @@ strategy, and CI gates are normative in docs/ENGINEERING.md.
 ## Observability plane
 
 Observability is a separate operator plane, not part of the control or data
-plane. Development deployments may centralize logs, metrics, and traces for the
-nodes and clients controlled by the project. Production operators independently
-choose whether and where to collect telemetry for their own nodes.
+plane. During development it is rendered by the project-owned observation-front
+from protected relay/admin endpoints. Production operators independently choose
+whether to keep local telemetry for their own nodes.
 
 The reference implementation exposes structured events, bounded-cardinality
 metrics, health/readiness state, and optional traces through a protected
 administrative boundary. The PWA maintains a bounded local diagnostic journal
 and can produce a manually exported redacted diagnostic bundle.
 
-No collector, dashboard, exporter, monitoring account, or project-operated
-backend is required for protocol operation. Removing the entire monitoring stack
-must not change discovery, handshake, routing, carrier hopping, or message
-transport.
+No external collector, dashboard product, monitoring account, or
+project-operated backend is required for protocol operation. Removing the
+observation-front or disabling exporters must not change discovery, handshake,
+routing, carrier hopping, or message transport.
 
 Cross-relay trace correlation is permitted inside an explicitly controlled
 development environment. It is not propagated as a mandatory wire field in
@@ -229,7 +229,7 @@ production. Telemetry never contains plaintext payloads, cryptographic keys,
 capability tokens, portable identity material, or permanent user identifiers.
 
 The normative modes, schemas, event taxonomy, metrics, redaction rules, and
-development stack are defined in docs/OBSERVABILITY.md.
+observation-front boundary are defined in docs/OBSERVABILITY.md.
 
 ## Trust boundaries
 

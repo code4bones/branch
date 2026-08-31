@@ -20,9 +20,9 @@ or decisions.
   `exactOptionalPropertyTypes`, ESLint, and Node test runner conformance checks.
 - GitHub Actions and GitLab CI definitions.
 - Initial T-BRANCH-014 observability scaffold: typed Go event and reason-code
-  registry, no-op sink, bounded metric label registry, protected admin response
-  contracts, TypeScript bounded diagnostic journal, manual redacted export, and
-  optional local compose observability profile.
+  registry, no-op, slog, and async sinks, bounded metric registry, protected
+  admin response contracts, TypeScript bounded diagnostic journal, manual
+  redacted export, and internal observation-front view model.
 
 ## Explicit Scaffold Limits
 

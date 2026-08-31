@@ -130,7 +130,7 @@ func TestDiagnosticsUnavailableWithoutProvider(t *testing.T) {
 	}
 }
 
-func TestMetricsReturnsPrometheusText(t *testing.T) {
+func TestMetricsReturnsInternalJSON(t *testing.T) {
 	handler := NewHandler(
 		staticProvider{},
 		WithMetricsProvider(staticMetricsProvider{snapshot: []observability.MetricSeries{{
@@ -147,7 +147,10 @@ func TestMetricsReturnsPrometheusText(t *testing.T) {
 	if response.StatusCode != StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
-	if !strings.Contains(string(response.Body), `branch_sessions_active{capability="forward"} 2`) {
+	if !strings.Contains(string(response.Body), `"name":"branch_sessions_active"`) {
+		t.Fatalf("unexpected metrics body: %s", response.Body)
+	}
+	if !strings.Contains(string(response.Body), `"value":2`) {
 		t.Fatalf("unexpected metrics body: %s", response.Body)
 	}
 }

@@ -333,7 +333,8 @@ define:
 - fields that are allowed, transformed, or forbidden;
 - expected diagnostic evidence for success and failure tests.
 
-The detailed contract is docs/OBSERVABILITY.md. OpenTelemetry and any backend
-remain adapters. Core packages emit typed domain events through a small
-consumer-side port and do not import exporters, dashboards, or vendor SDKs.
+The detailed contract is docs/OBSERVABILITY.md. Exporters remain optional
+adapters. Core packages emit typed domain events through a small consumer-side
+port and do not import monitoring products, dashboard frameworks, or vendor
+SDKs.
 Disabling all telemetry adapters must leave behaviour unchanged.

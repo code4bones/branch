@@ -102,13 +102,12 @@ func (handler *Handler) Diagnostics() Response {
 	return jsonResponse(StatusOK, handler.diagnosticsProvider.DiagnosticsSnapshot())
 }
 
-// Metrics returns bounded-cardinality metrics in Prometheus text format.
+// Metrics returns bounded-cardinality metrics for the observation front.
 func (handler *Handler) Metrics() Response {
 	if handler.metricsProvider == nil {
-		return Response{StatusCode: StatusServiceUnavailable, Body: []byte("# metrics unavailable\n")}
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 	}
-	body := observability.PrometheusText(handler.metricsProvider.MetricsSnapshot())
-	return Response{StatusCode: StatusOK, Body: []byte(body)}
+	return jsonResponse(StatusOK, handler.metricsProvider.MetricsSnapshot())
 }
 
 func sanitizeSnapshot(snapshot StatusSnapshot) StatusSnapshot {

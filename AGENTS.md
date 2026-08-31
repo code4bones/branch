@@ -48,7 +48,7 @@ question before implementation.
 - docs/ENGINEERING.md is the normative source architecture, code-style, testing,
   and quality-gate contract.
 - docs/OBSERVABILITY.md defines logs, metrics, traces, diagnostic modes,
-  privacy boundaries, and the optional development monitoring stack.
+  privacy boundaries, and the internal observation-front boundary.
 - docs/PROTOCOL_V0.md and protocol schemas define wire behaviour.
 - Versioned protocol schemas and shared test vectors are normative; Go and
   TypeScript code are implementations of them.

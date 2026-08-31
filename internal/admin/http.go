@@ -55,7 +55,7 @@ func (handler *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *htt
 	case "/diagnostics":
 		writeResponse(response, handler.handler.Diagnostics())
 	case "/metrics":
-		writeMetricsResponse(response, handler.handler.Metrics())
+		writeResponse(response, handler.handler.Metrics())
 	default:
 		http.NotFound(response, request)
 	}
@@ -69,13 +69,6 @@ func (denyAuthorizer) Authorized(*http.Request) bool {
 
 func writeResponse(response http.ResponseWriter, adminResponse Response) {
 	response.Header().Set("content-type", "application/json")
-	response.Header().Set("cache-control", "no-store")
-	response.WriteHeader(adminResponse.StatusCode)
-	_, _ = response.Write(adminResponse.Body)
-}
-
-func writeMetricsResponse(response http.ResponseWriter, adminResponse Response) {
-	response.Header().Set("content-type", "text/plain; version=0.0.4")
 	response.Header().Set("cache-control", "no-store")
 	response.WriteHeader(adminResponse.StatusCode)
 	_, _ = response.Write(adminResponse.Body)

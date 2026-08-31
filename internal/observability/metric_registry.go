@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -100,32 +99,6 @@ func (registry *MetricRegistry) Snapshot() []MetricSeries {
 // MetricsSnapshot returns Snapshot and satisfies admin metrics providers.
 func (registry *MetricRegistry) MetricsSnapshot() []MetricSeries {
 	return registry.Snapshot()
-}
-
-// PrometheusText renders samples in the Prometheus text exposition format.
-func PrometheusText(samples []MetricSeries) string {
-	var builder strings.Builder
-	for _, sample := range samples {
-		builder.WriteString(string(sample.Name))
-		if len(sample.Labels) > 0 {
-			builder.WriteByte('{')
-			labels := sortedMetricLabels(sample.Labels)
-			for index, label := range labels {
-				if index > 0 {
-					builder.WriteByte(',')
-				}
-				builder.WriteString(string(label.Label))
-				builder.WriteString(`="`)
-				builder.WriteString(escapePrometheusLabel(label.Value))
-				builder.WriteByte('"')
-			}
-			builder.WriteByte('}')
-		}
-		builder.WriteByte(' ')
-		builder.WriteString(strconv.FormatFloat(sample.Value, 'g', -1, 64))
-		builder.WriteByte('\n')
-	}
-	return builder.String()
 }
 
 func (registry *MetricRegistry) update(name MetricName, labels []LabelValue, apply func(float64) float64) error {
@@ -297,11 +270,4 @@ func cloneMetricLabels(labels map[MetricLabel]string) map[MetricLabel]string {
 		copied[key] = value
 	}
 	return copied
-}
-
-func escapePrometheusLabel(value string) string {
-	value = strings.ReplaceAll(value, `\`, `\\`)
-	value = strings.ReplaceAll(value, "\n", `\n`)
-	value = strings.ReplaceAll(value, `"`, `\"`)
-	return value
 }

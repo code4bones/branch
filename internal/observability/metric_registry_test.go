@@ -2,7 +2,6 @@ package observability
 
 import (
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -32,12 +31,11 @@ func TestMetricRegistryRecordsCountersAndGauges(t *testing.T) {
 	if got := len(snapshot); got != 2 {
 		t.Fatalf("snapshot samples = %d, want 2", got)
 	}
-	text := PrometheusText(snapshot)
-	if !strings.Contains(text, `branch_handshakes_total{protocol_version="branch/connectivity/0",result="success"} 1`) {
-		t.Fatalf("missing handshake metric in:\n%s", text)
+	if snapshot[0].Name != MetricHandshakesTotal {
+		t.Fatalf("first metric = %q", snapshot[0].Name)
 	}
-	if !strings.Contains(text, `branch_sessions_active{capability="forward"} 2`) {
-		t.Fatalf("missing session metric in:\n%s", text)
+	if snapshot[1].Name != MetricSessionsActive {
+		t.Fatalf("second metric = %q", snapshot[1].Name)
 	}
 }
 

@@ -7,14 +7,16 @@ Observability is required for developing and operating the reference
 implementation, but it is not part of the B.R.A.N.C.H. Connectivity Protocol
 and is never required for network participation.
 
-A development team may centralize telemetry for infrastructure it controls.
-Independent production operators own their own telemetry and choose whether to
-retain or export it. No project-operated collector or dashboard is authoritative
-or mandatory.
+During development, telemetry is rendered by the project-owned observation-front
+from protected relay/admin endpoints. Independent production operators own their
+own local telemetry and choose whether to retain or export it. No external
+collector, dashboard product, monitoring account, or project-operated backend is
+authoritative or mandatory.
 
 ## 1. Invariants
 
-- Connectivity works when every telemetry exporter and backend is disabled.
+- Connectivity works when every telemetry exporter and observation-front is
+  disabled.
 - Telemetry never changes protocol state or delivery decisions.
 - Instrumentation failure is contained and cannot crash or block relay traffic.
 - Message bodies, files, keys, recovery material, capability tokens, portable
@@ -72,8 +74,8 @@ correlation belongs to a separate trace adapter or explicit diagnostic session.
 
 Exporter adapters sit behind a bounded asynchronous sink. Full queues and
 exporter errors are counted and dropped locally instead of blocking or failing
-connectivity work. The reference core therefore has no OTLP runtime dependency;
-an OTLP adapter can implement the same sink interface in deployment code.
+connectivity work. The reference core has no external monitoring runtime
+dependency.
 
 ### Metrics
 
@@ -198,14 +200,14 @@ session IDs, message IDs, IP addresses, hostnames, repository URLs, relay URLs,
 arbitrary error text, user agents, or other unbounded values.
 
 Metrics exposed by the node are available only through the protected admin
-listener or a separately configured monitoring listener.
+listener.
 
-The reference implementation keeps metrics in an in-memory registry when no
-exporter is attached. Metric names must come from the initial registry above.
-Labels are accepted only from the bounded label allowlists; protocol versions
-and capabilities must be registered by the local build. The protected admin
-surface may render those samples as Prometheus text, but that endpoint is an
-operator API and not a public connectivity endpoint.
+The reference implementation keeps metrics in an in-memory registry. Metric
+names must come from the initial registry above. Labels are accepted only from
+the bounded label allowlists; protocol versions and capabilities must be
+registered by the local build. The protected admin surface returns those samples
+as internal JSON for the observation-front; that endpoint is an operator API and
+not a public connectivity endpoint.
 
 ## 7. Trace boundaries
 
@@ -254,7 +256,7 @@ The protected administrative listener provides:
 - liveness: the process event loop is alive;
 - readiness: configuration and node identity are valid and the node can accept
   its declared roles;
-- metrics: scrape endpoint when enabled;
+- metrics: bounded JSON snapshot for the observation-front;
 - diagnostics: a bounded in-memory snapshot of recent event names, reason
   counts, and allowed low-cardinality attributes;
 - build and supported protocol/capability information;
@@ -296,32 +298,14 @@ recent sanitized events, and export categories. They do not upload diagnostics
 automatically, create permanent user identifiers, or reinterpret protocol
 state.
 
-## 11. Development stack
+## 11. Observation Front
 
-The optional reference profile is:
+The development observation-front is a B.R.A.N.C.H.-owned UI that reads only
+protected local relay/admin snapshots and local PWA diagnostic exports. It is
+not a public client surface, not a protocol participant, not a telemetry upload
+channel, and not a durable store.
 
-~~~text
-Go node and PWA
-       |
-       v
-OpenTelemetry Collector
-       |-- Prometheus: metrics
-       |-- Loki: logs
-       |-- Tempo: traces
-       '-- Grafana: dashboards
-~~~
-
-It is started explicitly, for example through a compose observability profile.
-The normal node binary and PWA have no runtime dependency on this stack.
-OpenTelemetry is an adapter and OTLP is an optional export path.
-
-Collector processors apply allowlists, length limits, attribute removal,
-sampling, batching, memory limits, and bounded retry before export. Credentials
-for exporters remain outside repository configuration.
-
-## 12. Initial dashboards and alerts
-
-The development dashboard answers:
+The observation-front answers:
 
 - Which node and build handled the failing path?
 - Which carrier found or failed to find the beacon?
@@ -333,12 +317,12 @@ The development dashboard answers:
 - Did a relay restart, lose peers, or reject malformed traffic?
 - Are failures isolated to one transport, carrier, build, or environment?
 
-Initial alerts cover process unavailability, readiness degradation, sustained
-handshake failures, carrier failure concentration, queue drops, exporter drops,
-and abnormal route-migration rate. Thresholds are deployment policy, not
-protocol constants.
+Initial local indicators cover process unavailability, readiness degradation,
+sustained handshake failures, carrier failure concentration, queue drops,
+exporter drops, and abnormal route-migration rate. Thresholds are development
+or operator policy, not protocol constants.
 
-## 13. Testing
+## 12. Testing
 
 Tests must prove:
 
@@ -357,7 +341,7 @@ Tests must prove:
 Golden telemetry fixtures may validate event names and required fields, but
 timestamps, random IDs, and scheduling-dependent values are normalized.
 
-## 14. Retention and operator policy
+## 13. Retention and operator policy
 
 The reference project specifies safe defaults and bounded rotation, but does not
 create a global retention policy for independent operators. Operators document
@@ -368,15 +352,7 @@ Development telemetry uses short retention appropriate to active diagnosis.
 Diagnostic-session data expires automatically. Deletion of telemetry does not
 delete or alter protocol state because telemetry never owns that state.
 
-## 15. References
+## 14. References
 
-- OpenTelemetry Collector:
-  https://opentelemetry.io/docs/collector/
-- OpenTelemetry handling sensitive data:
-  https://opentelemetry.io/docs/security/handling-sensitive-data/
-- Prometheus metric and label naming:
-  https://prometheus.io/docs/practices/naming/
-- Prometheus instrumentation practices:
-  https://prometheus.io/docs/practices/instrumentation/
 - Go structured logging with log/slog:
   https://go.dev/blog/slog

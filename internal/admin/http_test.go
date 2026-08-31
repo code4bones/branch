@@ -77,7 +77,7 @@ func TestHTTPHandlerServesDiagnosticsWithoutCorrelationFields(t *testing.T) {
 	}
 }
 
-func TestHTTPHandlerServesMetricsAsPlainText(t *testing.T) {
+func TestHTTPHandlerServesMetricsAsJSON(t *testing.T) {
 	handler := NewHTTPHandler(
 		NewHandler(
 			staticProvider{},
@@ -96,15 +96,15 @@ func TestHTTPHandlerServesMetricsAsPlainText(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d", response.Code)
 	}
-	if got := response.Header().Get("content-type"); got != "text/plain; version=0.0.4" {
+	if got := response.Header().Get("content-type"); got != "application/json" {
 		t.Fatalf("content-type = %q", got)
 	}
-	if !strings.Contains(response.Body.String(), "branch_queue_depth 3") {
+	if !strings.Contains(response.Body.String(), `"name":"branch_queue_depth"`) {
 		t.Fatalf("metrics body = %s", response.Body.String())
 	}
 }
 
-func TestHTTPHandlerServesUnavailableMetricsAsPlainText(t *testing.T) {
+func TestHTTPHandlerServesUnavailableMetricsAsJSON(t *testing.T) {
 	handler := NewHTTPHandler(
 		NewHandler(staticProvider{}),
 		AuthorizerFunc(func(*http.Request) bool { return true }),
@@ -117,7 +117,7 @@ func TestHTTPHandlerServesUnavailableMetricsAsPlainText(t *testing.T) {
 	if response.Code != StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", response.Code, StatusServiceUnavailable)
 	}
-	if got := response.Header().Get("content-type"); got != "text/plain; version=0.0.4" {
+	if got := response.Header().Get("content-type"); got != "application/json" {
 		t.Fatalf("content-type = %q", got)
 	}
 }
