@@ -65,6 +65,11 @@ Go uses log/slog structured JSON at process and adapter boundaries. A domain
 failure is logged once. Internal layers return typed errors and emit typed
 domain events rather than repeating free-form log messages.
 
+The reference slog sink accepts only validated observability envelopes. Off mode
+is a no-op. Operator logs omit trace, span, session, service-instance, peer,
+address, and identity correlation fields by default; development-only
+correlation belongs to a separate trace adapter or explicit diagnostic session.
+
 ### Metrics
 
 Metrics describe aggregate health, volume, latency, resource pressure, and
