@@ -190,6 +190,13 @@ arbitrary error text, user agents, or other unbounded values.
 Metrics exposed by the node are available only through the protected admin
 listener or a separately configured monitoring listener.
 
+The reference implementation keeps metrics in an in-memory registry when no
+exporter is attached. Metric names must come from the initial registry above.
+Labels are accepted only from the bounded label allowlists; protocol versions
+and capabilities must be registered by the local build. The protected admin
+surface may render those samples as Prometheus text, but that endpoint is an
+operator API and not a public connectivity endpoint.
+
 ## 7. Trace boundaries
 
 The development environment may trace:

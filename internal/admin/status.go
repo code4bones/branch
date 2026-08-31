@@ -44,9 +44,15 @@ type DiagnosticsSnapshotProvider interface {
 	DiagnosticsSnapshot() observability.Snapshot
 }
 
+// MetricsProvider supplies protected bounded-cardinality metrics.
+type MetricsProvider interface {
+	MetricsSnapshot() []observability.MetricSeries
+}
+
 type Handler struct {
 	provider            SnapshotProvider
 	diagnosticsProvider DiagnosticsSnapshotProvider
+	metricsProvider     MetricsProvider
 }
 
 // HandlerOption configures optional protected admin surfaces.
@@ -56,6 +62,13 @@ type HandlerOption func(*Handler)
 func WithDiagnosticsProvider(provider DiagnosticsSnapshotProvider) HandlerOption {
 	return func(handler *Handler) {
 		handler.diagnosticsProvider = provider
+	}
+}
+
+// WithMetricsProvider attaches the protected metrics surface.
+func WithMetricsProvider(provider MetricsProvider) HandlerOption {
+	return func(handler *Handler) {
+		handler.metricsProvider = provider
 	}
 }
 
@@ -87,6 +100,15 @@ func (handler *Handler) Diagnostics() Response {
 		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 	}
 	return jsonResponse(StatusOK, handler.diagnosticsProvider.DiagnosticsSnapshot())
+}
+
+// Metrics returns bounded-cardinality metrics in Prometheus text format.
+func (handler *Handler) Metrics() Response {
+	if handler.metricsProvider == nil {
+		return Response{StatusCode: StatusServiceUnavailable, Body: []byte("# metrics unavailable\n")}
+	}
+	body := observability.PrometheusText(handler.metricsProvider.MetricsSnapshot())
+	return Response{StatusCode: StatusOK, Body: []byte(body)}
 }
 
 func sanitizeSnapshot(snapshot StatusSnapshot) StatusSnapshot {

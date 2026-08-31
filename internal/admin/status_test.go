@@ -25,6 +25,14 @@ func (provider staticDiagnosticsProvider) DiagnosticsSnapshot() observability.Sn
 	return provider.snapshot
 }
 
+type staticMetricsProvider struct {
+	snapshot []observability.MetricSeries
+}
+
+func (provider staticMetricsProvider) MetricsSnapshot() []observability.MetricSeries {
+	return provider.snapshot
+}
+
 func TestReadinessDoesNotExposePeerOrTopologyFields(t *testing.T) {
 	handler := NewHandler(staticProvider{snapshot: StatusSnapshot{
 		ServiceName:       "branch-node",
@@ -119,5 +127,27 @@ func TestDiagnosticsUnavailableWithoutProvider(t *testing.T) {
 
 	if response.StatusCode != StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", response.StatusCode, StatusServiceUnavailable)
+	}
+}
+
+func TestMetricsReturnsPrometheusText(t *testing.T) {
+	handler := NewHandler(
+		staticProvider{},
+		WithMetricsProvider(staticMetricsProvider{snapshot: []observability.MetricSeries{{
+			Name:  observability.MetricSessionsActive,
+			Value: 2,
+			Labels: map[observability.MetricLabel]string{
+				observability.MetricLabelCapability: "forward",
+			},
+		}}}),
+	)
+
+	response := handler.Metrics()
+
+	if response.StatusCode != StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	if !strings.Contains(string(response.Body), `branch_sessions_active{capability="forward"} 2`) {
+		t.Fatalf("unexpected metrics body: %s", response.Body)
 	}
 }

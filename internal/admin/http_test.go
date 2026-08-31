@@ -77,6 +77,51 @@ func TestHTTPHandlerServesDiagnosticsWithoutCorrelationFields(t *testing.T) {
 	}
 }
 
+func TestHTTPHandlerServesMetricsAsPlainText(t *testing.T) {
+	handler := NewHTTPHandler(
+		NewHandler(
+			staticProvider{},
+			WithMetricsProvider(staticMetricsProvider{snapshot: []observability.MetricSeries{{
+				Name:  observability.MetricQueueDepth,
+				Value: 3,
+			}}}),
+		),
+		AuthorizerFunc(func(*http.Request) bool { return true }),
+	)
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	if got := response.Header().Get("content-type"); got != "text/plain; version=0.0.4" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(response.Body.String(), "branch_queue_depth 3") {
+		t.Fatalf("metrics body = %s", response.Body.String())
+	}
+}
+
+func TestHTTPHandlerServesUnavailableMetricsAsPlainText(t *testing.T) {
+	handler := NewHTTPHandler(
+		NewHandler(staticProvider{}),
+		AuthorizerFunc(func(*http.Request) bool { return true }),
+	)
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", response.Code, StatusServiceUnavailable)
+	}
+	if got := response.Header().Get("content-type"); got != "text/plain; version=0.0.4" {
+		t.Fatalf("content-type = %q", got)
+	}
+}
+
 func TestHTTPHandlerAllowsOnlyGet(t *testing.T) {
 	handler := NewHTTPHandler(NewHandler(staticProvider{}), AuthorizerFunc(func(*http.Request) bool { return true }))
 	request := httptest.NewRequest(http.MethodPost, "/readyz", nil)
