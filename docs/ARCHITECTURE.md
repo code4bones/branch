@@ -85,7 +85,11 @@ and capability:
 
 The active path may change without changing peer identity or conversation
 state. Connectivity Protocol versions are independent of node and PWA release
-versions. A published numbered wire version is immutable.
+versions. A published numbered wire version is immutable and is paired with a
+canonical machine-readable connectivity profile whose multihash is advertised
+and verified during negotiation. Version and profile negotiation happen before
+sealed payloads, relay capabilities, route candidates, or data-plane frames are
+accepted.
 
 ### 4. Community relay mesh
 

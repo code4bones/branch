@@ -15,6 +15,307 @@ security-sensitive deployment.
 - Existing, reviewed cryptographic constructions must be used; the project will
   not invent custom cryptography.
 
+## Connectivity profile constitution
+
+The Connectivity Protocol is the small immutable interoperability surface shared
+by independent clients, relays, boards, carriers, and test suites. Application
+releases, relay binaries, PWA mirrors, UI features, observation-front builds,
+and carrier adapters may change without changing a numbered wire version. This
+constitution is recorded in D-BRANCH-026.
+
+This document still describes a pre-publication draft. Once a numbered wire
+version is published, its protocol identifier, profile schema, registries,
+canonical encodings, validation rules, state machines, and test vectors are
+frozen. A defect in a published version is fixed by publishing a new version and
+supporting overlap, not by reinterpreting old bytes.
+
+### Version and profile negotiation
+
+Every protocol-bearing announcement, rendezvous payload, relay attachment, and
+session handshake advertises support as a bounded list of version offers. A
+version offer contains:
+
+- `wire_version`: the human-readable numbered wire version, such as `0`;
+- `protocol`: the protocol identifier, such as `branch/connectivity/0`;
+- `profile_multihash`: the multihash of the canonical machine-readable profile
+  accepted by the implementation;
+- `capabilities`: optional capability names supported for this role;
+- `required_capabilities`: capability names that must be understood for this
+  offer to be usable;
+- `extensions`: optional extension names;
+- `required_extensions`: extension names that make the offer unusable when
+  unsupported.
+
+Negotiation is deterministic after local policy filters unsupported or
+untrusted options:
+
+1. discard unknown wire versions and protocol identifiers;
+2. discard offers whose `profile_multihash` is not locally accepted for that
+   `wire_version`;
+3. discard offers with unknown required capabilities or required extensions;
+4. discard offers that exceed local limits, expiry, role, or transport policy;
+5. choose the highest locally preferred remaining wire version, then the locally
+   preferred profile hash, then the smallest mutually required capability set.
+
+Downgrade resistance comes from transcript binding. Rendezvous offers, answers,
+relay attachments, and data-plane handshakes bind the complete advertised
+version/profile/capability lists and the final selection into the reviewed
+session construction. A peer that offered `v0` and `v1` can still establish a
+`v0` session with a `v0`-only peer; it cannot later claim that the same
+transcript negotiated different semantics.
+
+Unknown optional capabilities and extensions are ignored. Unknown required
+capabilities and extensions fail negotiation before any sealed payload,
+capability token, route material, or user message is accepted. Implementations
+may support several published wire versions concurrently, and the network does
+not require a coordinated global upgrade.
+
+### Canonical machine-readable profile
+
+A published wire version has one or more accepted connectivity profiles. A
+profile is a deterministic CBOR object containing at least:
+
+- `profile_schema`: the profile object schema version;
+- `wire_version` and `protocol`;
+- the canonical envelope schema and signature input domain;
+- the public payload schemas used by this wire version;
+- algorithm, capability, extension, message, frame, and error registries;
+- size, time, retry, queue, and candidate-count limits;
+- state-machine definitions for rendezvous, relay attachment, authenticated
+  session setup, framing, delivery deduplication, and path migration;
+- a manifest of required valid and invalid interoperability test vectors.
+
+The profile multihash is computed over the exact deterministic CBOR profile
+bytes using the published hash algorithm for the profile schema. The initial
+profile schema uses a SHA-256 multihash encoded for transport as a bounded text
+field. The human-readable version number is never enough to prove wire
+compatibility; implementations verify the exact accepted `profile_multihash`
+before treating a peer or relay as conformant.
+
+The draft profile has no final multihash until the machine-readable profile
+artifact and vector manifest are generated. Draft implementations may exchange a
+development profile hash for testing, but they must not claim published v0
+conformance until the accepted profile hash and vector set exist.
+
+### Identifier and algorithm registries
+
+Identifiers are case-sensitive ASCII strings. A published identifier is
+immutable inside its wire version. New semantics require a new identifier, a new
+extension, or a new wire version.
+
+Baseline draft identifiers:
+
+| Registry | Identifier | Meaning |
+| --- | --- | --- |
+| Protocol | `branch/connectivity/0` | Draft connectivity protocol identifier. |
+| Text wrapper | `BRANCH0.` | Text carrier wrapper for exact signed envelope bytes. |
+| Envelope encoding | `cbor.det.rfc8949` | RFC 8949 deterministic CBOR. |
+| Identity key algorithm | `ed25519` | User, device, and node signing identity key. |
+| Signature algorithm | `ed25519` | Signed event envelope signature algorithm. |
+| Profile hash | `multihash.sha2-256` | Initial profile multihash algorithm. |
+| Public event | `bootstrap.beacon` | Searchable public bootstrap record. |
+| Rendezvous events | `rendezvous.offer`, `rendezvous.answer` | Sealed first-contact control-plane events. |
+| Route event | `route.update` | Sealed route migration or recovery event. |
+| Relay events | `relay.announce`, `capability.grant`, `capability.revoke` | Public relay descriptor and sealed live-transit capability events. |
+
+Payload encryption and authenticated data-plane session construction are still
+pre-publication blockers. They must be selected from reviewed constructions and
+recorded in a decision before a published v0 profile hash is accepted. Until
+then, sealed payloads and session handshakes are specified by required
+properties and transcript bindings, not by invented cryptographic bytes.
+
+### Capability registry rules
+
+Capabilities describe optional behaviour, not trust. A capability name is
+versioned, bounded, and role-specific. Capabilities never contain bearer tokens,
+private endpoints, identity exports, plaintext contact graph, or user messages.
+Tokens, if any, are transmitted only inside sealed payloads or authenticated
+relay attachment flows.
+
+The initial capability families are:
+
+- `search.direct-browser/0`: browser-readable SearchCarrier access without a
+  project proxy;
+- `board.publish/0`, `board.observe/0`, `board.search/0`: RendezvousBoard
+  operations;
+- `relay.forward.live/0`: non-durable live encrypted frame forwarding;
+- `route.direct.webrtc/0`: direct WebRTC route candidate support;
+- `route.relay.wss/0`: WSS relay route candidate support;
+- `route.migrate/0`: authenticated path migration within an established
+  session;
+- `visual.ribbon-seal/0`: Ribbon Image `ribbon-seal/0` discovery support.
+
+Advertising a capability does not prove that a carrier, board, or relay is
+honest, available, fresh, or well provisioned. It only states the sender's claim
+about protocol behaviour and limits, which the receiver verifies through
+validation, active probes, and local policy.
+
+### Rendezvous payload contract
+
+`rendezvous.offer` and `rendezvous.answer` are signed event envelopes with
+sealed payloads. Their exact payload encryption suite is unresolved, but the
+plaintext contract that the suite must authenticate is fixed for profile
+definition:
+
+- `attempt_id`: random first-contact attempt identifier scoped to the initiator;
+- `transcript_parent`: hash or binding to the discovered bootstrap material and
+  signed offer/answer envelope bytes, as defined by the selected session suite;
+- `version_offers`: bounded list of version/profile/capability offers;
+- `route_candidates`: bounded list of direct and relay route candidates;
+- `relay_capability_requests` or `relay_capability_grants`: bounded live-transit
+  requests or grants;
+- `answer_boards`: optional bounded hints for answer publication;
+- `expiry`, retry, and clock-skew policy values;
+- anti-abuse or introduction proofs required by local policy.
+
+An answer selects exactly one mutually supported version/profile and capability
+set or rejects with a typed reason. The selected version/profile, all originally
+advertised alternatives, both signed envelope byte strings, and both peers'
+identity keys are bound into the data-plane session transcript.
+
+### Route candidates and relay attachment
+
+Route candidates are hints, not authority. A route candidate contains a bounded
+route identifier, route type, endpoint or board/relay reference, expiry, limits,
+priority, required capabilities, and transport-specific public parameters. It
+does not contain plaintext messages, portable identity exports, private contact
+graph, or durable delivery promises.
+
+A relay attachment is accepted only for a live route and only after the relay
+validates:
+
+- the offered wire version and accepted `profile_multihash`;
+- the requested live action, initially `relay.forward.live/0`;
+- an opaque receiver-issued capability or equivalent admission proof;
+- expiry, frame-size, byte, frame, connection, and rate limits;
+- the transport authentication and flow-control parameters required by the
+  relay profile.
+
+Relay attachment state is memory-only and expires on disconnect, quota
+exhaustion, shutdown, or restart. Relays do not restore session routes, delivery
+queues, user messages, files, contact state, or canonical presence after
+restart.
+
+### Authenticated session and framing contract
+
+An authenticated session is established only after the selected reviewed session
+construction authenticates both peer identities, binds the offer/answer
+transcript and version/profile negotiation, and derives fresh traffic keys.
+Transport security such as TLS, WSS, DTLS, or QUIC is useful transport
+protection but does not replace end-to-end peer authentication.
+
+The data-plane frame contract is:
+
+- frames are length-prefixed and bounded before allocation;
+- frame headers are authenticated by the selected session construction;
+- ciphertext is opaque to relays and boards;
+- every frame carries a `session_id`, `path_epoch`, `stream_id`, `delivery_id`,
+  frame type, flags, and ciphertext length;
+- `delivery_id` is stable across retransmission of the same encrypted delivery
+  on another path and is unique within `(session_id, sender, stream_id)`;
+- acknowledgements and flow-control updates are bounded and authenticated;
+- malformed, oversized, unauthenticated, replayed, or unsupported frames are
+  rejected with a typed error or connection close, never panic.
+
+Frame bytes, header encoding, traffic-key schedule, and replay windows become
+immutable only when the reviewed session suite and machine-readable profile are
+accepted. The properties above are mandatory for any candidate suite.
+
+### Path migration state machine
+
+Path migration is a session state transition, not a relay feature. Either peer
+may propose a new path with a sealed `route.update` or an authenticated in-band
+migration message. The transition is:
+
+1. `active`: one or more paths carry authenticated frames for the current
+   `path_epoch`;
+2. `probing`: a peer proposes a new route candidate with a higher proposed
+   epoch and bounded expiry;
+3. `overlap`: both old and new paths may carry frames, and receivers deduplicate
+   by `(session_id, sender, stream_id, delivery_id)`;
+4. `commit`: both peers acknowledge the selected path and epoch;
+5. `retire`: old paths are closed or left idle until their timers expire.
+
+If probing or commit fails, peers continue on any still-authenticated active
+path or return to rendezvous recovery. A relay cannot decide migration
+continuity, refresh expired routes, or recreate session state after restart.
+
+### Protocol error registry
+
+Errors use stable machine-readable codes and bounded diagnostic text. Error
+details must not contain plaintext payloads, keys, capabilities, identity
+exports, authentication material, or permanent user identifiers.
+
+Baseline error families:
+
+- `unsupported_version`;
+- `unsupported_profile`;
+- `profile_hash_mismatch`;
+- `required_capability_missing`;
+- `required_extension_missing`;
+- `malformed_envelope`;
+- `signature_invalid`;
+- `payload_decrypt_failed`;
+- `frame_too_large`;
+- `frame_malformed`;
+- `frame_replayed`;
+- `authentication_failed`;
+- `capability_required`;
+- `capability_expired`;
+- `capability_revoked`;
+- `quota_exceeded`;
+- `route_unavailable`;
+- `migration_rejected`;
+- `rate_limited`;
+- `timeout`;
+- `internal_unavailable`.
+
+An implementation may map these codes to local exceptions or UI text, but the
+wire/profile code and conformance meaning remain fixed.
+
+### Extension rules
+
+Extensions are explicit and versioned. An extension may add a new optional
+capability, event type, payload field, route type, frame type, or error detail
+only when old implementations can ignore it safely. If support is required for
+correctness or safety, it appears in `required_extensions` and changes
+negotiation outcome before any affected payload or frame is processed.
+
+No extension may redefine an existing field, weaken validation, change signed
+bytes, reinterpret an old event type, require a project-operated service, add
+durable relay custody to the reference relay, or make observability a
+connectivity dependency. Experimental identifiers are local and non-conformant
+until recorded in a decision and included in an accepted profile.
+
+### Conformance suite
+
+Conformance is based on shared fixtures, state-machine transcripts, and
+cross-implementation execution. A published profile must ship a vector manifest
+that includes:
+
+- canonical valid and invalid signed envelopes and payloads;
+- version/profile negotiation transcripts, including unknown versions,
+  unsupported profile hashes, unknown required capabilities, and dual-version
+  overlap without coordinated global upgrade;
+- offer/answer transcripts with alternate-board answers, replay, expiry,
+  identity mismatch, unsupported capability, and downgrade attempts;
+- relay attachment transcripts for accepted live forwarding, missing or expired
+  capability, quota exhaustion, frame too large, slow consumer, and relay
+  restart with no restored traffic state;
+- data-plane frame transcripts for delivery deduplication across overlapping
+  paths, replay rejection, malformed frames, flow control, and path migration;
+- SearchCarrier, RendezvousBoard, Ribbon Bearer, repository drop-in, and Ribbon
+  Image fixtures defined later in this document.
+
+Before any implementation claims published v0 conformance, at least two client
+implementations and two relay implementations must run the same manifest. For
+the reference project this means Go and TypeScript protocol cores must agree on
+the same vectors, and relay/client integration tests must prove that disabling a
+carrier and then an active relay does not require a B.R.A.N.C.H.-owned service
+or durable relay state. Additional independent implementations can replace or
+augment the reference pair, but a single code path exercised through two CLIs
+does not satisfy the interoperability proof.
+
 ## Signed event envelope
 
 The signed event envelope is the carrier-neutral object exchanged through
@@ -1184,8 +1485,9 @@ A client attaches to a relay by presenting:
 - transport-level authentication appropriate to the chosen transport;
 - bounded frame-size and flow-control parameters.
 
-The exact handshake bytes are unresolved. The relay attachment contract must not
-require a relay account, global username, or project-operated directory lookup.
+The exact attachment bytes are fixed by the accepted machine-readable profile
+and selected transport binding. The relay attachment contract must not require a
+relay account, global username, or project-operated directory lookup.
 
 ### Opaque live forwarding
 
@@ -1247,7 +1549,7 @@ continuity.
 
 A peer session is bound to authenticated peer identity and session state, not to
 a socket or relay. Either peer may propose another path. Both paths may overlap
-briefly, and event identifiers provide deduplication during migration.
+briefly, and delivery identifiers provide deduplication during migration.
 
 Example:
 

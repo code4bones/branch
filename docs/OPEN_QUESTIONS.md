@@ -68,9 +68,16 @@ their reasoning rather than silently replacing earlier assumptions.
 ## Connectivity
 
 - Which direct transport should the first prototype use?
-- How should a live session migrate between direct and relayed paths?
-- What is the minimum interoperable relay protocol?
-- How should duplicate messages be reconciled during overlapping paths?
+- Which reviewed payload encryption and authenticated data-plane session suite
+  should the published v0 profile select?
+- Which exact frame encoding and key schedule instantiate the authenticated
+  framing contract in docs/PROTOCOL_V0.md?
+- Which direct transport should be mandatory-to-implement, if any, beyond the
+  capability-negotiated route types?
+- What local policy should decide when migration retries stop and rendezvous
+  recovery begins?
+- Which application-message acknowledgement and ordering policy sits above the
+  frame-level `delivery_id` deduplication contract?
 - What default first-contact expiry, retry, and accepted clock-skew values
   should v0 publish in conformance fixtures?
 
