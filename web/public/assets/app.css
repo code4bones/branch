@@ -1,12 +1,16 @@
 :root {
-  color-scheme: light;
-  --ink: #101316;
-  --muted: #52606d;
-  --paper: #f7f9fb;
-  --panel: #ffffff;
-  --blue: #164b8f;
-  --red: #c23b3b;
-  --rule: #d7dde5;
+  color-scheme: dark;
+  --ink: #f4f7fb;
+  --muted: #a9b4c2;
+  --paper: #0d0f12;
+  --panel: #161a20;
+  --panel-strong: #1d232b;
+  --blue: #6fb4ff;
+  --blue-deep: #14558f;
+  --green: #7bd6a3;
+  --amber: #d8b45f;
+  --red: #e06d6a;
+  --rule: #303743;
 }
 
 * {
@@ -18,8 +22,8 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    linear-gradient(90deg, var(--blue) 0 12px, transparent 12px),
-    linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+    linear-gradient(90deg, var(--blue-deep) 0 12px, transparent 12px),
+    linear-gradient(180deg, #151a20 0%, var(--paper) 58%, #090b0e 100%);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -50,7 +54,8 @@ body {
 
 h1 {
   margin: 0 0 28px;
-  font-size: clamp(3rem, 12vw, 8rem);
+  color: var(--ink);
+  font-size: 7rem;
   line-height: 0.9;
   letter-spacing: 0;
 }
@@ -58,24 +63,31 @@ h1 {
 .line {
   margin: 10px 0;
   color: var(--muted);
-  font-size: clamp(1.1rem, 2.6vw, 1.7rem);
+  font-size: 1.45rem;
   line-height: 1.35;
 }
 
 .status {
   display: grid;
+  width: 100%;
+  min-width: 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--rule);
   border-radius: 8px;
   background: var(--rule);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 28%);
 }
 
 .status > div {
   min-width: 0;
   padding: 18px;
   background: var(--panel);
+}
+
+.status > div:first-child {
+  background: linear-gradient(180deg, var(--panel-strong), var(--panel));
 }
 
 .label {
@@ -88,7 +100,20 @@ h1 {
 strong {
   display: block;
   overflow-wrap: anywhere;
+  color: var(--ink);
   font-size: 1rem;
+}
+
+.status > div:nth-child(1) strong {
+  color: var(--blue);
+}
+
+.status > div:nth-child(2) strong {
+  color: var(--green);
+}
+
+.status > div:nth-child(3) strong {
+  color: var(--amber);
 }
 
 @media (max-width: 720px) {
@@ -99,5 +124,13 @@ strong {
 
   .status {
     grid-template-columns: 1fr;
+  }
+
+  h1 {
+    font-size: 2.8rem;
+  }
+
+  .line {
+    font-size: 1.15rem;
   }
 }
