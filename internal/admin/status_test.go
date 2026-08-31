@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/code4bones/branch/internal/observability"
 )
 
 type staticProvider struct {
@@ -11,6 +14,14 @@ type staticProvider struct {
 }
 
 func (provider staticProvider) Snapshot() StatusSnapshot {
+	return provider.snapshot
+}
+
+type staticDiagnosticsProvider struct {
+	snapshot observability.Snapshot
+}
+
+func (provider staticDiagnosticsProvider) DiagnosticsSnapshot() observability.Snapshot {
 	return provider.snapshot
 }
 
@@ -67,5 +78,46 @@ func TestLivenessIsMinimal(t *testing.T) {
 	}
 	if got := string(response.Body); !strings.Contains(got, "alive") {
 		t.Fatalf("unexpected liveness body %s", got)
+	}
+}
+
+func TestDiagnosticsReturnsBoundedOperatorSnapshot(t *testing.T) {
+	handler := NewHandler(
+		staticProvider{},
+		WithDiagnosticsProvider(staticDiagnosticsProvider{snapshot: observability.Snapshot{
+			GeneratedAt: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
+			TotalEvents: 2,
+			RecentLimit: 8,
+			RecentEvents: []observability.EventSummary{{
+				Event:           observability.EventRouteSelected,
+				Level:           observability.LevelInfo,
+				ProtocolVersion: "branch/connectivity/0",
+			}},
+		}}),
+	)
+
+	response := handler.Diagnostics()
+	if response.StatusCode != StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+
+	body := string(response.Body)
+	for _, forbidden := range []string{"trace", "span", "session_ref", "service_instance", "identity"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("diagnostics exposed forbidden field %q in %s", forbidden, body)
+		}
+	}
+	if !strings.Contains(body, "route.selected") {
+		t.Fatalf("diagnostics body missing event name: %s", body)
+	}
+}
+
+func TestDiagnosticsUnavailableWithoutProvider(t *testing.T) {
+	handler := NewHandler(staticProvider{})
+
+	response := handler.Diagnostics()
+
+	if response.StatusCode != StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", response.StatusCode, StatusServiceUnavailable)
 	}
 }

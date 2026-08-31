@@ -2,6 +2,8 @@ package admin
 
 import (
 	"encoding/json"
+
+	"github.com/code4bones/branch/internal/observability"
 )
 
 const (
@@ -37,12 +39,33 @@ type SnapshotProvider interface {
 	Snapshot() StatusSnapshot
 }
 
-type Handler struct {
-	provider SnapshotProvider
+// DiagnosticsSnapshotProvider supplies the protected diagnostic admin view.
+type DiagnosticsSnapshotProvider interface {
+	DiagnosticsSnapshot() observability.Snapshot
 }
 
-func NewHandler(provider SnapshotProvider) *Handler {
-	return &Handler{provider: provider}
+type Handler struct {
+	provider            SnapshotProvider
+	diagnosticsProvider DiagnosticsSnapshotProvider
+}
+
+// HandlerOption configures optional protected admin surfaces.
+type HandlerOption func(*Handler)
+
+// WithDiagnosticsProvider attaches the protected diagnostic snapshot surface.
+func WithDiagnosticsProvider(provider DiagnosticsSnapshotProvider) HandlerOption {
+	return func(handler *Handler) {
+		handler.diagnosticsProvider = provider
+	}
+}
+
+// NewHandler creates an admin handler over protected operator snapshots.
+func NewHandler(provider SnapshotProvider, options ...HandlerOption) *Handler {
+	handler := &Handler{provider: provider}
+	for _, option := range options {
+		option(handler)
+	}
+	return handler
 }
 
 func (handler *Handler) Liveness() Response {
@@ -56,6 +79,14 @@ func (handler *Handler) Readiness() Response {
 		status = StatusServiceUnavailable
 	}
 	return jsonResponse(status, sanitizeSnapshot(snapshot))
+}
+
+// Diagnostics returns the bounded operator diagnostic snapshot.
+func (handler *Handler) Diagnostics() Response {
+	if handler.diagnosticsProvider == nil {
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	return jsonResponse(StatusOK, handler.diagnosticsProvider.DiagnosticsSnapshot())
 }
 
 func sanitizeSnapshot(snapshot StatusSnapshot) StatusSnapshot {

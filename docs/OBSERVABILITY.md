@@ -238,6 +238,8 @@ The protected administrative listener provides:
 - readiness: configuration and node identity are valid and the node can accept
   its declared roles;
 - metrics: scrape endpoint when enabled;
+- diagnostics: a bounded in-memory snapshot of recent event names, reason
+  counts, and allowed low-cardinality attributes;
 - build and supported protocol/capability information;
 - bounded current resource pressure without peer enumeration.
 
@@ -270,6 +272,12 @@ addresses, IndexedDB contents, and browser authentication state.
 Export is a deliberate user action. The preview shows included categories and
 the generated bundle is redacted before it leaves the browser. Automatic upload
 is absent from the baseline.
+
+Frontend monitoring views derive from the local journal or a manually supplied
+redacted export. They may show event counts, reason counts, newest event time,
+recent sanitized events, and export categories. They do not upload diagnostics
+automatically, create permanent user identifiers, or reinterpret protocol
+state.
 
 ## 11. Development stack
 
