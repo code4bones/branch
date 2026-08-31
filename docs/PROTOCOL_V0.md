@@ -309,6 +309,38 @@ from at least three configured independent profiles before it is considered
 healthy. A client may still proceed with fewer when local policy allows degraded
 bootstrap.
 
+### Browser-native validation boundary
+
+Browser-native status is determined from a real browser origin, not from
+command-line HTTP reachability. A carrier is browser-native only when an
+ordinary PWA can perform the required read without a project proxy, without
+secret platform credentials in browser storage, and within the carrier's current
+CORS, CSP, and rate-limit constraints.
+
+A local 2026-08-31 HTTPS browser probe from a static test origin confirmed CORS
+`fetch` access to three independent public SearchCarrier read paths:
+
+| Carrier read path | Browser result | Operational caveat |
+| --- | --- | --- |
+| GitHub repository search API | HTTP 200 CORS response with `total_count`, `incomplete_results`, and `items`. | Unauthenticated search rate limit was reported as 10 requests per minute for the search resource during the probe; code search returned authentication-required and is not a baseline anonymous path. |
+| npm registry search API | HTTP 200 CORS response with `objects`, `total`, and `time`. | Registry responses are cached and rate limited by npm/Cloudflare policy; package ownership remains carrier metadata only. |
+| crates.io crate search API | HTTP 200 CORS response with `crates` and `meta` from a browser user agent. | Non-browser probes without an acceptable user agent can receive HTTP 403; browser viability must be retested from the target PWA origin. |
+
+This validation only proves that a browser can read candidate carrier records.
+It does not prove that useful BootstrapBeacon records exist, that carrier
+results are fresh or complete, or that a carrier will preserve access later.
+Each returned record remains hostile until bounded, wrapper-extracted,
+canonical-decoded, signature-verified, freshness-checked, and merged by the
+protocol-core rules above.
+
+The serving mirror's CSP is part of the browser-native contract. A static shell
+with `connect-src 'self'` intentionally blocks direct carrier and relay access.
+A functional B.R.A.N.C.H. PWA must explicitly allow its configured
+SearchCarrier APIs, RendezvousBoard WebSocket endpoints, relay WSS endpoints,
+and any user-approved WebRTC ICE infrastructure. This allowlist is local mirror
+or user policy; it is not a global B.R.A.N.C.H. registry and must not require a
+project-operated proxy.
+
 ### Validation, freshness, and merge
 
 SearchCarrier adapters bound response size before parsing and ignore carrier
@@ -776,6 +808,32 @@ Shared fixtures for board adapters should include publish encoding, observed
 carrier payloads, malformed wrapped payloads, duplicate pages, out-of-order
 pages, missing or deleted records, rate-limit responses, CORS or proxy failure,
 oversized records, unsupported search, and non-event noise.
+
+### Browser connectivity validation boundary
+
+A 2026-08-31 local HTTPS browser probe confirmed that the browser runtime can
+open an outbound WSS connection to a relay-like endpoint and establish a local
+WebRTC data channel between two same-page peers. This is a platform viability
+check, not proof of Internet NAT traversal, relay admission, capability
+authorization, end-to-end handshake security, or route migration.
+
+Functional connectivity validation must be run from the actual PWA origin
+because CSP can block WSS, carrier `fetch`, and ICE infrastructure even when the
+browser platform supports them. The test matrix distinguishes:
+
+- local WSS reachability to a relay endpoint allowed by CSP;
+- public or independently operated relay WSS reachability allowed by operator
+  policy;
+- WebRTC peer connection without external ICE when local candidates are enough;
+- WebRTC peer connection with user-approved STUN or TURN when required by the
+  network;
+- closed-app or backgrounded-app resume, measured as route reconciliation rather
+  than relay state restoration.
+
+Failures in these checks do not authorize durable relay storage, global presence
+lookup, or a project-operated connectivity service. They select degraded local
+policy, another configured relay, another board, user-mediated import, or a
+future adapter task.
 
 ## First-contact rendezvous flow
 

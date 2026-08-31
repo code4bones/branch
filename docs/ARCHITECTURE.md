@@ -1,6 +1,6 @@
 # B.R.A.N.C.H. Architecture
 
-Status: initial design draft, updated 2026-08-30.
+Status: initial design draft, updated 2026-08-31.
 
 ## Objective
 
@@ -144,6 +144,22 @@ The PWA and relay may be served by the same independently operated node origin.
 A mirror is an independent distributor, not a member of a centrally
 administered application. Wake-up signaling remains separate from message
 transport and must not become a mandatory GCM/APNs dependency.
+
+Browser-native discovery has two gates: the carrier API must allow browser
+reads, and the serving mirror's Content Security Policy must allow the selected
+carrier and relay endpoints. A restrictive default such as `connect-src 'self'`
+is appropriate for a static shell before adapters exist, but a functional PWA
+must generate a bounded `connect-src` policy from configured SearchCarrier,
+RendezvousBoard, WSS relay, and WebRTC/STUN/TURN policy. Expanding CSP is an
+explicit operator/client configuration step; it must not introduce a mandatory
+project-operated proxy or global allowlist.
+
+Closed-app and resume behavior is measured separately from discovery. Browsers
+may suspend timers, WebSocket connections, service workers, and WebRTC ICE
+state while an app is backgrounded. The client therefore treats resume as a
+fresh local reconciliation: inspect user-owned pending attempts, revalidate
+unexpired carrier observations, probe relay liveness, and re-establish or migrate
+routes without asking a relay to restore messages or session state.
 
 ## PWA mirror trust and migration
 
