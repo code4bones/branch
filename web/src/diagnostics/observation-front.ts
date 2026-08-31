@@ -69,9 +69,6 @@ function warningCount(input: RelayObservationInput): number {
   if (input.status.queue_depth > 0) {
     count += 1;
   }
-  if (!input.status.exporter_available) {
-    count += 1;
-  }
   for (const reason of input.diagnostics.reasons) {
     count += reason.count;
   }
