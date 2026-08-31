@@ -816,7 +816,7 @@ Shared Go and TypeScript fixtures must cover:
 - repository drop-in discovery from README marker text, repository topics,
   `.branch/records.br0`, and `.branch/manifest.json`;
 - workflow refresh cases that update only `.branch` bytes, skip no-op commits,
-  and avoid recursive generated commits.
+  and avoid recursive generated commits;
 - visual carrier fixtures for `ribbon-seal/0` and `ribbon-tint/0`, including
   exact decoded payload bytes, visual corruption failures, no-carrier negatives,
   transformed images from the corpus above, and signature rejection after a
