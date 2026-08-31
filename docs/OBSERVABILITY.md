@@ -70,6 +70,11 @@ is a no-op. Operator logs omit trace, span, session, service-instance, peer,
 address, and identity correlation fields by default; development-only
 correlation belongs to a separate trace adapter or explicit diagnostic session.
 
+Exporter adapters sit behind a bounded asynchronous sink. Full queues and
+exporter errors are counted and dropped locally instead of blocking or failing
+connectivity work. The reference core therefore has no OTLP runtime dependency;
+an OTLP adapter can implement the same sink interface in deployment code.
+
 ### Metrics
 
 Metrics describe aggregate health, volume, latency, resource pressure, and

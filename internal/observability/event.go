@@ -141,6 +141,12 @@ type Sink interface {
 	Emit(ctx context.Context, event Envelope) error
 }
 
+type SinkFunc func(context.Context, Envelope) error
+
+func (fn SinkFunc) Emit(ctx context.Context, event Envelope) error {
+	return fn(ctx, event)
+}
+
 type NoopSink struct{}
 
 func (NoopSink) Emit(context.Context, Envelope) error {
