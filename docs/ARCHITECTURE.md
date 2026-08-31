@@ -50,6 +50,12 @@ count as one failure domain. Credentialed or CORS-blocked search, such as some
 GitLab API modes, can be optional adapter plumbing but not the only bootstrap
 path.
 
+Any public repository may also Carry the Ribbon by adding a vendored Blue Ribbon
+badge, public search markers, and a local `.branch` directory containing exact
+signed bootstrap records. This is a voluntary SearchCarrier publication profile:
+the repository helps discovery, but repository ownership, CI status, badges,
+topics, and mirrors never replace issuer signatures or relay liveness probes.
+
 First contact uses this fabric only as a rendezvous control plane. A sender
 discovers a recipient's signed bootstrap material, selects one or more public
 boards allowed by both sides, publishes a sealed signed offer, and accepts a

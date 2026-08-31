@@ -451,6 +451,148 @@ entry material. Recovery then requires a new signed sequence from the subject or
 authorized issuer, an explicit user-carried bundle that still contains fresh
 records, or another user-chosen trust path.
 
+### Carry the Ribbon repository drop-in
+
+Carry the Ribbon is an optional repository integration that lets any public
+project wear the Blue Ribbon and carry signed bootstrap records. It is a carrier
+profile, not a registry. A repository owner opts in by adding a visible local
+badge, searchable marker text, and a machine-readable `.branch` directory. No
+project-operated repository, badge server, image host, domain, action, account,
+or relay is required.
+
+The README badge is vendorable and self-contained:
+
+```md
+[![Blue Ribbon — Carry the Ribbon](.branch/ribbon.svg)](.branch/README.md)
+```
+
+The badge image is stored in the repository, not loaded from a central image
+service. The badge link targets a local explanation file such as
+`.branch/README.md`. That explanation should identify B.R.A.N.C.H. by its full
+name, describe the independent Blue Ribbon tribute, and avoid implying
+affiliation with or endorsement by the Electronic Frontier Foundation.
+
+Search markers are public text, not authority. A participating repository should
+include at least these terms in README text, topics, package metadata, or another
+indexed public field:
+
+- `BRANCH0`;
+- `branch/connectivity/0`;
+- `branch-bootstrap-v0`;
+- `carry-the-ribbon`.
+
+A repository topic, when available, should use `branch-bootstrap-v0` or
+`carry-the-ribbon`. Multiple topic names on the same repository do not create
+additional failure domains.
+
+The `.branch` directory is a local carrier payload. The baseline layout is:
+
+```text
+.branch/
+├── README.md
+├── ribbon.svg
+├── records.br0
+└── manifest.json
+```
+
+`records.br0` is UTF-8 text containing one exact `BRANCH0.` wrapper per line.
+Blank lines are ignored. Lines beginning with `#` are comments for humans and
+must not be interpreted as protocol data. Each non-comment record is decoded as
+the exact signed event bytes defined by the text carrier wrapper; clients must
+not normalize, pretty-print, repair, or reserialize those bytes before signature
+validation.
+
+`manifest.json` is unsigned carrier metadata for tools and SearchCarrier
+adapters. It may contain:
+
+```json
+{
+  "schema": "branch.repository-dropin/0",
+  "markers": ["BRANCH0", "branch/connectivity/0", "branch-bootstrap-v0"],
+  "records_path": ".branch/records.br0",
+  "badge_path": ".branch/ribbon.svg",
+  "generated_at": 0,
+  "source_commit": "optional-vcs-commit",
+  "tool": "optional-generator"
+}
+```
+
+The manifest never authenticates a beacon, extends expiry, revokes records,
+authorizes a mirror, proves relay liveness, or changes failure-domain counting.
+Its paths are local repository hints only. SearchCarrier implementations may use
+it to find candidate bytes more efficiently, then must validate the signed
+records exactly as if they had been found in README text.
+
+A drop-in may carry several signed source records and curator bundles, but it
+must preserve each signed record byte-for-byte. Repository ownership, stars,
+release tags, branch names, commit signatures, package ownership, and CI status
+are publication evidence only. They can help a human decide whether to trust the
+repository owner, but they do not replace BootstrapBeacon issuer signatures.
+
+Freshness follows Ribbon Bearer rules. A workflow can replace `records.br0` with
+a newer valid issuer sequence, remove expired records from the current set, or
+keep expired records only in a clearly historical section. Updating
+`manifest.json` metadata, README marker text, wrapper placement, or generated
+timestamps must never make an expired source record appear fresh.
+
+The GitHub drop-in is a minimal-permission workflow or reusable workflow. Its
+baseline triggers are:
+
+- `push`, so ordinary repository activity can refresh carried records;
+- `workflow_dispatch`, so the owner can refresh manually;
+- `schedule`, so long-lived repositories can republish before records expire.
+
+Default permissions are read-only:
+
+```yaml
+permissions:
+  contents: read
+```
+
+If the repository owner opts into automated commits, the workflow may request
+`contents: write` only for the job that writes `.branch` files. It must not
+request package, deployment, identity-token, issue, pull-request, secret, or
+administration permissions unless an equivalent host requires a documented
+narrow permission for the same local update.
+
+The workflow stages are:
+
+1. checkout the repository;
+2. load configured signed source records or locally generated new issuer
+   sequences;
+3. verify signatures, expiry, sequence, revocation, and unsupported capability
+   handling before writing;
+4. update only `.branch/records.br0`, `.branch/manifest.json`, local badge
+   assets, and local README marker text when policy allows;
+5. compare exact file content and skip commits when no byte changes are needed;
+6. publish a commit, pull request, or build artifact according to repository
+   policy.
+
+Automation must avoid recursive churn:
+
+- generated commits include a recognizable marker such as `[branch-skip]`;
+- workflows ignore commits that only repeat the same `.branch` bytes;
+- schedules use bounded jitter and one update per configured cadence window;
+- failed carrier publication does not retry unboundedly or spam commits;
+- a repository must never silently publish through a user's personal account or
+  create new public carriers without explicit owner configuration.
+
+Policy-compatible behaviour is required. On a protected branch, the workflow
+opens a pull request, uploads an artifact, or reports a check result instead of
+bypassing review. On a repository that forbids bot commits, manual dispatch can
+produce the exact `.branch` directory as an artifact for the owner to commit.
+When signing keys are used in automation, they are delegated publication keys
+scoped to the advertised subject and record family, not portable user identity
+keys or relay capability tokens.
+
+Equivalent non-GitHub integrations use the same contract: a visible local badge,
+searchable marker text, `.branch/records.br0`, `.branch/manifest.json`, signature
+verification before publication, minimal write scope, manual and scheduled
+refresh, recursion avoidance, and no central image or mandatory project service.
+GitLab CI, Forgejo/Gitea actions, SourceHut builds, Buildkite, cron jobs, or a
+plain local script can all satisfy the profile when they preserve these
+semantics.
+
 ### Bootstrap fixtures
 
 Shared Go and TypeScript fixtures must cover:
@@ -474,7 +616,11 @@ Shared Go and TypeScript fixtures must cover:
   sequence;
 - curator bundles that cannot extend expiry or override source signatures;
 - mirror republication of expired records treated as historical, not current;
-- opt-in SearchCarrier republication that preserves exact signed bytes.
+- opt-in SearchCarrier republication that preserves exact signed bytes;
+- repository drop-in discovery from README marker text, repository topics,
+  `.branch/records.br0`, and `.branch/manifest.json`;
+- workflow refresh cases that update only `.branch` bytes, skip no-op commits,
+  and avoid recursive generated commits.
 
 ## Board adapter contract
 
