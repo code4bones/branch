@@ -19,6 +19,7 @@ export interface GitLabDiscoveryRequest {
   readonly query: string;
   readonly perPage: number;
   readonly page: number;
+  readonly includeForks?: boolean;
   readonly signal?: AbortSignal;
 }
 
@@ -95,13 +96,15 @@ export async function discoverGitLabDropIns(
     return emptyReport("failed", normalized.query, searchUrl, totalCount, rateLimitRemaining, rateLimitReset, "GitLab project search response rejected");
   }
 
+  const projects = normalized.includeForks === true ? payload : payload.filter((project) => !isForkProject(project));
   const results: GitLabDiscoveryResult[] = [];
-  for (const project of payload.slice(0, maxGitLabSearchItems)) {
+  for (const project of projects.slice(0, maxGitLabSearchItems)) {
     results.push(await readProjectRecords(project, normalized.signal, fetcher));
   }
   const accepted = results.reduce((total, result) => total + result.acceptedCount, 0);
+  const failed = results.some((result) => result.status === "error");
   return {
-    status: accepted > 0 ? "ok" : "empty",
+    status: accepted > 0 ? "ok" : failed ? "failed" : "empty",
     query: normalized.query,
     searchUrl,
     totalCount,
@@ -121,6 +124,7 @@ export function createGitLabSearchCarrier(fetcher?: Fetcher): SearchCarrier {
         query: request.query,
         perPage: request.perPage,
         page: request.page,
+        ...(request.includeForks === undefined ? {} : { includeForks: request.includeForks }),
         ...(request.signal === undefined ? {} : { signal: request.signal })
       }, fetcher),
       "gitlab"
@@ -209,6 +213,7 @@ function normalizeDiscoveryRequest(request: GitLabDiscoveryRequest): GitLabDisco
     query,
     perPage: clampInteger(request.perPage, 1, maxGitLabDiscoveryPerPage),
     page: clampInteger(request.page, 1, maxGitLabDiscoveryPage),
+    ...(request.includeForks === undefined ? {} : { includeForks: request.includeForks }),
     ...(request.signal === undefined ? {} : { signal: request.signal })
   };
 }
@@ -223,7 +228,7 @@ async function readProjectRecords(
   const base = {
     repository: project.path_with_namespace,
     defaultBranch,
-    fork: project.forked_from_project !== undefined,
+    fork: isForkProject(project),
     htmlUrl: project.web_url,
     recordsUrl
   };
@@ -401,6 +406,10 @@ function isGitLabProjectItem(value: unknown): value is GitLabProjectItem {
     typeof value["name_with_namespace"] === "string" &&
     typeof value["web_url"] === "string" &&
     (value["default_branch"] === undefined || value["default_branch"] === null || typeof value["default_branch"] === "string");
+}
+
+function isForkProject(project: GitLabProjectItem): boolean {
+  return project.forked_from_project !== undefined && project.forked_from_project !== null;
 }
 
 function readHeader(headers: Headers, names: readonly string[]): string | null {

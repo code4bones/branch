@@ -312,6 +312,61 @@ void test("gitlab discovery surfaces rate limits and rejected bootstrap records"
   assert.equal(limited.rateLimitRemaining, "0");
 });
 
+void test("gitlab discovery filters forks and reports content errors", async () => {
+  const fetched: string[] = [];
+  const fetcher = (input: string): Promise<Response> => {
+    fetched.push(input);
+    if (input.startsWith("https://gitlab.com/api/v4/projects?")) {
+      return Promise.resolve(jsonResponse([
+        {
+          id: 11,
+          path_with_namespace: "alice/base-carrier",
+          name_with_namespace: "Alice / Base Carrier",
+          web_url: "https://gitlab.com/alice/base-carrier",
+          default_branch: "main",
+          forked_from_project: null
+        },
+        {
+          id: 12,
+          path_with_namespace: "bob/fork-carrier",
+          name_with_namespace: "Bob / Fork Carrier",
+          web_url: "https://gitlab.com/bob/fork-carrier",
+          default_branch: "main",
+          forked_from_project: { id: 11 }
+        }
+      ]));
+    }
+    return Promise.resolve(new Response("blocked", { status: 500 }));
+  };
+
+  const withoutForks = await discoverGitLabDropIns({
+    query: gitLabDiscoveryDefaultQuery,
+    perPage: 5,
+    page: 1,
+    includeForks: false
+  }, fetcher);
+  const withForks = await discoverGitLabDropIns({
+    query: gitLabDiscoveryDefaultQuery,
+    perPage: 5,
+    page: 1,
+    includeForks: true
+  }, fetcher);
+
+  assert.equal(withoutForks.status, "failed");
+  assert.equal(withoutForks.results.length, 1);
+  const withoutForksResult = withoutForks.results[0];
+  assert(withoutForksResult !== undefined);
+  assert.equal(withoutForksResult.repository, "alice/base-carrier");
+  assert.equal(withoutForksResult.fork, false);
+  assert.equal(withoutForksResult.status, "error");
+  assert.equal(withForks.results.length, 2);
+  const withForksResult = withForks.results[1];
+  assert(withForksResult !== undefined);
+  assert.equal(withForksResult.fork, true);
+  assert(fetched.some((url) => url.includes("alice%2Fbase-carrier")));
+  assert(fetched.some((url) => url.includes("bob%2Ffork-carrier")));
+});
+
 void test("text carrier extracts bounded BRANCH0 wrappers without normalization", () => {
   const source = `noise ${defaultBranchWrapper}\n${defaultBranchWrapper}\nBRANCH0.invalid=`;
   const wrappers = extractBranchTextWrappers(source);

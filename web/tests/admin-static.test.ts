@@ -55,6 +55,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const githubTool = await readFile(githubToolPath, "utf8");
   const gitLabTool = await readFile(gitLabToolPath, "utf8");
   const clientTool = await readFile(clientToolPath, "utf8");
+  const transportLab = await readFile(resolve(process.cwd(), "src/admin/use-same-relay-transport-lab.ts"), "utf8");
   const carrierHopClient = await readFile(discoveryCarrierHopClientPath, "utf8");
   const publicationProfile = await readFile(publicationProfilePath, "utf8");
   const defaults = await readFile(defaultsPath, "utf8");
@@ -184,6 +185,11 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /relayEndpoint/);
   assert.match(clientTool, /Run carrier-hop PoC/);
   assert.doesNotMatch(clientTool, /localStorage|indexedDB|WebSocket|GITHUB_TOKEN|Authorization/);
+  assert.match(transportLab, /createBetaPayloadKeyPair/);
+  assert.match(transportLab, /sealBetaPayload/);
+  assert.match(transportLab, /openBetaPayload/);
+  assert.match(transportLab, /sendSealedEnvelope/);
+  assert.doesNotMatch(transportLab, /\.sendEnvelope\(/);
   assert.match(publicationProfile, /branchBootstrapLocator = "branchbootstrapv0"/);
   assert.match(publicationProfile, /githubPrimaryLocatorQuery/);
   assert.match(publicationProfile, /topic:\$\{branchBootstrapLocator\}/);

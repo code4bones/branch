@@ -134,6 +134,54 @@ void test("client discovery runs GitLab project locator without credentials", as
   assert(fetched.every((input) => !input.includes("PRIVATE-TOKEN") && !input.includes("oauth")));
 });
 
+void test("client discovery passes GitLab fork policy and reports failed content reads", async () => {
+  const fetched: string[] = [];
+  const fetcher = (input: string): Promise<Response> => {
+    fetched.push(input);
+    if (input.startsWith("https://gitlab.com/api/v4/projects?")) {
+      return Promise.resolve(jsonResponse([
+        {
+          id: 31,
+          path_with_namespace: "alice/base-carrier",
+          name_with_namespace: "Alice / Base Carrier",
+          web_url: "https://gitlab.com/alice/base-carrier",
+          default_branch: "main",
+          forked_from_project: null
+        },
+        {
+          id: 32,
+          path_with_namespace: "bob/fork-carrier",
+          name_with_namespace: "Bob / Fork Carrier",
+          web_url: "https://gitlab.com/bob/fork-carrier",
+          default_branch: "main",
+          forked_from_project: { id: 31 }
+        }
+      ]));
+    }
+    return Promise.resolve(new Response("blocked", { status: 500 }));
+  };
+
+  const discovery = await discoverClientBootstrapBeacons({
+    carrier: createGitLabSearchCarrier(fetcher),
+    primaryQuery: gitLabDiscoveryDefaultQuery,
+    fallbackQuery: null,
+    includeFallback: false,
+    includeForks: false,
+    perPage: 5,
+    page: 1
+  });
+  const report = mergeGitLabDiscoveryReports(gitLabReportsFromCarrierReports(discovery.carrierReports));
+
+  assert.equal(discovery.status, "failed");
+  assert.equal(report.results.length, 1);
+  const result = report.results[0];
+  assert(result !== undefined);
+  assert.equal(result.repository, "alice/base-carrier");
+  assert.equal(result.fork, false);
+  assert(fetched.some((url) => url.includes("alice%2Fbase-carrier")));
+  assert(!fetched.some((url) => url.includes("bob%2Ffork-carrier")));
+});
+
 void test("client discovery returns bounded abort and error reports", async () => {
   const aborted = new AbortController();
   aborted.abort();

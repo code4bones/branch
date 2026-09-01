@@ -5,15 +5,24 @@ import {
   type RelayRouteMaterial,
   type SameRelayTransportEvent
 } from "../connectivity/same-relay.js";
+import {
+  createBetaPayloadKeyPair,
+  makeBetaPayloadAAD,
+  openBetaPayload,
+  sealBetaPayload,
+  type BetaPayloadKeyPair
+} from "../connectivity/payload-crypto.js";
 import { runDiscoveredCarrierHopPoC, routesFromBeaconObservations } from "../discovery/carrier-hop-client.js";
 import type { BeaconObservation } from "../discovery/client.js";
 import { createGitLabSearchCarrier, gitLabReportsFromCarrierReports, mergeGitLabDiscoveryReports } from "../discovery/gitlab.js";
+import { encodeBase64URL } from "../protocol/v0/base64url.js";
+import { protocolID } from "../protocol/v0/envelope.js";
 import { useAdminStore, type ClientTransportStatePatch } from "./store.js";
 
 export interface SameRelayTransportLab {
   readonly route: RelayRouteMaterial | null;
   readonly attachPair: () => Promise<void>;
-  readonly sendOpaqueEnvelope: () => void;
+  readonly sendOpaqueEnvelope: () => Promise<void>;
   readonly disconnectBobAndSend: () => Promise<void>;
   readonly reconnectBobAndRetry: () => Promise<void>;
   readonly runCarrierHopPoC: () => Promise<void>;
@@ -44,6 +53,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
   const resetClientTransport = useAdminStore((state) => state.resetClientTransport);
   const aliceRef = useRef<SameRelayTransportClient | null>(null);
   const bobRef = useRef<SameRelayTransportClient | null>(null);
+  const bobPayloadKeyRef = useRef<BetaPayloadKeyPair | null>(null);
   const unsubscribeRef = useRef<readonly (() => void)[]>([]);
   const latestCountsRef = useRef({
     relayAckCount: 0,
@@ -57,6 +67,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
     bobRef.current?.disconnect();
     aliceRef.current = null;
     bobRef.current = null;
+    bobPayloadKeyRef.current = null;
     for (const unsubscribe of unsubscribeRef.current) {
       unsubscribe();
     }
@@ -96,10 +107,12 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
         SameRelayTransportClient.createIdentity(),
         SameRelayTransportClient.createIdentity()
       ]);
+      const bobPayloadKey = await createBetaPayloadKeyPair();
       const alice = new SameRelayTransportClient({ route, identity: aliceIdentity });
       const bob = new SameRelayTransportClient({ route, identity: bobIdentity });
       aliceRef.current = alice;
       bobRef.current = bob;
+      bobPayloadKeyRef.current = bobPayloadKey;
       unsubscribeRef.current = [
         alice.addEventListener((event) => {
           handleTransportEvent("Alice", event, alice, appendClientTransportEvent, setClientTransportState, latestCountsRef);
@@ -107,7 +120,15 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
         bob.addEventListener((event) => {
           handleTransportEvent("Bob", event, bob, appendClientTransportEvent, setClientTransportState, latestCountsRef);
           if (event.type === "envelope_received") {
-            alice.markPeerReceipt(event.deliveryId);
+            void openBetaPayload({
+              recipientPrivateKey: bobPayloadKey.privateKey,
+              sealedPayload: event.ciphertext,
+              aad: makeEnvelopeAAD(route, alice.peerId, bob.peerId, event.deliveryId)
+            }).then(() => {
+              alice.markPeerReceipt(event.deliveryId);
+            }).catch((error: unknown) => {
+              appendClientTransportEvent(`Bob: payload rejected ${errorMessage(error)}`);
+            });
           }
         })
       ];
@@ -133,23 +154,26 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
     }
   }, [appendClientTransportEvent, reset, route, setClientTransportState]);
 
-  const sendOpaqueEnvelope = useCallback((): void => {
+  const sendOpaqueEnvelope = useCallback(async (): Promise<void> => {
     const alice = aliceRef.current;
-    if (alice === null) {
+    const bob = bobRef.current;
+    const bobPayloadKey = bobPayloadKeyRef.current;
+    if (alice === null || bob === null || route === null || bobPayloadKey === null) {
       setClientTransportState({
         transportStatus: "attach clients before sending",
         transportStatusClass: "status-bad"
       });
       return;
     }
-    alice.sendEnvelope("opaque test bytes");
+    await sendEncryptedEnvelope(alice, bob, bobPayloadKey, route, "opaque test bytes");
     setClientTransportState({ pendingCount: alice.pendingCount });
-  }, [setClientTransportState]);
+  }, [route, setClientTransportState]);
 
   const disconnectBobAndSend = useCallback(async (): Promise<void> => {
     const alice = aliceRef.current;
     const bob = bobRef.current;
-    if (alice === null || bob === null) {
+    const bobPayloadKey = bobPayloadKeyRef.current;
+    if (alice === null || bob === null || route === null || bobPayloadKey === null) {
       setClientTransportState({
         transportStatus: "attach clients before disconnect test",
         transportStatusClass: "status-bad"
@@ -158,13 +182,13 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
     }
     bob.disconnect();
     await sleep(100);
-    alice.sendEnvelope("opaque retry bytes");
+    await sendEncryptedEnvelope(alice, bob, bobPayloadKey, route, "opaque retry bytes");
     setClientTransportState({
       transportStatus: "bob disconnected; waiting for transient unavailable",
       transportStatusClass: "status-warn",
       pendingCount: alice.pendingCount
     });
-  }, [setClientTransportState]);
+  }, [route, setClientTransportState]);
 
   const reconnectBobAndRetry = useCallback(async (): Promise<void> => {
     const alice = aliceRef.current;
@@ -294,6 +318,37 @@ export function routeFromDiscoveryResults(results: readonly AdminDiscoveryRouteR
   return routesFromBeaconObservations(observations)[0] ?? null;
 }
 
+async function sendEncryptedEnvelope(
+  alice: SameRelayTransportClient,
+  bob: SameRelayTransportClient,
+  bobPayloadKey: BetaPayloadKeyPair,
+  route: RelayRouteMaterial,
+  plaintext: string
+): Promise<string> {
+  const deliveryId = randomToken(16);
+  const sealedPayload = await sealBetaPayload({
+    recipientPublicKey: bobPayloadKey.publicKey,
+    plaintext,
+    aad: makeEnvelopeAAD(route, alice.peerId, bob.peerId, deliveryId)
+  });
+  alice.sendSealedEnvelope(sealedPayload, { deliveryId });
+  return deliveryId;
+}
+
+function makeEnvelopeAAD(route: RelayRouteMaterial, senderPeerId: string, recipientPeerId: string, deliveryId: string): Uint8Array {
+  return makeBetaPayloadAAD({
+    protocol: protocolID,
+    profileMultihash: route.profileMultihash,
+    senderPeerId,
+    recipientPeerId,
+    deliveryId,
+    pathEpoch: 0,
+    streamId: 0,
+    frameType: "ENVELOPE",
+    ackRequested: true
+  });
+}
+
 function handleTransportEvent(
   side: "Alice" | "Bob",
   event: SameRelayTransportEvent,
@@ -367,6 +422,12 @@ function handleTransportEvent(
 
 function shortId(value: string): string {
   return value.length <= 10 ? value : `${value.slice(0, 10)}...`;
+}
+
+function randomToken(size: number): string {
+  const bytes = new Uint8Array(size);
+  globalThis.crypto.getRandomValues(bytes);
+  return encodeBase64URL(bytes);
 }
 
 function sleep(milliseconds: number): Promise<void> {

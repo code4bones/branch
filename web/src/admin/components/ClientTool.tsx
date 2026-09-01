@@ -151,7 +151,7 @@ export function ClientTool(): React.JSX.Element {
           <button type="button" disabled={transport.route === null || client.transportRunning} onClick={() => { void transport.attachPair(); }}>
             Attach test pair
           </button>
-          <button type="button" disabled={client.alicePeerId === "" || client.transportRunning} onClick={() => { transport.sendOpaqueEnvelope(); }}>
+          <button type="button" disabled={client.alicePeerId === "" || client.transportRunning} onClick={() => { void transport.sendOpaqueEnvelope(); }}>
             Send envelope
           </button>
           <button type="button" disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.disconnectBobAndSend(); }}>
