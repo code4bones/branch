@@ -29,3 +29,4 @@ web/coverage/
 .vscode/
 *.swp
 *.swo
+samples/
