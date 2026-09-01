@@ -1097,6 +1097,26 @@ content type, transform class, decode result, and signature validation result.
 It must not record platform cookies, account identifiers, private board names,
 access tokens, or unrelated image metadata.
 
+The current automated `ribbon-seal/0` draft corpus is recorded in
+`testdata/visual-carrier/corpus.json` and exercised by
+`web/tests/ribbon-image.test.ts`. For the current 80-byte wrapper fixture, QR
+version 10-H, 57 modules, 16 px module pitch, and 8-module quiet zone, the
+local RGBA corpus currently records:
+
+- nearest-neighbour resize succeeds down to 240 px square and first fails at
+  200 px square;
+- equal edge crop succeeds at 10% per side and first fails at 15% per side;
+- right-angle rotation, color/gamma/white-balance shifts, and screenshot-style
+  scale down/up through 4x succeed;
+- the current synthetic mild perspective transform fails with
+  `no_carrier_detected`, so perspective normalization is not yet part of the
+  MVP claim.
+
+JPEG/WebP recompression, real-device screenshot/camera capture, and the manual
+Pinterest upload/download round trip remain measurement work. They are not
+required by the decoder API and must not introduce platform credentials or
+automated publishing.
+
 #### Verification and failure semantics
 
 Visual decoding returns one of:
