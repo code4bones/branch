@@ -106,8 +106,9 @@ void test("github publication profile exposes canonical locator metadata", () =>
   assert.equal(branchBootstrapLocator, "branchbootstrapv0");
   assert.match(githubDiscoveryDefaultQuery, /^branchbootstrapv0 in:readme$/);
   assert.match(makeBadgeSnippet(), /branchbootstrapv0/);
-  assert.match(rootSnippet, /branchbootstrapv0 BRANCH0 branch\/connectivity\/0 branch-bootstrap-v0 carry-the-ribbon/);
   assert.match(rootSnippet, /\[!\[B\.R\.A\.N\.C\.H\. branchbootstrapv0 Blue Ribbon/);
+  assert.match(rootSnippet, /\n\nB\.R\.A\.N\.C\.H\. bootstrap carrier: branchbootstrapv0\n$/);
+  assert.doesNotMatch(rootSnippet, /BRANCH0 branch\/connectivity\/0 branch-bootstrap-v0 carry-the-ribbon/);
   assert.equal(githubRepositoryDescription, "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon");
   assert.deepEqual(githubRepositoryTopics, ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"]);
 });

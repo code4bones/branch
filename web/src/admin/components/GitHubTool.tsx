@@ -10,14 +10,15 @@ import {
   mergeGitHubDiscoveryReports,
   type GitHubValidatedRecord
 } from "../../discovery/github.js";
-import { makeBadgeSnippet, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
+import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
+import { makeRootReadmeSnippet } from "../publication-profile.js";
 import { useAdminStore } from "../store.js";
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
 import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
 
 export function GitHubTool(): React.JSX.Element {
   const outputRef = useRef<HTMLTextAreaElement | null>(null);
-  const badgeRef = useRef<HTMLInputElement | null>(null);
+  const badgeRef = useRef<HTMLTextAreaElement | null>(null);
   const discoveryAbortRef = useRef<AbortController | null>(null);
   const githubTab = useAdminStore((state) => state.githubTab);
   const github = useAdminStore((state) => state.github);
@@ -52,7 +53,7 @@ export function GitHubTool(): React.JSX.Element {
       const records = await parseBranchRecords(recordsInput, { mode: github.mode });
       const files = await makeGitHubFiles(records, sourceCommit.trim(), Math.floor(Date.now() / 1000), github.mode);
       setGitHubFiles(files);
-      setGitHubBadgeSnippet(makeBadgeSnippet());
+      setGitHubBadgeSnippet(makeRootReadmeSnippet());
       setGitHubStatus(github.mode === "demo" ? "demo fixture generated" : "live bundle generated", "status-good");
     } catch (error) {
       setGitHubFiles([]);
@@ -219,12 +220,13 @@ export function GitHubTool(): React.JSX.Element {
             </div>
             <p className={github.statusClass}>{github.status}</p>
 
-            <label htmlFor="github-badge-snippet">README badge snippet</label>
-            <input
+            <label htmlFor="github-badge-snippet">README carrier block</label>
+            <textarea
               id="github-badge-snippet"
               ref={badgeRef}
               readOnly
-              type="text"
+              rows={4}
+              spellCheck={false}
               value={github.badgeSnippet}
             />
             <div className="button-row">

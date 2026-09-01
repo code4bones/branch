@@ -14,6 +14,6 @@ export function branchPublicationMarkers(): readonly string[] {
 export function makeRootReadmeSnippet(): string {
   return `[![${githubBadgeAltText}](.branch/ribbon.svg)](.branch/README.md)
 
-B.R.A.N.C.H. bootstrap carrier: ${branchPublicationMarkers().join(" ")}
+B.R.A.N.C.H. bootstrap carrier: ${branchBootstrapLocator}
 `;
 }

@@ -101,9 +101,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /createBootstrapBeaconWrapper/);
   assert.match(githubTool, /id="relay-endpoint-uri"/);
   assert.match(githubTool, /id="github-badge-snippet"/);
-  assert.match(githubTool, /README badge snippet/);
-  assert.match(githubTool, /makeBadgeSnippet/);
-  assert.doesNotMatch(githubTool, /makeRootReadmeSnippet/);
+  assert.match(githubTool, /README carrier block/);
+  assert.match(githubTool, /makeRootReadmeSnippet/);
+  assert.match(githubTool, /<textarea[\s\S]*id="github-badge-snippet"/);
   assert.match(githubTool, /id="github-discovery-form"/);
   assert.match(githubTool, /id="github-discovery-query"/);
   assert.match(githubTool, /id="github-discovery-forks"/);
