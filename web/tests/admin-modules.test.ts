@@ -18,6 +18,7 @@ import {
 } from "../src/admin/transform-lab.js";
 import { fitInsideWithPadding, resizeNearest } from "../src/visual/corpus.js";
 import { computeModulePitch, computePlacement, type RibbonPlacement } from "../src/visual/geometry.js";
+import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "../src/visual/ribbon-block.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
 import {
   embedRibbonLocator,
@@ -369,6 +370,107 @@ void test("ribbon locator embeds pixel magic and accelerates hidden tint decode"
   assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)} locator`);
   assert.equal(decoded.wrapper, defaultBranchWrapper);
   assert.deepEqual(decoded.foundRegion, hint.payloadRegion);
+});
+
+void test("ribbon block profile carries exact signed frame bytes through locator decode", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const placement = "bottom-right";
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const source = makeNoCarrierImage(1000, 1500);
+  const region = {
+    ...computePlacement(placement, source.width, source.height, symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)),
+    size: symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)
+  };
+  const blocked = embedBlockPayload(source, symbol.frame, region);
+  const image = embedRibbonLocator(blocked, makeRibbonLocatorHint({
+    visualProfile: ribbonBlockProfile,
+    quietZone,
+    modulePitch: symbol.diagnostics.modulePitch,
+    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
+    moduleCount: symbol.diagnostics.moduleCount,
+    placement,
+    outputWidth: source.width,
+    outputHeight: source.height
+  }));
+  const locator = readRibbonLocator(image) ?? failLocator();
+  const frame = extractBlockPayload(image, region);
+  const decoded = decodeRibbonImage(image, {
+    quietZone: 4,
+    carrierSize: 320,
+    placement: "top-left",
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2
+  });
+
+  assert.deepEqual(frame, symbol.frame);
+  assert.equal(locator.visualProfile, ribbonBlockProfile);
+  assert.equal(decoded.status, "block decoded locator");
+  assert.equal(decoded.wrapper, defaultBranchWrapper);
+  assert.deepEqual(decoded.foundRegion, region);
+});
+
+void test("ribbon block profile survives nearest resize with locator-scaled region", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const placement = "bottom-right";
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const source = makeNoCarrierImage(1000, 1500);
+  const sourceRegion = {
+    ...computePlacement(placement, source.width, source.height, symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)),
+    size: symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)
+  };
+  const blocked = embedBlockPayload(source, symbol.frame, sourceRegion);
+  const located = embedRibbonLocator(blocked, makeRibbonLocatorHint({
+    visualProfile: ribbonBlockProfile,
+    quietZone,
+    modulePitch: symbol.diagnostics.modulePitch,
+    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
+    moduleCount: symbol.diagnostics.moduleCount,
+    placement,
+    outputWidth: source.width,
+    outputHeight: source.height
+  }));
+  const resized = resizeNearest(located, 750, 1125);
+  const decoded = decodeRibbonImage(resized, {
+    quietZone: 8,
+    carrierSize: 720,
+    placement,
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2
+  });
+
+  assert.equal(decoded.status, "block decoded locator");
+  assert.equal(decoded.wrapper, defaultBranchWrapper);
+  assert.deepEqual(decoded.foundRegion, { x: 227, y: 602, size: 493 });
+});
+
+void test("ribbon block profile has bounded default heuristic when locator is stripped", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const placement = "bottom-right";
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const source = makeNoCarrierImage(1000, 1500);
+  const sourceRegion = {
+    ...computePlacement(placement, source.width, source.height, symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)),
+    size: symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)
+  };
+  const blocked = embedBlockPayload(source, symbol.frame, sourceRegion);
+  const resized = resizeNearest(blocked, 750, 1125);
+  const decoded = decodeRibbonImage(resized, {
+    quietZone,
+    carrierSize: 540,
+    placement,
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2
+  });
+
+  assert.equal(decoded.status, "block decoded heuristic");
+  assert.equal(decoded.wrapper, defaultBranchWrapper);
+  assert.deepEqual(decoded.foundRegion, { x: 227, y: 602, size: 493 });
 });
 
 void test("ribbon locator reads legacy browser grid as bounded hint", () => {

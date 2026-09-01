@@ -1,6 +1,7 @@
 import jsQR from "jsqr";
 
 import { computeModulePitch, computePlacement, type RibbonPlacement } from "./geometry.js";
+import { extractBlockPayload, ribbonBlockProfile } from "./ribbon-block.js";
 import {
   decodeRibbonFrame,
   type RibbonDecodeResult,
@@ -48,6 +49,9 @@ const defaultMaxInputPixels = 4096 * 4096;
 const defaultMaxDirectPixels = 1024 * 1024;
 const defaultMaxVersionAttempts = 6;
 const defaultMaxTintCandidates = 48;
+const defaultBlockSourceWidth = 1000;
+const defaultBlockSourceHeight = 1500;
+const defaultBlockSourceSymbolSize = 657;
 
 export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonImageOptions): DecodedRibbonWrapper {
   const validationStatus = validateImageData(image, options.maxInputPixels ?? defaultMaxInputPixels);
@@ -64,6 +68,15 @@ export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonI
   }
 
   const attempts = selectVersionAttempts(image, options);
+  const blocked = decodeBlockImage(image, options, attempts);
+  if (blocked.wrapper !== "") {
+    return blocked;
+  }
+  const heuristicBlock = decodeDefaultBlockImage(image, options);
+  if (heuristicBlock.wrapper !== "") {
+    return heuristicBlock;
+  }
+
   const placedDirect = decodePlacedQRCode(image, options, attempts);
   if (placedDirect.status === "beacon_accepted") {
     return {
@@ -99,6 +112,20 @@ function decodeWithLocatedHint(image: RibbonImageData, locator: RibbonLocatorHin
     maxTintCandidates: locator.visualProfile === "ribbon-tint/0" ? 8 : 2
   };
   const attempts = selectVersionAttempts(image, options);
+  if (locator.visualProfile === ribbonBlockProfile) {
+    for (const region of makeLocatedBlockRegions(image, locator)) {
+      const blocked = decodeBlockRegion(image, region);
+      if (blocked.wrapper !== "") {
+        return {
+          ...blocked,
+          status: `${blocked.status} locator`,
+          locator,
+          foundRegion: region
+        };
+      }
+    }
+  }
+
   if (locator.visualProfile === "ribbon-tint/0") {
     const tinted = decodeTintImage(image, options, attempts);
     if (tinted.wrapper !== "") {
@@ -122,6 +149,119 @@ function decodeWithLocatedHint(image: RibbonImageData, locator: RibbonLocatorHin
   }
 
   return { status: "locator hint rejected", wrapper: "", locator };
+}
+
+function makeLocatedBlockRegions(image: RibbonImageData, locator: RibbonLocatorHint): readonly RibbonLocatorRegion[] {
+  const scale = Math.min(image.width / locator.sourceWidth, image.height / locator.sourceHeight);
+  const scaledSize = Math.max(128, Math.min(4096, Math.round(locator.sourceSymbolSize * scale)));
+  const scaledPlacement = {
+    ...computePlacement(locator.placement, image.width, image.height, scaledSize),
+    size: scaledSize
+  };
+  return dedupeRegions([locator.payloadRegion, scaledPlacement]);
+}
+
+function dedupeRegions(regions: readonly RibbonLocatorRegion[]): readonly RibbonLocatorRegion[] {
+  const seen = new Set<string>();
+  const unique: RibbonLocatorRegion[] = [];
+  for (const region of regions) {
+    const key = `${String(region.x)}:${String(region.y)}:${String(region.size)}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(region);
+  }
+  return unique;
+}
+
+function decodeBlockImage(
+  image: RibbonImageData,
+  options: DecodeRibbonImageOptions,
+  attempts: readonly VersionAttempt[]
+): DecodedRibbonWrapper {
+  for (const { symbolSize } of attempts) {
+    const placement = computePlacement(options.placement, image.width, image.height, symbolSize);
+    const decoded = decodeBlockRegion(image, { ...placement, size: symbolSize });
+    if (decoded.wrapper !== "") {
+      return decoded;
+    }
+  }
+  return { status: "block extraction failed", wrapper: "" };
+}
+
+function decodeDefaultBlockImage(image: RibbonImageData, options: DecodeRibbonImageOptions): DecodedRibbonWrapper {
+  for (const region of makeDefaultBlockRegions(image, options)) {
+    const decoded = decodeBlockRegion(image, region);
+    if (decoded.wrapper !== "") {
+      return { ...decoded, status: "block decoded heuristic" };
+    }
+  }
+  return { status: "block extraction failed", wrapper: "" };
+}
+
+function makeDefaultBlockRegions(image: RibbonImageData, options: DecodeRibbonImageOptions): readonly RibbonLocatorRegion[] {
+  const scale = Math.min(image.width / defaultBlockSourceWidth, image.height / defaultBlockSourceHeight);
+  if (!Number.isFinite(scale) || scale <= 0.1 || scale > 4) {
+    return [];
+  }
+  const scaledSize = Math.round(defaultBlockSourceSymbolSize * scale);
+  const sizes = uniqueNumbers([
+    scaledSize,
+    Math.round(options.carrierSize * scale),
+    scaledSize - 2,
+    scaledSize + 2
+  ]).filter((size) => size >= 128 && size <= image.width && size <= image.height);
+  const placements = uniquePlacements([options.placement, "bottom-right"]);
+  const regions: RibbonLocatorRegion[] = [];
+  for (const placement of placements) {
+    for (const size of sizes) {
+      regions.push({ ...computePlacement(placement, image.width, image.height, size), size });
+    }
+  }
+  return dedupeRegions(regions);
+}
+
+function decodeBlockRegion(image: RibbonImageData, region: RibbonLocatorRegion): DecodedRibbonWrapper {
+  const frame = extractBlockPayload(image, region);
+  if (frame === null) {
+    return { status: "block extraction failed", wrapper: "" };
+  }
+  const decoded = decodeRibbonFrame(frame);
+  if (decoded.status !== "beacon_accepted") {
+    return { status: statusLabel(decoded.status), wrapper: "" };
+  }
+  return {
+    status: "block decoded",
+    wrapper: decodePayload(decoded.frame.payload),
+    foundRegion: region
+  };
+}
+
+function uniquePlacements(placements: readonly RibbonPlacement[]): readonly RibbonPlacement[] {
+  const seen = new Set<RibbonPlacement>();
+  const unique: RibbonPlacement[] = [];
+  for (const placement of placements) {
+    if (seen.has(placement)) {
+      continue;
+    }
+    seen.add(placement);
+    unique.push(placement);
+  }
+  return unique;
+}
+
+function uniqueNumbers(values: readonly number[]): readonly number[] {
+  const seen = new Set<number>();
+  const unique: number[] = [];
+  for (const value of values) {
+    if (seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    unique.push(value);
+  }
+  return unique;
 }
 
 function decodeTintImage(

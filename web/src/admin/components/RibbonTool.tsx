@@ -29,14 +29,16 @@ import {
   type LoadedBrowserImage
 } from "../../visual/canvas-image.js";
 import { clamp } from "../../visual/geometry.js";
+import { ribbonBlockProfile } from "../../visual/ribbon-block.js";
 import {
   drawCoverPreview,
   drawIdleCanvas,
   generateRibbonSymbol,
   renderRibbonImage,
-  type GeneratedRibbonSymbol
+  type GeneratedRibbonSymbol,
+  type RibbonVisualMode
 } from "../../visual/ribbon-render.js";
-import type { RibbonLocatorRegion } from "../../visual/ribbon-locator.js";
+import { ribbonTintProfile, type RibbonLocatorRegion } from "../../visual/ribbon-locator.js";
 import { DiagnosticsView } from "./DiagnosticsView.js";
 
 type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
@@ -421,9 +423,10 @@ function RibbonEncodePanel(
 
       <div className="control-row">
         <label htmlFor="visual-mode">Visual mode</label>
-        <select id="visual-mode" name="visual-mode" value={ribbon.visualMode} onChange={(event) => { setRibbonField("visualMode", event.currentTarget.value === "seal" ? "seal" : "tint"); }}>
+        <select id="visual-mode" name="visual-mode" value={ribbon.visualMode} onChange={(event) => { setRibbonField("visualMode", readVisualMode(event.currentTarget.value)); }}>
           <option value="seal">Seal</option>
           <option value="tint">Tint</option>
+          <option value="block">Block</option>
         </select>
       </div>
 
@@ -442,6 +445,13 @@ function RibbonEncodePanel(
       </div>
     </form>
   );
+}
+
+function readVisualMode(value: string): RibbonVisualMode {
+  if (value === "seal" || value === "block") {
+    return value;
+  }
+  return "tint";
 }
 
 function RibbonDecodePanel(
@@ -713,7 +723,7 @@ function diagnosticsFromSymbol(
   statusClass: "status-good" | "status-warn" | "status-bad"
 ): DiagnosticsState {
   return createDiagnostics(status, statusClass, {
-    profile: symbol.diagnostics.profile,
+    profile: readVisualProfileLabel(mode, symbol.diagnostics.profile),
     mode,
     payloadLength: String(symbol.diagnostics.payloadLength),
     sourceSymbolVersion: String(symbol.diagnostics.sourceSymbolVersion),
@@ -723,6 +733,16 @@ function diagnosticsFromSymbol(
     canvas: `${String(canvas.width)}x${String(canvas.height)}`,
     ecc: symbol.diagnostics.errorCorrectionLevel
   });
+}
+
+function readVisualProfileLabel(mode: string, fallback: string): string {
+  if (mode === "block") {
+    return ribbonBlockProfile;
+  }
+  if (mode === "tint") {
+    return ribbonTintProfile;
+  }
+  return fallback;
 }
 
 function fitCarrierSize(value: string, outputWidth: number, outputHeight: number): number {

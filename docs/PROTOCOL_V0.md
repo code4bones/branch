@@ -1036,6 +1036,31 @@ stretching, adaptive thresholding, and perspective normalization before handing 
 clean module bitmap to an ordinary barcode decoder. Generic-camera readability
 is not a requirement for this profile.
 
+`ribbon-block/0.draft` is a browser-local measurement profile for service-upload
+survivability experiments. It carries the same exact `BRIMG0` visual frame bytes
+as `ribbon-seal/0`, but renders them into larger differential pixel cells inside
+the existing payload region instead of rendering a QR/Data Matrix symbol. The
+current draft packet is:
+
+```text
+magic           = "BRBLK0"        ; 6 ASCII bytes encoded in pixels
+block_version   = uint8           ; current draft value 0
+frame_len       = uint16 big endian
+frame           = exact BRIMG0 visual frame bytes
+crc32c_frame    = uint32 big endian CRC32C(frame)
+```
+
+Each logical packet bit is written as one or more repeated cells. A cell splits
+its pixels into left and right halves with opposite red/blue differential bias;
+the decoder averages the halves and majority-decodes repeated cells. The repeat
+factor is selected only from bounded odd values that fit the carrier capacity,
+and receivers try the same bounded repeat set before validating magic, length,
+CRC32C, and then the enclosed `BRIMG0` frame. This profile is intended to
+measure resistance to common service transformations such as JPEG/WebP
+recompression and resize. It is more visible than `ribbon-tint/0`, not a
+generic-camera barcode, and not accepted v0 conformance until the published
+corpus records its measured limits.
+
 `ribbon-watermark/0` is experimental and optional. It may use mid-frequency
 luminance modulation or another transform-resistant mark to help B.R.A.N.C.H.
 clients find candidate artwork, but it is not a standalone authority. A
@@ -1055,7 +1080,7 @@ the locator header:
 ```text
 magic                 = "BRLOC0"       ; 6 ASCII bytes encoded in pixels
 locator_version       = uint8          ; current draft value 0
-visual_profile_hint   = uint8          ; 1 ribbon-seal/0, 2 ribbon-tint/0
+visual_profile_hint   = uint8          ; 1 ribbon-seal/0, 2 ribbon-tint/0, 3 ribbon-block/0.draft
 placement_hint        = uint8          ; bounded placement enum
 quiet_zone_hint       = uint8
 module_pitch_hint     = uint8

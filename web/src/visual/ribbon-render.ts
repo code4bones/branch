@@ -1,6 +1,7 @@
 import * as QRCode from "qrcode";
 
 import { computeModulePitch, computePlacement, type RibbonPlacement } from "./geometry.js";
+import { drawBlockPayload, ribbonBlockProfile } from "./ribbon-block.js";
 import {
   branchWrapperBytes,
   encodeRibbonFrame,
@@ -16,7 +17,7 @@ import {
 import { drawTintQR } from "./ribbon-tint.js";
 import type { LoadedBrowserImage } from "./canvas-image.js";
 
-export type RibbonVisualMode = "seal" | "tint";
+export type RibbonVisualMode = "seal" | "tint" | "block";
 
 export interface QRModules {
   readonly size: number;
@@ -95,6 +96,12 @@ export function renderRibbonImage(
   const symbolSize = symbolSizePixels(symbol.diagnostics.moduleCount, symbol.diagnostics.quietZone, symbol.diagnostics.modulePitch);
   ensureCarrierFits(symbolSize, options.outputWidth, options.outputHeight);
   const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
+  if (options.visualMode === "block") {
+    drawBlockPayload(context, symbol.frame, { ...placement, size: symbolSize });
+    drawLocator(context, symbol, options, ribbonBlockProfile);
+    return;
+  }
+
   drawTintQR(
     context,
     symbol.modules,

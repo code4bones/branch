@@ -1,6 +1,6 @@
 import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/ribbon-decode.js";
 
-export const ribbonDecodeWorkerScript = "/admin/ribbon-decode-worker.js";
+export const ribbonDecodeWorkerScript = "/admin/ribbon-decode-worker.js?v=20260901-block-profile";
 export const ribbonDecodeWorkerTimeoutMs = 5000;
 
 export interface RibbonDecodeWorkerImage {
@@ -29,4 +29,3 @@ export interface RibbonDecodeWorkerFailure {
 }
 
 export type RibbonDecodeWorkerResponse = RibbonDecodeWorkerSuccess | RibbonDecodeWorkerFailure;
-

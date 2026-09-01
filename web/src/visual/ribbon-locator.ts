@@ -1,4 +1,5 @@
 import { computePlacement, type RibbonPlacement } from "./geometry.js";
+import { ribbonBlockProfile } from "./ribbon-block.js";
 import type { RibbonImageData } from "./ribbon-image.js";
 
 export const ribbonLocatorProfile = "ribbon-locator/0.draft" as const;
@@ -6,7 +7,7 @@ export const ribbonLocatorMagicText = "BRLOC0" as const;
 export const ribbonTintProfile = "ribbon-tint/0" as const;
 export const ribbonLocatorByteLength = 23;
 
-export type RibbonLocatorVisualProfile = "ribbon-seal/0" | typeof ribbonTintProfile;
+export type RibbonLocatorVisualProfile = "ribbon-seal/0" | typeof ribbonTintProfile | typeof ribbonBlockProfile;
 
 export interface RibbonLocatorHint {
   readonly profile: typeof ribbonLocatorProfile;
@@ -250,14 +251,14 @@ function tintLocatorCell(data: Uint8ClampedArray, width: number, cellX: number, 
     for (let x = startX; x < startX + cellSize; x += 1) {
       const offset = (y * width + x) * 4;
       if (bit) {
-        data[offset] = clampByte((data[offset] ?? 0) - 10);
-        data[offset + 1] = clampByte((data[offset + 1] ?? 0) - 6);
-        data[offset + 2] = clampByte((data[offset + 2] ?? 0) + 22) | 1;
+        data[offset] = clampByte((data[offset] ?? 0) - 36);
+        data[offset + 1] = clampByte((data[offset + 1] ?? 0) - 10);
+        data[offset + 2] = clampByte((data[offset + 2] ?? 0) + 70) | 1;
         continue;
       }
-      data[offset] = clampByte((data[offset] ?? 0) + 10);
-      data[offset + 1] = clampByte((data[offset + 1] ?? 0) + 6);
-      data[offset + 2] = clampByte((data[offset + 2] ?? 0) - 22) & 0xfe;
+      data[offset] = clampByte((data[offset] ?? 0) + 36);
+      data[offset + 1] = clampByte((data[offset + 1] ?? 0) + 10);
+      data[offset + 2] = clampByte((data[offset + 2] ?? 0) - 70) & 0xfe;
     }
   }
 }
@@ -269,14 +270,14 @@ function tintLocatorCellInImage(image: RibbonImageData, layout: LocatorLayout, c
     for (let x = startX; x < startX + layout.cellSize; x += 1) {
       const offset = (y * image.width + x) * 4;
       if (bit) {
-        image.data[offset] = clampByte((image.data[offset] ?? 0) - 10);
-        image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) - 6);
-        image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) + 22) | 1;
+        image.data[offset] = clampByte((image.data[offset] ?? 0) - 36);
+        image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) - 10);
+        image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) + 70) | 1;
         continue;
       }
-      image.data[offset] = clampByte((image.data[offset] ?? 0) + 10);
-      image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) + 6);
-      image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) - 22) & 0xfe;
+      image.data[offset] = clampByte((image.data[offset] ?? 0) + 36);
+      image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) + 10);
+      image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) - 70) & 0xfe;
     }
   }
 }
@@ -354,7 +355,13 @@ function layoutFits(layout: LocatorLayout, grid: LocatorGrid, width: number, hei
 }
 
 function encodeVisualProfile(profile: RibbonLocatorVisualProfile): number {
-  return profile === ribbonTintProfile ? 2 : 1;
+  if (profile === ribbonTintProfile) {
+    return 2;
+  }
+  if (profile === ribbonBlockProfile) {
+    return 3;
+  }
+  return 1;
 }
 
 function decodeVisualProfile(value: number): RibbonLocatorVisualProfile | null {
@@ -363,6 +370,9 @@ function decodeVisualProfile(value: number): RibbonLocatorVisualProfile | null {
   }
   if (value === 2) {
     return ribbonTintProfile;
+  }
+  if (value === 3) {
+    return ribbonBlockProfile;
   }
   return null;
 }
