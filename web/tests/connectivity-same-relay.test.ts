@@ -13,10 +13,13 @@ import {
   type SameRelayTransportEvent
 } from "../src/connectivity/same-relay.js";
 import {
-  routesFromDiscoveryResults,
-  runCarrierHoppingPoC,
-  type RepositoryDiscoveryRouteResult
+  runCarrierHoppingPoC
 } from "../src/connectivity/carrier-hopping-poc.js";
+import {
+  routesFromBeaconObservations,
+  runDiscoveredCarrierHopPoC
+} from "../src/discovery/carrier-hop-client.js";
+import type { BeaconObservation, SearchCarrier } from "../src/discovery/client.js";
 import { routeFromDiscoveryResults } from "../src/admin/use-same-relay-transport-lab.js";
 import type { GitHubDiscoveryResult } from "../src/discovery/github.js";
 
@@ -111,23 +114,22 @@ void test("client transport route uses validated bootstrap observations only", (
   assert.deepEqual(routeFromDiscoveryResults([result]), {
     endpointUri: "wss://branch.undoo.ru:443/relay/v0",
     relayPublicKey: fixedToken(32, 7),
-    profileMultihash: developmentProfileMultihash,
-    source: "code4bones/br_test01"
+    profileMultihash: developmentProfileMultihash
   });
   assert.equal(routeFromDiscoveryResults([{ ...result, records: [{ ...acceptedRecord, validation: "rejected" }] }]), null);
 });
 
 void test("carrier-hopping PoC reports no accepted route", async () => {
-  const rejected = discoveryRouteResult("code4bones/rejected", {
+  const rejected = beaconObservation("github", "code4bones/rejected", {
     endpointUri: "wss://relay-a.test:443/relay/v0",
     relayPublicKey: fixedToken(32, 1),
     validation: "rejected"
   });
 
-  assert.deepEqual(routesFromDiscoveryResults([rejected]), []);
+  assert.deepEqual(routesFromBeaconObservations([rejected]), []);
 
   const report = await runCarrierHoppingPoC({
-    routes: routesFromDiscoveryResults([rejected]),
+    routes: routesFromBeaconObservations([rejected]),
     stepTimeoutMs: 250
   });
 
@@ -194,6 +196,81 @@ void test("carrier-hopping PoC migrates client-owned pending envelope to a secon
   assert(report.events.some((event) => event.includes("route.migration.completed")));
 });
 
+void test("discovered carrier-hop runner snapshots generic observations before transport", async () => {
+  const relayA = await FakeRelay.create();
+  const relayB = await FakeRelay.create();
+  let searchCount = 0;
+  const carrier: SearchCarrier = {
+    id: "test-carrier",
+    search: (request) => {
+      searchCount += 1;
+      return Promise.resolve({
+        carrier: "test-carrier",
+        status: "ok",
+        query: request.query,
+        message: "two generic route observations",
+        observations: [
+          beaconObservation("gitlab", "alice/carrier-a", {
+            endpointUri: "wss://relay-a.test:443/relay/v0",
+            relayPublicKey: relayA.publicKey,
+            validation: "accepted"
+          }),
+          beaconObservation("github", "bob/carrier-b", {
+            endpointUri: "wss://relay-b.test:443/relay/v0",
+            relayPublicKey: relayB.publicKey,
+            validation: "accepted"
+          })
+        ],
+        evidenceCount: 2,
+        raw: null
+      });
+    }
+  };
+
+  const report = await runDiscoveredCarrierHopPoC({
+    carrier,
+    primaryQuery: "branchbootstrapv0",
+    includeFallback: false,
+    socketFactory: multiplexRelays({
+      "relay-a.test": relayA,
+      "relay-b.test": relayB
+    }),
+    stepTimeoutMs: 1_000
+  });
+
+  assert.equal(searchCount, 1);
+  assert.equal(report.discovery.acceptedCount, 2);
+  assert.equal(report.routeSnapshot.length, 2);
+  assert.deepEqual(report.routeSnapshot.map((route) => route.source), [undefined, undefined]);
+  assert.equal(report.transport.status, "ok");
+  assert.equal(report.transport.migrated, true);
+  assert.equal(report.transport.unavailableCount, 1);
+});
+
+void test("beacon observation route snapshot dedupes without carrier-specific result shapes", () => {
+  const first = beaconObservation("gitlab", "alice/carrier-a", {
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 9),
+    validation: "accepted"
+  });
+  const duplicate = beaconObservation("github", "alice/mirror", {
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 9),
+    validation: "accepted"
+  });
+  const rejected = beaconObservation("gitlab", "mallory/poison", {
+    endpointUri: "wss://relay-x.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 10),
+    validation: "rejected"
+  });
+
+  assert.deepEqual(routesFromBeaconObservations([first, duplicate, rejected]), [{
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 9),
+    profileMultihash: developmentProfileMultihash
+  }]);
+});
+
 function multiplexRelays(relays: Readonly<Record<string, FakeRelay>>): BrowserRelaySocketFactory {
   return (url) => {
     const host = new URL(url).hostname;
@@ -205,22 +282,33 @@ function multiplexRelays(relays: Readonly<Record<string, FakeRelay>>): BrowserRe
   };
 }
 
-function discoveryRouteResult(
-  repository: string,
+function beaconObservation(
+  carrier: string,
+  source: string,
   options: {
     readonly endpointUri: string;
     readonly relayPublicKey: string;
     readonly validation: "accepted" | "rejected";
   }
-): RepositoryDiscoveryRouteResult {
+): BeaconObservation {
   return {
-    repository,
-    records: [{
-      validation: options.validation,
-      relayEndpoint: `wss ${options.endpointUri}`,
-      senderPublicKey: options.relayPublicKey,
-      profileMultihash: developmentProfileMultihash
-    }]
+    observationId: `${carrier}:${source}`,
+    validation: options.validation,
+    reason: options.validation,
+    wrapperPreview: "BRANCH0.preview",
+    evidence: {
+      carrier,
+      query: "branchbootstrapv0",
+      source,
+      sourceUrl: `https://example.test/${source}`,
+      recordUrl: `https://example.test/${source}/.branch/records.br0`
+    },
+    expiresAt: 1_789_000_000,
+    relayEndpoint: `wss ${options.endpointUri}`,
+    profileMultihash: developmentProfileMultihash,
+    senderPublicKey: options.relayPublicKey,
+    beaconId: fixedToken(32, 11),
+    sequence: 1
   };
 }
 

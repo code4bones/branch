@@ -1,5 +1,4 @@
 import {
-  parseRelayEndpointDescriptor,
   SameRelayTransportClient,
   type BrowserRelaySocketFactory,
   type RelayRouteMaterial,
@@ -7,18 +6,6 @@ import {
   type SameRelayPendingEnvelope,
   type SameRelayTransportEvent
 } from "./same-relay.js";
-
-export interface ValidatedRelayRecord {
-  readonly validation: "accepted" | "rejected";
-  readonly relayEndpoint: string | null;
-  readonly senderPublicKey: string | null;
-  readonly profileMultihash: string | null;
-}
-
-export interface RepositoryDiscoveryRouteResult {
-  readonly repository: string;
-  readonly records: readonly ValidatedRelayRecord[];
-}
 
 export type CarrierHoppingPoCStatus = "ok" | "degraded" | "failed";
 
@@ -59,41 +46,6 @@ interface CarrierHoppingCounters {
 const maxRoutes = 4;
 const maxEventCount = 32;
 const defaultStepTimeoutMs = 3_000;
-
-export function routesFromDiscoveryResults(results: readonly RepositoryDiscoveryRouteResult[]): readonly RelayRouteMaterial[] {
-  const routes: RelayRouteMaterial[] = [];
-  const seen = new Set<string>();
-  for (const result of results) {
-    const record = result.records.find((candidate) => candidate.validation === "accepted");
-    if (
-      record === undefined ||
-      record.relayEndpoint === null ||
-      record.senderPublicKey === null ||
-      record.profileMultihash === null
-    ) {
-      continue;
-    }
-    const endpoint = parseRelayEndpointDescriptor(record.relayEndpoint);
-    if (endpoint === null) {
-      continue;
-    }
-    const dedupeKey = `${endpoint.uri}\n${record.senderPublicKey}\n${record.profileMultihash}`;
-    if (seen.has(dedupeKey)) {
-      continue;
-    }
-    seen.add(dedupeKey);
-    routes.push({
-      endpointUri: endpoint.uri,
-      relayPublicKey: record.senderPublicKey,
-      profileMultihash: record.profileMultihash,
-      source: result.repository
-    });
-    if (routes.length >= maxRoutes) {
-      break;
-    }
-  }
-  return routes;
-}
 
 export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): Promise<CarrierHoppingPoCReport> {
   const routes = options.routes.slice(0, maxRoutes);

@@ -5,11 +5,9 @@ import {
   type RelayRouteMaterial,
   type SameRelayTransportEvent
 } from "../connectivity/same-relay.js";
-import {
-  routesFromDiscoveryResults,
-  runCarrierHoppingPoC,
-  type RepositoryDiscoveryRouteResult
-} from "../connectivity/carrier-hopping-poc.js";
+import { runDiscoveredCarrierHopPoC, routesFromBeaconObservations } from "../discovery/carrier-hop-client.js";
+import type { BeaconObservation } from "../discovery/client.js";
+import { createGitLabSearchCarrier, gitLabReportsFromCarrierReports, mergeGitLabDiscoveryReports } from "../discovery/gitlab.js";
 import { useAdminStore, type ClientTransportStatePatch } from "./store.js";
 
 export interface SameRelayTransportLab {
@@ -26,9 +24,22 @@ interface MutableCurrent<T> {
   current: T;
 }
 
+interface AdminDiscoveryRouteRecord {
+  readonly validation: "accepted" | "rejected";
+  readonly relayEndpoint: string | null;
+  readonly senderPublicKey: string | null;
+  readonly profileMultihash: string | null;
+}
+
+interface AdminDiscoveryRouteResult {
+  readonly records: readonly AdminDiscoveryRouteRecord[];
+}
+
 export function useSameRelayTransportLab(): SameRelayTransportLab {
   const clientState = useAdminStore((state) => state.client);
   const setClientTransportState = useAdminStore((state) => state.setClientTransportState);
+  const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
+  const setClientDiscoveryStatus = useAdminStore((state) => state.setClientDiscoveryStatus);
   const appendClientTransportEvent = useAdminStore((state) => state.appendClientTransportEvent);
   const resetClientTransport = useAdminStore((state) => state.resetClientTransport);
   const aliceRef = useRef<SameRelayTransportClient | null>(null);
@@ -193,33 +204,47 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
 
   const runCarrierHopPoC = useCallback(async (): Promise<void> => {
     reset();
-    const routes = routesFromDiscoveryResults(clientState.discoveryResults);
     setClientTransportState({
       transportRunning: true,
-      transportStatus: "running carrier-hop PoC",
+      transportStatus: "discovering GitLab route snapshot",
       transportStatusClass: "status-warn",
-      relayEndpointUri: routes[0]?.endpointUri ?? "",
-      relaySource: routes[0]?.source ?? "",
+      relayEndpointUri: "",
+      relaySource: "",
       relayAckCount: 0,
       peerReceiptCount: 0,
       pendingCount: 0,
       unavailableCount: 0
     });
     try {
-      const report = await runCarrierHoppingPoC({
-        routes,
-        onEvent: appendClientTransportEvent
+      const report = await runDiscoveredCarrierHopPoC({
+        carrier: createGitLabSearchCarrier(),
+        primaryQuery: clientState.discoveryQuery,
+        fallbackQuery: null,
+        includeFallback: false,
+        includeForks: false,
+        perPage: 5,
+        page: 1,
+        onDiscoveryReport: (discovery) => {
+          const gitLabReport = mergeGitLabDiscoveryReports(gitLabReportsFromCarrierReports(discovery.carrierReports));
+          setClientDiscoveryResults(gitLabReport.results, gitLabReport.rateLimitRemaining, gitLabReport.incompleteResults);
+          setClientDiscoveryStatus(
+            `${discovery.message}; route snapshot ${String(routesFromBeaconObservations(discovery.observations).length)}`,
+            discovery.status === "ok" || discovery.status === "partial" ? "status-good" : "status-warn"
+          );
+        },
+        onTransportEvent: appendClientTransportEvent
       });
+      const firstRoute = report.routeSnapshot[0] ?? null;
       setClientTransportState({
         transportRunning: false,
-        transportStatus: report.reason,
-        transportStatusClass: report.status === "ok" ? "status-good" : report.status === "degraded" ? "status-warn" : "status-bad",
-        relayEndpointUri: report.migrationRoute ?? report.activeRoute ?? "",
-        relaySource: report.migrationRoute ?? report.activeRoute ?? "",
-        relayAckCount: report.relayAckCount,
-        peerReceiptCount: report.peerReceiptCount,
-        pendingCount: report.pendingCount,
-        unavailableCount: report.unavailableCount
+        transportStatus: report.transport.reason,
+        transportStatusClass: report.transport.status === "ok" ? "status-good" : report.transport.status === "degraded" ? "status-warn" : "status-bad",
+        relayEndpointUri: report.transport.migrationRoute ?? report.transport.activeRoute ?? firstRoute?.endpointUri ?? "",
+        relaySource: firstRoute?.endpointUri ?? "",
+        relayAckCount: report.transport.relayAckCount,
+        peerReceiptCount: report.transport.peerReceiptCount,
+        pendingCount: report.transport.pendingCount,
+        unavailableCount: report.transport.unavailableCount
       });
     } catch (error) {
       setClientTransportState({
@@ -228,7 +253,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
         transportStatusClass: "status-bad"
       });
     }
-  }, [appendClientTransportEvent, clientState.discoveryResults, reset, setClientTransportState]);
+  }, [appendClientTransportEvent, clientState.discoveryQuery, reset, setClientDiscoveryResults, setClientDiscoveryStatus, setClientTransportState]);
 
   return {
     route,
@@ -241,8 +266,32 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
   };
 }
 
-export function routeFromDiscoveryResults(results: readonly RepositoryDiscoveryRouteResult[]): RelayRouteMaterial | null {
-  return routesFromDiscoveryResults(results)[0] ?? null;
+export function routeFromDiscoveryResults(results: readonly AdminDiscoveryRouteResult[]): RelayRouteMaterial | null {
+  const observations: BeaconObservation[] = [];
+  results.forEach((result, resultIndex) => {
+    result.records.forEach((record, recordIndex) => {
+      observations.push({
+        observationId: `admin:${String(resultIndex)}:${String(recordIndex)}`,
+        validation: record.validation,
+        reason: "",
+        wrapperPreview: "",
+        evidence: {
+          carrier: "admin",
+          query: "",
+          source: "",
+          sourceUrl: "",
+          recordUrl: ""
+        },
+        expiresAt: null,
+        relayEndpoint: record.relayEndpoint,
+        profileMultihash: record.profileMultihash,
+        senderPublicKey: record.senderPublicKey,
+        beaconId: null,
+        sequence: null
+      });
+    });
+  });
+  return routesFromBeaconObservations(observations)[0] ?? null;
 }
 
 function handleTransportEvent(

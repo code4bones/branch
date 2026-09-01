@@ -16,6 +16,9 @@ const gitLabDiscoveryPath = resolve(process.cwd(), "src/admin/gitlab-discovery.t
 const discoveryGitHubPath = resolve(process.cwd(), "src/discovery/github.ts");
 const discoveryGitLabPath = resolve(process.cwd(), "src/discovery/gitlab.ts");
 const discoveryClientPath = resolve(process.cwd(), "src/discovery/client.ts");
+const discoveryCarrierHopClientPath = resolve(process.cwd(), "src/discovery/carrier-hop-client.ts");
+const connectivityCarrierHopPath = resolve(process.cwd(), "src/connectivity/carrier-hopping-poc.ts");
+const connectivitySameRelayPath = resolve(process.cwd(), "src/connectivity/same-relay.ts");
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
 const gitLabDropInPath = resolve(process.cwd(), "src/admin/gitlab-dropin.ts");
 const publicationProfilePath = resolve(process.cwd(), "src/discovery/publication-profile.ts");
@@ -52,6 +55,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const githubTool = await readFile(githubToolPath, "utf8");
   const gitLabTool = await readFile(gitLabToolPath, "utf8");
   const clientTool = await readFile(clientToolPath, "utf8");
+  const carrierHopClient = await readFile(discoveryCarrierHopClientPath, "utf8");
   const publicationProfile = await readFile(publicationProfilePath, "utf8");
   const defaults = await readFile(defaultsPath, "utf8");
 
@@ -161,6 +165,11 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /id="client-discovery-query"/);
   assert.match(clientTool, /discoverClientBootstrapBeacons/);
   assert.match(clientTool, /createGitLabSearchCarrier/);
+  assert.match(clientTool, /runCarrierHopPoC/);
+  assert.match(carrierHopClient, /SearchCarrier/);
+  assert.match(carrierHopClient, /BeaconObservation/);
+  assert.match(carrierHopClient, /runDiscoveredCarrierHopPoC/);
+  assert.match(carrierHopClient, /routesFromBeaconObservations/);
   assert.match(clientTool, /fallbackQuery: null/);
   assert.match(clientTool, /perPage: 5/);
   assert.match(clientTool, /page: 1/);
@@ -168,7 +177,6 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /rateLimitRemaining/);
   assert.match(clientTool, /relayEndpoint/);
   assert.match(clientTool, /Run carrier-hop PoC/);
-  assert.match(clientTool, /runCarrierHopPoC/);
   assert.doesNotMatch(clientTool, /localStorage|indexedDB|WebSocket|GITHUB_TOKEN|Authorization/);
   assert.match(publicationProfile, /branchBootstrapLocator = "branchbootstrapv0"/);
   assert.match(publicationProfile, /githubPrimaryLocatorQuery/);
@@ -182,6 +190,20 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(defaults, /branch-gitlab-dropin\.zip/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}`, /\bfetch\s*\(/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}\n${gitLabTool}\n${clientTool}`, /XMLHttpRequest|localStorage|indexedDB/);
+});
+
+void test("connectivity core stays carrier-neutral", async () => {
+  const carrierHop = await readFile(connectivityCarrierHopPath, "utf8");
+  const sameRelay = await readFile(connectivitySameRelayPath, "utf8");
+  const carrierHopClient = await readFile(discoveryCarrierHopClientPath, "utf8");
+
+  assert.match(carrierHop, /runCarrierHoppingPoC/);
+  assert.match(carrierHop, /RelayRouteMaterial/);
+  assert.match(sameRelay, /RelayRouteMaterial/);
+  assert.match(carrierHopClient, /discoverClientBootstrapBeacons/);
+  assert.match(carrierHopClient, /routesFromBeaconObservations/);
+  assert.doesNotMatch(`${carrierHop}\n${sameRelay}`, /discovery\/gitlab|discovery\/github|RepositoryDiscoveryRouteResult|GitLab|GitHub|React|use[A-Z]/);
+  assert.doesNotMatch(sameRelay, /repository|recordsUrl|rateLimit|carrierReports/);
 });
 
 void test("admin ribbon logic is split into typed visual modules", async () => {
