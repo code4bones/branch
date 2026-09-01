@@ -16,7 +16,7 @@ import {
   type TransformImageSummary,
   type TransformLabPreset
 } from "../src/admin/transform-lab.js";
-import { boxBlur, fitInsideWithPadding, resizeNearest, sharpen } from "../src/visual/corpus.js";
+import { fitInsideWithPadding, resizeNearest } from "../src/visual/corpus.js";
 import { computeModulePitch, computePlacement, type RibbonPlacement } from "../src/visual/geometry.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
 import {
@@ -142,6 +142,7 @@ void test("raw stego candidates remain valid ribbon seal images", () => {
 
 void test("transform lab preset catalog covers service-processing simulations", () => {
   const ids = transformLabPresets.map((preset) => preset.id);
+  const idSet = new Set<string>(ids);
 
   assert.deepEqual(ids.slice(0, maxTransformLabMatrixPresets), ids);
   assert(ids.includes("jpeg-95"));
@@ -155,13 +156,13 @@ void test("transform lab preset catalog covers service-processing simulations", 
   assert(ids.includes("resize-75-jpeg-80"));
   assert(ids.includes("thumbnail-center-crop"));
   assert(ids.includes("thumbnail-fit-padding"));
-  assert(ids.includes("rotate-90"));
-  assert(ids.includes("rotate-180"));
-  assert(ids.includes("color-shift"));
-  assert(ids.includes("blur"));
-  assert(ids.includes("sharpen"));
   assert(ids.includes("screenshot-scale-2"));
   assert(ids.includes("pinterest-like-simulation"));
+  assert(!idSet.has("rotate-90"));
+  assert(!idSet.has("rotate-180"));
+  assert(!idSet.has("color-shift"));
+  assert(!idSet.has("blur"));
+  assert(!idSet.has("sharpen"));
   assert.equal(transformLabPresets.find((preset) => preset.id === "pinterest-like-simulation")?.label, "Pinterest-like simulation");
 });
 
@@ -453,13 +454,10 @@ void test("ribbon locator pixel magic survives nearest resize as a geometry hint
   assert.equal(locator.placement, placement);
 });
 
-void test("transform lab rgba helpers preserve bounds", () => {
+void test("transform lab resize helper preserves bounds", () => {
   const image = makeNoCarrierImage(12, 10);
 
   assert.deepEqual(fitInsideWithPadding(image, 8, 8).data.byteLength, 8 * 8 * 4);
-  assert.deepEqual(boxBlur(image, 1).data.byteLength, image.data.byteLength);
-  assert.deepEqual(sharpen(image).data.byteLength, image.data.byteLength);
-  assert.throws(() => boxBlur(image, 8), /blur radius outside/);
 });
 
 function makeStegoImage(

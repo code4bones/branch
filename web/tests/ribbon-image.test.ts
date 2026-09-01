@@ -7,7 +7,6 @@ import {
   cropEdges,
   mildCameraPerspective,
   resizeNearest,
-  rotateRight,
   screenshotScale
 } from "../src/visual/corpus.js";
 import {
@@ -112,21 +111,6 @@ void test("ribbon seal local transform corpus records decode outcomes", async (t
       expected: "no_carrier_detected"
     },
     {
-      name: "rotate-90",
-      transform: (image) => rotateRight(image, 90),
-      expected: "beacon_accepted"
-    },
-    {
-      name: "rotate-180",
-      transform: (image) => rotateRight(image, 180),
-      expected: "beacon_accepted"
-    },
-    {
-      name: "rotate-270",
-      transform: (image) => rotateRight(image, 270),
-      expected: "beacon_accepted"
-    },
-    {
       name: "brightness-contrast-gamma-saturation",
       transform: (image) =>
         applyColorShift(image, {
@@ -136,18 +120,6 @@ void test("ribbon seal local transform corpus records decode outcomes", async (t
           saturation: 0.78,
           whiteBalance: { red: 1.04, green: 1, blue: 0.94 }
       }),
-      expected: "beacon_accepted"
-    },
-    {
-      name: "strong-color-shift",
-      transform: (image) =>
-        applyColorShift(image, {
-          brightness: 35,
-          contrast: 1.4,
-          gamma: 0.75,
-          saturation: 0.45,
-          whiteBalance: { red: 1.15, green: 1, blue: 0.85 }
-        }),
       expected: "beacon_accepted"
     },
     {

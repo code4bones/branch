@@ -10,11 +10,6 @@ export type TransformLabPresetId =
   | "resize-75-jpeg-80"
   | "thumbnail-center-crop"
   | "thumbnail-fit-padding"
-  | "rotate-90"
-  | "rotate-180"
-  | "color-shift"
-  | "blur"
-  | "sharpen"
   | "screenshot-scale-2"
   | "pinterest-like-simulation";
 
@@ -23,10 +18,6 @@ export type TransformOperationKind =
   | "resize"
   | "center-crop"
   | "fit-padding"
-  | "rotate"
-  | "color-shift"
-  | "blur"
-  | "sharpen"
   | "screenshot";
 
 export type TransformOutputMime = "image/png" | "image/jpeg" | "image/webp";
@@ -40,8 +31,6 @@ export interface TransformOperation {
   readonly percent?: number;
   readonly mime?: TransformOutputMime;
   readonly quality?: number;
-  readonly degrees?: 90 | 180 | 270;
-  readonly radius?: number;
 }
 
 export interface TransformLabPreset {
@@ -118,7 +107,7 @@ export interface TransformClassificationInput {
   readonly failureReason?: string;
 }
 
-export const maxTransformLabMatrixPresets = 18;
+export const maxTransformLabMatrixPresets = 13;
 
 export const transformLabPresets: readonly TransformLabPreset[] = [
   {
@@ -189,36 +178,6 @@ export const transformLabPresets: readonly TransformLabPreset[] = [
     label: "Thumbnail padding",
     simulation: false,
     operations: [{ kind: "fit-padding", label: "fit with padding 75%", percent: 0.75 }]
-  },
-  {
-    id: "rotate-90",
-    label: "Rotate 90",
-    simulation: false,
-    operations: [{ kind: "rotate", label: "rotate 90", degrees: 90 }]
-  },
-  {
-    id: "rotate-180",
-    label: "Rotate 180",
-    simulation: false,
-    operations: [{ kind: "rotate", label: "rotate 180", degrees: 180 }]
-  },
-  {
-    id: "color-shift",
-    label: "Color shift",
-    simulation: false,
-    operations: [{ kind: "color-shift", label: "brightness/contrast/gamma shift" }]
-  },
-  {
-    id: "blur",
-    label: "Blur",
-    simulation: false,
-    operations: [{ kind: "blur", label: "box blur radius 1", radius: 1 }]
-  },
-  {
-    id: "sharpen",
-    label: "Sharpen",
-    simulation: false,
-    operations: [{ kind: "sharpen", label: "sharpen kernel" }]
   },
   {
     id: "screenshot-scale-2",

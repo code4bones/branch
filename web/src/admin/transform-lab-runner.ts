@@ -1,11 +1,7 @@
 import {
-  applyColorShift,
-  boxBlur,
   centerCrop,
   fitInsideWithPadding,
-  rotateRight,
-  screenshotScale,
-  sharpen
+  screenshotScale
 } from "../visual/corpus.js";
 import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/ribbon-decode.js";
 import type { RibbonImageData } from "../visual/ribbon-image.js";
@@ -215,20 +211,6 @@ async function applyOperation(
       return centerCropByPercent(image, operation.percent ?? 0.8);
     case "fit-padding":
       return fitPaddingByPercent(image, operation.percent ?? 0.75);
-    case "rotate":
-      return applyImageOnly(rotateRight(image, operation.degrees ?? 90), 1);
-    case "color-shift":
-      return applyImageOnly(applyColorShift(image, {
-        brightness: 12,
-        contrast: 1.12,
-        gamma: 0.92,
-        saturation: 0.82,
-        whiteBalance: { red: 1.04, green: 1, blue: 0.94 }
-      }), 1);
-    case "blur":
-      return applyImageOnly(boxBlur(image, operation.radius ?? 1), 1);
-    case "sharpen":
-      return applyImageOnly(sharpen(image), 1);
     case "screenshot":
       return applyImageOnly(screenshotScale(image, operation.percent ?? 2), 1);
   }
