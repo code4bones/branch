@@ -13,5 +13,7 @@ Build the static shell with:
 npm run build
 ~~~
 
-The local nginx deployment expects the built files to be installed into
-`/var/www/branch`.
+The open `/admin/` surface is now scaffolded from React and TypeScript under
+`web/src/admin`. The current Ribbon Image and GitHub tool behaviour remains in
+`web/public/admin/admin.js` as a temporary legacy adapter until the follow-up
+module migration moves that logic into typed source modules.
