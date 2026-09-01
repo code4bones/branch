@@ -117,6 +117,8 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(decode, /readRibbonLocator/);
   assert.match(locator, /ribbon-locator\/0\.draft/);
   assert.match(locator, /BRLOC0/);
+  assert.match(locator, /columns: 46/);
+  assert.match(locator, /legacyLocatorGrid/);
   assert.match(decode, /extractStegoTintCandidates/);
   assert.match(decodeClient, /new Worker/);
   assert.match(decodeClient, /postMessage\(request, \[request\.image\.data\]\)/);

@@ -47,10 +47,16 @@ interface LocatorLayout {
   readonly cellSize: number;
 }
 
+interface LocatorGrid {
+  readonly columns: number;
+  readonly rows: number;
+  readonly crcRequired: boolean;
+}
+
 const locatorMagic = Uint8Array.from(ribbonLocatorMagicText, (value) => value.charCodeAt(0));
 const locatorVersion = 0;
-const locatorColumns = 38;
-const locatorRows = 4;
+const locatorGrid: LocatorGrid = { columns: 46, rows: 4, crcRequired: true };
+const legacyLocatorGrid: LocatorGrid = { columns: 38, rows: 4, crcRequired: false };
 const locatorBitCount = ribbonLocatorByteLength * 8;
 
 export function makeRibbonLocatorHint(request: MakeRibbonLocatorHintRequest): RibbonLocatorHint {
@@ -82,18 +88,18 @@ export function drawRibbonLocator(
   hint: RibbonLocatorHint
 ): void {
   const layout = makePrimaryLayout(outputWidth, outputHeight);
-  if (!layoutFits(layout, outputWidth, outputHeight)) {
+  if (!layoutFits(layout, locatorGrid, outputWidth, outputHeight)) {
     return;
   }
   const payload = encodeLocatorPayload(hint);
-  const image = context.getImageData(layout.x, layout.y, locatorColumns * layout.cellSize, locatorRows * layout.cellSize);
+  const image = context.getImageData(layout.x, layout.y, locatorGrid.columns * layout.cellSize, locatorGrid.rows * layout.cellSize);
   const data = image.data;
 
   for (let bitIndex = 0; bitIndex < locatorBitCount; bitIndex += 1) {
     const byte = payload[Math.floor(bitIndex / 8)] ?? 0;
     const bit = ((byte >> (7 - bitIndex % 8)) & 1) === 1;
-    const cellX = bitIndex % locatorColumns;
-    const cellY = Math.floor(bitIndex / locatorColumns);
+    const cellX = bitIndex % locatorGrid.columns;
+    const cellY = Math.floor(bitIndex / locatorGrid.columns);
     tintLocatorCell(data, image.width, cellX, cellY, layout.cellSize, bit);
   }
 
@@ -105,7 +111,7 @@ export function embedRibbonLocator(image: RibbonImageData, hint: RibbonLocatorHi
     throw new Error("locator image data outside bounds");
   }
   const layout = makePrimaryLayout(image.width, image.height);
-  if (!layoutFits(layout, image.width, image.height)) {
+  if (!layoutFits(layout, locatorGrid, image.width, image.height)) {
     throw new Error("locator does not fit image");
   }
 
@@ -118,8 +124,8 @@ export function embedRibbonLocator(image: RibbonImageData, hint: RibbonLocatorHi
   for (let bitIndex = 0; bitIndex < locatorBitCount; bitIndex += 1) {
     const byte = payload[Math.floor(bitIndex / 8)] ?? 0;
     const bit = ((byte >> (7 - bitIndex % 8)) & 1) === 1;
-    const cellX = bitIndex % locatorColumns;
-    const cellY = Math.floor(bitIndex / locatorColumns);
+    const cellX = bitIndex % locatorGrid.columns;
+    const cellY = Math.floor(bitIndex / locatorGrid.columns);
     tintLocatorCellInImage(output, layout, cellX, cellY, bit);
   }
   return output;
@@ -129,12 +135,12 @@ export function readRibbonLocator(image: RibbonImageData): RibbonLocatorHint | n
   if (!isValidImage(image)) {
     return null;
   }
-  for (const layout of makeCandidateLayouts(image.width, image.height)) {
-    if (!layoutFits(layout, image.width, image.height)) {
+  for (const candidate of makeCandidateLayouts(image.width, image.height)) {
+    if (!layoutFits(candidate.layout, candidate.grid, image.width, image.height)) {
       continue;
     }
-    const payload = readLocatorPayload(image, layout);
-    const hint = decodeLocatorPayload(payload, image.width, image.height);
+    const payload = readLocatorPayload(image, candidate.layout, candidate.grid);
+    const hint = decodeLocatorPayload(payload, image.width, image.height, candidate.grid.crcRequired);
     if (hint !== null) {
       return hint;
     }
@@ -162,7 +168,7 @@ function encodeLocatorPayload(hint: RibbonLocatorHint): Uint8Array {
   return bytes;
 }
 
-function decodeLocatorPayload(payload: Uint8Array, outputWidth: number, outputHeight: number): RibbonLocatorHint | null {
+function decodeLocatorPayload(payload: Uint8Array, outputWidth: number, outputHeight: number, crcRequired: boolean): RibbonLocatorHint | null {
   if (payload.byteLength !== ribbonLocatorByteLength) {
     return null;
   }
@@ -174,7 +180,8 @@ function decodeLocatorPayload(payload: Uint8Array, outputWidth: number, outputHe
   if (payload[6] !== locatorVersion) {
     return null;
   }
-  if (readUint32BE(payload, 19) !== crc32c(payload.subarray(0, 19))) {
+  const crcValid = readUint32BE(payload, 19) === crc32c(payload.subarray(0, 19));
+  if (crcRequired && !crcValid) {
     return null;
   }
 
@@ -223,10 +230,10 @@ function decodeLocatorPayload(payload: Uint8Array, outputWidth: number, outputHe
   };
 }
 
-function readLocatorPayload(image: RibbonImageData, layout: LocatorLayout): Uint8Array {
+function readLocatorPayload(image: RibbonImageData, layout: LocatorLayout, grid: LocatorGrid): Uint8Array {
   const payload = new Uint8Array(ribbonLocatorByteLength);
   for (let bitIndex = 0; bitIndex < locatorBitCount; bitIndex += 1) {
-    const bit = readLocatorCellBit(image, layout, bitIndex);
+    const bit = readLocatorCellBit(image, layout, grid, bitIndex);
     if (!bit) {
       continue;
     }
@@ -274,9 +281,9 @@ function tintLocatorCellInImage(image: RibbonImageData, layout: LocatorLayout, c
   }
 }
 
-function readLocatorCellBit(image: RibbonImageData, layout: LocatorLayout, bitIndex: number): boolean {
-  const cellX = bitIndex % locatorColumns;
-  const cellY = Math.floor(bitIndex / locatorColumns);
+function readLocatorCellBit(image: RibbonImageData, layout: LocatorLayout, grid: LocatorGrid, bitIndex: number): boolean {
+  const cellX = bitIndex % grid.columns;
+  const cellY = Math.floor(bitIndex / grid.columns);
   const margin = Math.max(1, Math.floor(layout.cellSize * 0.25));
   const startX = layout.x + cellX * layout.cellSize + margin;
   const startY = layout.y + cellY * layout.cellSize + margin;
@@ -311,23 +318,25 @@ function readLocatorCellBit(image: RibbonImageData, layout: LocatorLayout, bitIn
   return chromaTotal / count >= 0;
 }
 
-function makeCandidateLayouts(width: number, height: number): readonly LocatorLayout[] {
+function makeCandidateLayouts(width: number, height: number): readonly { readonly layout: LocatorLayout; readonly grid: LocatorGrid }[] {
   const primary = makePrimaryLayout(width, height);
   const cellSizes = uniqueNumbers([primary.cellSize, primary.cellSize - 1, primary.cellSize + 1, 6, 5, 4, 8, 3]);
   const offsets = uniqueNumbers([primary.x, primary.x - 2, primary.x + 2, 16, 12, 8, 24]);
-  const layouts: LocatorLayout[] = [];
-  for (const cellSize of cellSizes) {
-    if (cellSize < 3 || cellSize > 12) {
-      continue;
-    }
-    for (const offset of offsets) {
-      if (offset < 0) {
+  const candidates: { readonly layout: LocatorLayout; readonly grid: LocatorGrid }[] = [];
+  for (const grid of [locatorGrid, legacyLocatorGrid]) {
+    for (const cellSize of cellSizes) {
+      if (cellSize < 3 || cellSize > 12) {
         continue;
       }
-      layouts.push({ x: offset, y: offset, cellSize });
+      for (const offset of offsets) {
+        if (offset < 0) {
+          continue;
+        }
+        candidates.push({ layout: { x: offset, y: offset, cellSize }, grid });
+      }
     }
   }
-  return layouts;
+  return candidates;
 }
 
 function makePrimaryLayout(width: number, height: number): LocatorLayout {
@@ -339,8 +348,9 @@ function makePrimaryLayout(width: number, height: number): LocatorLayout {
   };
 }
 
-function layoutFits(layout: LocatorLayout, width: number, height: number): boolean {
-  return layout.x + locatorColumns * layout.cellSize <= width && layout.y + locatorRows * layout.cellSize <= height;
+function layoutFits(layout: LocatorLayout, grid: LocatorGrid, width: number, height: number): boolean {
+  const readRows = Math.max(grid.rows, Math.ceil(locatorBitCount / grid.columns));
+  return layout.x + grid.columns * layout.cellSize <= width && layout.y + readRows * layout.cellSize <= height;
 }
 
 function encodeVisualProfile(profile: RibbonLocatorVisualProfile): number {

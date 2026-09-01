@@ -370,6 +370,24 @@ void test("ribbon locator embeds pixel magic and accelerates hidden tint decode"
   assert.deepEqual(decoded.foundRegion, hint.payloadRegion);
 });
 
+void test("ribbon locator reads legacy browser grid as bounded hint", () => {
+  const image = makeNoCarrierImage(1000, 1500);
+  drawLegacyBrowserLocator(image, [
+    66, 82, 76, 79, 67, 48, 0, 2,
+    2, 8, 9, 10, 57, 2, 145, 3,
+    232, 5, 220
+  ]);
+  const locator = readRibbonLocator(image) ?? failLocator();
+
+  assert.equal(locator.profile, ribbonLocatorProfile);
+  assert.equal(locator.visualProfile, ribbonTintProfile);
+  assert.equal(locator.placement, "bottom-right");
+  assert.equal(locator.quietZone, 8);
+  assert.equal(locator.modulePitch, 9);
+  assert.equal(locator.sourceSymbolVersion, 10);
+  assert.deepEqual(locator.payloadRegion, { x: 303, y: 803, size: 657 });
+});
+
 void test("ribbon locator remains non-authoritative without signed payload recovery", () => {
   const image = makeNoCarrierImage(1000, 1500);
   const located = embedRibbonLocator(image, {
@@ -494,6 +512,38 @@ function makePlacedStegoImage(
   }
 
   return image;
+}
+
+function drawLegacyBrowserLocator(image: RibbonImageData, firstBytes: readonly number[]): void {
+  const columns = 38;
+  const cellSize = 8;
+  const origin = 8;
+  for (let bitIndex = 0; bitIndex < firstBytes.length * 8; bitIndex += 1) {
+    const byte = firstBytes[Math.floor(bitIndex / 8)] ?? 0;
+    const bit = ((byte >> (7 - bitIndex % 8)) & 1) === 1;
+    const cellX = bitIndex % columns;
+    const cellY = Math.floor(bitIndex / columns);
+    tintTestLocatorCell(image, origin + cellX * cellSize, origin + cellY * cellSize, cellSize, bit);
+  }
+}
+
+function tintTestLocatorCell(image: RibbonImageData, x: number, y: number, size: number, bit: boolean): void {
+  for (let offsetY = 0; offsetY < size; offsetY += 1) {
+    for (let offsetX = 0; offsetX < size; offsetX += 1) {
+      const offset = ((y + offsetY) * image.width + x + offsetX) * 4;
+      if (bit) {
+        image.data[offset] = 0;
+        image.data[offset + 1] = 0;
+        image.data[offset + 2] = 255;
+        image.data[offset + 3] = 255;
+        continue;
+      }
+      image.data[offset] = 255;
+      image.data[offset + 1] = 255;
+      image.data[offset + 2] = 0;
+      image.data[offset + 3] = 255;
+    }
+  }
 }
 
 function makeNoCarrierImage(width: number, height: number): RibbonImageData {
