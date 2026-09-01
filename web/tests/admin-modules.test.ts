@@ -13,7 +13,10 @@ import {
   branchBootstrapLocator,
   githubRepositoryDescription,
   githubRepositoryTopics,
-  makeRootReadmeSnippet
+  makeRootReadmeSnippet,
+  ribbonImagePublicationDescription,
+  ribbonImagePublicationSearchQuery,
+  ribbonImagePublicationTitle
 } from "../src/admin/publication-profile.js";
 import { makeAutoDecodeBaseOptions, makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
@@ -115,6 +118,10 @@ void test("github publication profile exposes canonical locator metadata", () =>
   assert.doesNotMatch(rootSnippet, /branchbootstrapv0|BRANCH0|branch\/connectivity\/0|branch-bootstrap-v0|carry-the-ribbon/);
   assert.equal(githubRepositoryDescription, "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon");
   assert.deepEqual(githubRepositoryTopics, ["branchbootstrapv0"]);
+  assert.equal(ribbonImagePublicationTitle, "Carry the Ribbon");
+  assert.doesNotMatch(ribbonImagePublicationTitle, /branchbootstrapv0/);
+  assert.match(ribbonImagePublicationDescription, /branchbootstrapv0/);
+  assert.equal(ribbonImagePublicationSearchQuery, "branchbootstrapv0");
 });
 
 void test("github drop-in live mode accepts signed bootstrap.beacon wrappers", async () => {

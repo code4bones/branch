@@ -1042,6 +1042,28 @@ B.R.A.N.C.H. board, or a relay database. Platform captions, alt text, links,
 boards, pins, comments, reposts, and account names are untrusted observation
 metadata.
 
+#### Image publication metadata
+
+The visual publication preset uses the same cross-index locator as repository
+profiles, but applies it as carrier metadata rather than as protocol authority.
+For Pinterest-like image carriers, the generated title remains human-readable,
+such as `Carry the Ribbon`, while `branchbootstrapv0` is placed in the Pin
+description or equivalent searchable metadata field. The locator is also the
+operator-facing search query.
+
+Pinterest discovery is not currently a baseline automated SearchCarrier.
+Pinterest public help says Pin descriptions are used for relevance and that
+title, description, board metadata, links, and topic tags can all influence
+distribution. Its public API documentation exposes `GET /search/pins` as a
+user-account operation whose query accepts description keywords or comma
+separated Pin IDs. That is useful evidence for publication presets, but not a
+project-neutral global search contract.
+
+Duplicate results for `branchbootstrapv0` are expected. Clients deduplicate
+after visual decode and BootstrapBeacon validation by signed identity,
+`beacon_id`, `sequence`, and expiry, never by image title, Pinterest account,
+board, URL, filename, EXIF, or image hash.
+
 #### Visual frame
 
 The only active Ribbon Image profile in this draft is

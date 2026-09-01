@@ -94,6 +94,12 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /drawDecodePreview/);
   assert.match(ribbonTool, /drawFoundRegion/);
   assert.match(ribbonTool, /id="cover-image"/);
+  assert.match(ribbonTool, /id="ribbon-publication-title"/);
+  assert.match(ribbonTool, /id="ribbon-publication-description"/);
+  assert.match(ribbonTool, /id="ribbon-publication-query"/);
+  assert.match(ribbonTool, /ribbonImagePublicationTitle/);
+  assert.match(ribbonTool, /ribbonImagePublicationDescription/);
+  assert.match(ribbonTool, /ribbonImagePublicationSearchQuery/);
   assert.match(ribbonTool, /RibbonOutputSizeControls/);
   assert.doesNotMatch(ribbonTool, /idPrefix|carrier-placement|readPlacement|quiet-zone|carrier-size/);
   assert.doesNotMatch(ribbonTool, /visual-mode|tint-strength|watermark|ribbonTintProfile|ribbonWatermarkProfile/);
@@ -145,6 +151,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(publicationProfile, /githubPrimaryLocatorQuery/);
   assert.match(publicationProfile, /topic:\$\{branchBootstrapLocator\}/);
   assert.match(publicationProfile, /githubRepositoryTopics/);
+  assert.match(publicationProfile, /ribbonImagePublicationTitle = "Carry the Ribbon"/);
+  assert.match(publicationProfile, /ribbonImagePublicationDescription =\s*\n\s*"branchbootstrapv0/);
+  assert.match(publicationProfile, /ribbonImagePublicationSearchQuery = branchBootstrapLocator/);
   assert.match(defaults, /branch-github-dropin\.zip/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}`, /\bfetch\s*\(/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}\n${clientTool}`, /XMLHttpRequest|localStorage|indexedDB/);

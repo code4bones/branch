@@ -262,6 +262,28 @@ label {
   border-top: 1px solid var(--admin-line);
 }
 
+.publication-fields {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.publication-fields h2 {
+  margin: 0;
+  color: var(--admin-ink);
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.publication-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.52fr) minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
 .transform-lab h2 {
   margin: 0;
   color: var(--admin-ink);
@@ -491,6 +513,10 @@ label {
   }
 
   .decode-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .publication-row {
     grid-template-columns: 1fr;
   }
 

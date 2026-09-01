@@ -6,6 +6,10 @@ export const githubRepositoryTopics = [branchBootstrapLocator] as const;
 export const githubRepositoryDescription = "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon" as const;
 export const githubPrimaryLocatorQuery = `topic:${branchBootstrapLocator}` as const;
 export const githubLegacyMarkerQuery = `${branchProtocolSearchMarkers.join(" ")} in:readme` as const;
+export const ribbonImagePublicationTitle = "Carry the Ribbon" as const;
+export const ribbonImagePublicationDescription =
+  "branchbootstrapv0 B.R.A.N.C.H. Blue Ribbon Autonomous Network for Carrier Hopping" as const;
+export const ribbonImagePublicationSearchQuery = branchBootstrapLocator;
 
 export function branchPublicationMarkers(): readonly string[] {
   return [branchBootstrapLocator, ...branchProtocolSearchMarkers, branchCampaignMarker];

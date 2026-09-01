@@ -2,6 +2,11 @@ import { useEffect, useRef } from "react";
 
 import { copyTextFromFallback, downloadText, downloadURL } from "../browser-files.js";
 import { ribbonPngFilename } from "../defaults.js";
+import {
+  ribbonImagePublicationDescription,
+  ribbonImagePublicationSearchQuery,
+  ribbonImagePublicationTitle
+} from "../publication-profile.js";
 import { decodeRibbonImageAutoWithWorker, makeAutoDecodeBaseOptions } from "../ribbon-auto-decode.js";
 import {
   createDiagnostics,
@@ -385,6 +390,10 @@ function RibbonEncodePanel(
     readonly onGenerate: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   }
 ): React.JSX.Element {
+  const publicationTitleRef = useRef<HTMLInputElement | null>(null);
+  const publicationDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
+  const publicationQueryRef = useRef<HTMLInputElement | null>(null);
+
   return (
     <form
       className="panel control-panel"
@@ -411,6 +420,37 @@ function RibbonEncodePanel(
       </div>
 
       <RibbonOutputSizeControls ribbon={ribbon} setRibbonField={setRibbonField} />
+
+      <section className="publication-fields" aria-label="Image publication metadata">
+        <h2>Publication</h2>
+        <div className="publication-row">
+          <label htmlFor="ribbon-publication-title">Pinterest title</label>
+          <input id="ribbon-publication-title" ref={publicationTitleRef} readOnly value={ribbonImagePublicationTitle} />
+          <button type="button" onClick={() => void copyTextFromFallback(ribbonImagePublicationTitle, publicationTitleRef.current)}>
+            Copy title
+          </button>
+        </div>
+        <label htmlFor="ribbon-publication-description">Pinterest description</label>
+        <textarea
+          id="ribbon-publication-description"
+          ref={publicationDescriptionRef}
+          readOnly
+          rows={3}
+          value={ribbonImagePublicationDescription}
+        />
+        <div className="button-row">
+          <button type="button" onClick={() => void copyTextFromFallback(ribbonImagePublicationDescription, publicationDescriptionRef.current)}>
+            Copy description
+          </button>
+        </div>
+        <div className="publication-row">
+          <label htmlFor="ribbon-publication-query">Image search query</label>
+          <input id="ribbon-publication-query" ref={publicationQueryRef} readOnly value={ribbonImagePublicationSearchQuery} />
+          <button type="button" onClick={() => void copyTextFromFallback(ribbonImagePublicationSearchQuery, publicationQueryRef.current)}>
+            Copy query
+          </button>
+        </div>
+      </section>
 
       <div className="button-row">
         <button type="submit">Generate</button>
