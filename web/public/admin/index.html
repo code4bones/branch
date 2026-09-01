@@ -43,13 +43,39 @@
           ></textarea>
 
           <div class="control-row">
-            <label for="module-pitch">Module pitch</label>
-            <input id="module-pitch" name="module-pitch" type="number" min="4" max="24" step="1" value="16">
+            <label for="cover-image">Cover image</label>
+            <input id="cover-image" name="cover-image" type="file" accept="image/png,image/jpeg,image/webp">
           </div>
 
           <div class="control-row">
             <label for="quiet-zone">Quiet zone</label>
             <input id="quiet-zone" name="quiet-zone" type="number" min="4" max="12" step="1" value="8">
+          </div>
+
+          <div class="control-row">
+            <label for="carrier-size">Carrier size</label>
+            <input id="carrier-size" name="carrier-size" type="number" min="320" max="1600" step="16" value="720">
+          </div>
+
+          <div class="control-row">
+            <label for="output-width">Output width</label>
+            <input id="output-width" name="output-width" type="number" min="640" max="4096" step="10" value="1000">
+          </div>
+
+          <div class="control-row">
+            <label for="output-height">Output height</label>
+            <input id="output-height" name="output-height" type="number" min="640" max="4096" step="10" value="1500">
+          </div>
+
+          <div class="control-row">
+            <label for="carrier-placement">Placement</label>
+            <select id="carrier-placement" name="carrier-placement">
+              <option value="center">Center</option>
+              <option value="bottom-right" selected>Bottom right</option>
+              <option value="bottom-left">Bottom left</option>
+              <option value="top-right">Top right</option>
+              <option value="top-left">Top left</option>
+            </select>
           </div>
 
           <div class="button-row">

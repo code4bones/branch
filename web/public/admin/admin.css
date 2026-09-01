@@ -22,6 +22,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -47,6 +48,7 @@ button:disabled {
 }
 
 textarea,
+select,
 input {
   width: 100%;
   min-width: 0;
@@ -74,6 +76,17 @@ textarea {
 input {
   min-height: 42px;
   padding: 0 12px;
+}
+
+select {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+input[type="file"] {
+  display: block;
+  min-height: auto;
+  padding: 10px 12px;
 }
 
 label {
@@ -201,8 +214,8 @@ label {
 
 #ribbon-canvas {
   width: 100%;
-  max-width: 720px;
-  aspect-ratio: 1;
+  max-width: 760px;
+  aspect-ratio: auto;
   justify-self: center;
   border: 1px solid #27425f;
   border-radius: 8px;

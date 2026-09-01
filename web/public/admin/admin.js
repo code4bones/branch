@@ -11,6 +11,7 @@
 
   const state = {
     ribbonPngUrl: "",
+    coverImage: null,
     githubFiles: [],
     selectedFile: 0
   };
@@ -20,8 +21,12 @@
     panels: Array.from(document.querySelectorAll("[data-panel]")),
     ribbonForm: document.getElementById("ribbon-form"),
     wrapper: document.getElementById("branch-wrapper"),
-    modulePitch: document.getElementById("module-pitch"),
+    coverImage: document.getElementById("cover-image"),
     quietZone: document.getElementById("quiet-zone"),
+    carrierSize: document.getElementById("carrier-size"),
+    outputWidth: document.getElementById("output-width"),
+    outputHeight: document.getElementById("output-height"),
+    carrierPlacement: document.getElementById("carrier-placement"),
     canvas: document.getElementById("ribbon-canvas"),
     diagnostics: document.getElementById("ribbon-diagnostics"),
     downloadRibbon: document.getElementById("download-ribbon"),
@@ -55,14 +60,38 @@
   }
 
   function wireRibbon() {
+    elements.coverImage.addEventListener("change", async () => {
+      const file = elements.coverImage.files && elements.coverImage.files[0];
+      if (!file) {
+        state.coverImage = null;
+        return;
+      }
+      try {
+        state.coverImage = await loadLocalImage(file);
+        elements.outputWidth.value = String(clamp(state.coverImage.width, 640, 4096));
+        elements.outputHeight.value = String(clamp(state.coverImage.height, 640, 4096));
+      } catch {
+        state.coverImage = null;
+        setRibbonDiagnostics(emptyDiagnostics(), "cover image failed", "status-bad");
+      }
+    });
+
     elements.ribbonForm.addEventListener("submit", (event) => {
       event.preventDefault();
       try {
         const wrapper = elements.wrapper.value.trim();
-        const modulePitch = readBoundedInteger(elements.modulePitch.value, 4, 24, "module pitch");
         const quietZone = readBoundedInteger(elements.quietZone.value, 4, 12, "quiet zone");
-        const generated = generateRibbonSeal(wrapper, modulePitch, quietZone);
-        renderQR(generated.qr.modules, modulePitch, quietZone, elements.canvas);
+        const carrierSize = readBoundedInteger(elements.carrierSize.value, 320, 1600, "carrier size");
+        const outputWidth = readBoundedInteger(elements.outputWidth.value, 640, 4096, "output width");
+        const outputHeight = readBoundedInteger(elements.outputHeight.value, 640, 4096, "output height");
+        const generated = generateRibbonSeal(wrapper, quietZone, carrierSize);
+        renderRibbonImage(generated.qr.modules, generated.diagnostics, {
+          outputWidth,
+          outputHeight,
+          carrierSize,
+          placement: elements.carrierPlacement.value,
+          coverImage: state.coverImage
+        });
         setRibbonDiagnostics(generated.diagnostics, "generated", "status-good");
 
         if (state.ribbonPngUrl) {
@@ -149,7 +178,7 @@
     });
   }
 
-  function generateRibbonSeal(wrapper, modulePitch, quietZone) {
+  function generateRibbonSeal(wrapper, quietZone, carrierSize) {
     const payload = branchWrapperBytes(wrapper);
     const frame = encodeRibbonFrame(payload);
     const qrApi = window.BranchQRCode;
@@ -157,6 +186,7 @@
       throw new Error("QR encoder unavailable");
     }
     const qr = qrApi.create([{ mode: "byte", data: frame }], { errorCorrectionLevel: "H" });
+    const modulePitch = computeModulePitch(qr.modules.size, quietZone, carrierSize);
     return {
       qr,
       diagnostics: {
@@ -202,14 +232,35 @@
     return frame;
   }
 
-  function renderQR(modules, modulePitch, quietZone, canvas) {
+  function renderRibbonImage(modules, diagnostics, options) {
+    const canvas = elements.canvas;
+    if (!options.coverImage) {
+      const symbolSize = (diagnostics.moduleCount + diagnostics.quietZone * 2) * diagnostics.modulePitch;
+      canvas.width = symbolSize;
+      canvas.height = symbolSize;
+      const context = canvas.getContext("2d");
+      drawQR(context, modules, 0, 0, diagnostics.modulePitch, diagnostics.quietZone);
+      return;
+    }
+
+    canvas.width = options.outputWidth;
+    canvas.height = options.outputHeight;
+    const context = canvas.getContext("2d");
+    drawCoverImage(context, options.coverImage, options.outputWidth, options.outputHeight);
+
+    const symbolSize = (diagnostics.moduleCount + diagnostics.quietZone * 2) * diagnostics.modulePitch;
+    if (symbolSize > options.outputWidth || symbolSize > options.outputHeight) {
+      throw new Error("carrier size too large for output");
+    }
+    const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
+    drawQR(context, modules, placement.x, placement.y, diagnostics.modulePitch, diagnostics.quietZone);
+  }
+
+  function drawQR(context, modules, x, y, modulePitch, quietZone) {
     const moduleCount = modules.size;
     const size = (moduleCount + quietZone * 2) * modulePitch;
-    canvas.width = size;
-    canvas.height = size;
-    const context = canvas.getContext("2d");
     context.fillStyle = "#f8fbff";
-    context.fillRect(0, 0, size, size);
+    context.fillRect(x, y, size, size);
     context.fillStyle = "#003078";
 
     for (let moduleY = 0; moduleY < moduleCount; moduleY += 1) {
@@ -218,13 +269,63 @@
           continue;
         }
         context.fillRect(
-          (moduleX + quietZone) * modulePitch,
-          (moduleY + quietZone) * modulePitch,
+          x + (moduleX + quietZone) * modulePitch,
+          y + (moduleY + quietZone) * modulePitch,
           modulePitch,
           modulePitch
         );
       }
     }
+  }
+
+  function drawCoverImage(context, coverImage, outputWidth, outputHeight) {
+    context.fillStyle = "#07111d";
+    context.fillRect(0, 0, outputWidth, outputHeight);
+    const scale = Math.max(outputWidth / coverImage.width, outputHeight / coverImage.height);
+    const width = Math.round(coverImage.width * scale);
+    const height = Math.round(coverImage.height * scale);
+    const x = Math.round((outputWidth - width) / 2);
+    const y = Math.round((outputHeight - height) / 2);
+    context.drawImage(coverImage.image, x, y, width, height);
+  }
+
+  function computePlacement(placement, outputWidth, outputHeight, symbolSize) {
+    const margin = Math.max(24, Math.round(Math.min(outputWidth, outputHeight) * 0.04));
+    const positions = {
+      center: {
+        x: Math.round((outputWidth - symbolSize) / 2),
+        y: Math.round((outputHeight - symbolSize) / 2)
+      },
+      "bottom-right": {
+        x: outputWidth - symbolSize - margin,
+        y: outputHeight - symbolSize - margin
+      },
+      "bottom-left": {
+        x: margin,
+        y: outputHeight - symbolSize - margin
+      },
+      "top-right": {
+        x: outputWidth - symbolSize - margin,
+        y: margin
+      },
+      "top-left": {
+        x: margin,
+        y: margin
+      }
+    };
+    const position = positions[placement] || positions["bottom-right"];
+    return {
+      x: clamp(position.x, 0, outputWidth - symbolSize),
+      y: clamp(position.y, 0, outputHeight - symbolSize)
+    };
+  }
+
+  function computeModulePitch(moduleCount, quietZone, carrierSize) {
+    const pitch = Math.floor(carrierSize / (moduleCount + quietZone * 2));
+    if (pitch < 4) {
+      throw new Error("carrier size too small");
+    }
+    return pitch;
   }
 
   function drawIdleCanvas() {
@@ -252,6 +353,7 @@
       ["Modules", diagnostics.moduleCount],
       ["Pitch", diagnostics.modulePitch],
       ["Quiet zone", diagnostics.quietZone],
+      ["Canvas", `${elements.canvas.width}x${elements.canvas.height}`],
       ["ECC", "H"]
     ];
 
@@ -432,6 +534,50 @@ jobs:
       throw new Error(`${name} outside ${min}-${max}`);
     }
     return number;
+  }
+
+  function loadLocalImage(file) {
+    if (!file.type.startsWith("image/")) {
+      return Promise.reject(new Error("cover image must be an image"));
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      return Promise.reject(new Error("cover image too large"));
+    }
+
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        const width = image.naturalWidth;
+        const height = image.naturalHeight;
+        URL.revokeObjectURL(url);
+        if (width <= 0 || height <= 0 || width * height > 4096 * 4096) {
+          reject(new Error("cover image dimensions outside bounds"));
+          return;
+        }
+        resolve({ image, width, height });
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("cover image failed"));
+      };
+      image.src = url;
+    });
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function emptyDiagnostics() {
+    return {
+      profile,
+      sourceSymbolVersion: "-",
+      moduleCount: "-",
+      modulePitch: "-",
+      quietZone: "-",
+      payloadLength: "-"
+    };
   }
 
   function dropUndefined(source) {
