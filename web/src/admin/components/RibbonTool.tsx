@@ -12,6 +12,7 @@ import {
 } from "../../visual/canvas-image.js";
 import { clamp } from "../../visual/geometry.js";
 import { decodeRibbonImage } from "../../visual/ribbon-decode.js";
+import type { DecodeRibbonImageOptions } from "../../visual/ribbon-decode.js";
 import {
   drawCoverPreview,
   drawIdleCanvas,
@@ -113,12 +114,18 @@ export function RibbonTool(): React.JSX.Element {
     try {
       const image = await loadDecodeImage();
       const carrierSize = fitCarrierSize(ribbon.carrierSize, image.width, image.height);
+      const quietZone = readBoundedInteger(ribbon.quietZone, 4, 12, "quiet zone");
       setRibbonField("carrierSize", String(carrierSize));
-      const result = decodeRibbonImage(image, {
-        quietZone: readBoundedInteger(ribbon.quietZone, 4, 12, "quiet zone"),
+      const preferredVersion = readPreferredVersion(ribbon.wrapper, quietZone, carrierSize);
+      const decodeOptions: DecodeRibbonImageOptions = {
+        quietZone,
         carrierSize,
         placement: ribbon.placement
-      });
+      };
+      const result = decodeRibbonImage(
+        image,
+        preferredVersion === undefined ? decodeOptions : { ...decodeOptions, preferredVersion }
+      );
       setDecodedWrapper(result.wrapper);
       setDiagnostics(createDiagnostics(result.status, result.wrapper === "" ? "status-bad" : "status-good", {
         mode: ribbon.visualMode,
@@ -294,4 +301,12 @@ function readPlacement(value: string) {
     return value;
   }
   return "bottom-right";
+}
+
+function readPreferredVersion(wrapper: string, quietZone: number, carrierSize: number): number | undefined {
+  try {
+    return generateRibbonSymbol(wrapper.trim(), quietZone, carrierSize).diagnostics.sourceSymbolVersion;
+  } catch {
+    return undefined;
+  }
 }

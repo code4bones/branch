@@ -38,11 +38,27 @@ void test("tint stego extractor reconstructs generated wrapper from PNG LSB modu
   const decoded = decodeRibbonImage(image, {
     quietZone,
     carrierSize,
-    placement: "top-left"
+    placement: "top-left",
+    preferredVersion: symbol.diagnostics.sourceSymbolVersion
   });
 
   assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
   assert.equal(decoded.wrapper, defaultBranchWrapper);
+});
+
+void test("large undecodable ribbon image uses bounded decode work", () => {
+  const image = makeNoCarrierImage(1200, 1500);
+  const decoded = decodeRibbonImage(image, {
+    quietZone: 8,
+    carrierSize: 720,
+    placement: "bottom-right",
+    maxDirectPixels: 1,
+    maxVersionAttempts: 2,
+    maxTintCandidates: 8
+  });
+
+  assert.equal(decoded.status, "tint extraction failed");
+  assert.equal(decoded.wrapper, "");
 });
 
 void test("raw stego candidates remain valid ribbon seal images", () => {
@@ -85,4 +101,15 @@ function makeStegoImage(
   }
 
   return { width: size, height: size, data };
+}
+
+function makeNoCarrierImage(width: number, height: number): RibbonImageData {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let index = 0; index < data.length; index += 4) {
+    data[index] = 7;
+    data[index + 1] = 17;
+    data[index + 2] = 29;
+    data[index + 3] = 255;
+  }
+  return { width, height, data };
 }

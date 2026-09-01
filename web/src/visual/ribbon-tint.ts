@@ -86,7 +86,7 @@ export function extractChromaTintCandidates(
 }
 
 export function renderBitQR(bits: readonly boolean[], moduleCount: number, invert: boolean): RibbonImageData {
-  const renderPitch = 8;
+  const renderPitch = 3;
   const renderQuietZone = 4;
   const width = (moduleCount + renderQuietZone * 2) * renderPitch;
   const data = new Uint8ClampedArray(width * width * 4);

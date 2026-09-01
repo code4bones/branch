@@ -21,6 +21,11 @@ export interface DecodeRibbonImageOptions {
   readonly quietZone: number;
   readonly carrierSize: number;
   readonly placement: RibbonPlacement;
+  readonly maxInputPixels?: number;
+  readonly maxDirectPixels?: number;
+  readonly maxVersionAttempts?: number;
+  readonly maxTintCandidates?: number;
+  readonly preferredVersion?: number;
 }
 
 export interface DecodedRibbonWrapper {
@@ -28,13 +33,39 @@ export interface DecodedRibbonWrapper {
   readonly wrapper: string;
 }
 
+interface VersionAttempt {
+  readonly version: number;
+  readonly moduleCount: number;
+  readonly modulePitch: number;
+  readonly symbolSize: number;
+}
+
+const maxQRVersion = 30;
+const defaultMaxInputPixels = 4096 * 4096;
+const defaultMaxDirectPixels = 1024 * 1024;
+const defaultMaxVersionAttempts = 6;
+const defaultMaxTintCandidates = 48;
+
 export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonImageOptions): DecodedRibbonWrapper {
-  const direct = decodeQRCodeData(image.data, image.width, image.height);
+  const validationStatus = validateImageData(image, options.maxInputPixels ?? defaultMaxInputPixels);
+  if (validationStatus !== null) {
+    return { status: statusLabel(validationStatus), wrapper: "" };
+  }
+
+  const attempts = selectVersionAttempts(image, options);
+  const placedDirect = decodePlacedQRCode(image, options, attempts);
+  if (placedDirect.status === "beacon_accepted") {
+    return { status: "seal decoded", wrapper: decodePayload(placedDirect.frame.payload) };
+  }
+
+  const direct = image.width * image.height <= (options.maxDirectPixels ?? defaultMaxDirectPixels)
+    ? decodeQRCodeData(image.data, image.width, image.height)
+    : placedDirect;
   if (direct.status === "beacon_accepted") {
     return { status: "seal decoded", wrapper: decodePayload(direct.frame.payload) };
   }
 
-  const tinted = decodeTintImage(image, options);
+  const tinted = decodeTintImage(image, options, attempts);
   if (tinted.wrapper !== "") {
     return tinted;
   }
@@ -42,21 +73,24 @@ export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonI
   return { status: tinted.status || statusLabel(direct.status), wrapper: "" };
 }
 
-function decodeTintImage(image: RibbonImageData, options: DecodeRibbonImageOptions): DecodedRibbonWrapper {
-  for (let version = 1; version <= 30; version += 1) {
-    const moduleCount = 21 + (version - 1) * 4;
-    const modulePitch = computeModulePitch(moduleCount, options.quietZone, options.carrierSize);
-    const symbolSize = (moduleCount + options.quietZone * 2) * modulePitch;
-    if (symbolSize > image.width || symbolSize > image.height) {
-      continue;
-    }
-
+function decodeTintImage(
+  image: RibbonImageData,
+  options: DecodeRibbonImageOptions,
+  attempts: readonly VersionAttempt[]
+): DecodedRibbonWrapper {
+  let decodedCandidates = 0;
+  const maxCandidates = options.maxTintCandidates ?? defaultMaxTintCandidates;
+  for (const { version, moduleCount, modulePitch, symbolSize } of attempts) {
     const placement = computePlacement(options.placement, image.width, image.height, symbolSize);
     const candidates = [
       ...extractStegoTintCandidates(image, placement, moduleCount, modulePitch, options.quietZone),
       ...extractChromaTintCandidates(image, placement, moduleCount, modulePitch, options.quietZone)
     ];
     for (const candidate of candidates) {
+      if (decodedCandidates >= maxCandidates) {
+        return { status: "tint extraction failed", wrapper: "" };
+      }
+      decodedCandidates += 1;
       const decoded = decodeQRCodeData(candidate.data, candidate.width, candidate.height);
       if (decoded.status === "beacon_accepted") {
         return { status: `tint decoded v${String(version)}`, wrapper: decodePayload(decoded.frame.payload) };
@@ -64,6 +98,75 @@ function decodeTintImage(image: RibbonImageData, options: DecodeRibbonImageOptio
     }
   }
   return { status: "tint extraction failed", wrapper: "" };
+}
+
+function decodePlacedQRCode(
+  image: RibbonImageData,
+  options: DecodeRibbonImageOptions,
+  attempts: readonly VersionAttempt[]
+): RibbonDecodeResult {
+  for (const { symbolSize } of attempts) {
+    const placement = computePlacement(options.placement, image.width, image.height, symbolSize);
+    const candidate = cropSquare(image, placement.x, placement.y, symbolSize);
+    const decoded = decodeQRCodeData(candidate.data, candidate.width, candidate.height);
+    if (decoded.status === "beacon_accepted") {
+      return decoded;
+    }
+  }
+  return { status: "no_carrier_detected" };
+}
+
+function selectVersionAttempts(image: RibbonImageData, options: DecodeRibbonImageOptions): readonly VersionAttempt[] {
+  const attempts: Array<VersionAttempt & { readonly score: number }> = [];
+  for (let version = 1; version <= maxQRVersion; version += 1) {
+    const moduleCount = 21 + (version - 1) * 4;
+    let modulePitch = 0;
+    try {
+      modulePitch = computeModulePitch(moduleCount, options.quietZone, options.carrierSize);
+    } catch {
+      continue;
+    }
+    const symbolSize = (moduleCount + options.quietZone * 2) * modulePitch;
+    if (symbolSize > image.width || symbolSize > image.height) {
+      continue;
+    }
+    attempts.push({
+      version,
+      moduleCount,
+      modulePitch,
+      symbolSize,
+      score: Math.abs(options.carrierSize - symbolSize)
+    });
+  }
+
+  const preferred = Number.isInteger(options.preferredVersion)
+    ? attempts.find((attempt) => attempt.version === options.preferredVersion)
+    : undefined;
+  const ordered = attempts
+    .sort((left, right) => left.score - right.score || left.version - right.version)
+    .filter((attempt) => attempt.version !== preferred?.version);
+  const selected = preferred === undefined ? ordered : [preferred, ...ordered];
+
+  return selected.slice(0, options.maxVersionAttempts ?? defaultMaxVersionAttempts);
+}
+
+function cropSquare(image: RibbonImageData, sourceX: number, sourceY: number, size: number): RibbonImageData {
+  const data = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    const sourceOffset = ((sourceY + y) * image.width + sourceX) * 4;
+    data.set(image.data.subarray(sourceOffset, sourceOffset + size * 4), y * size * 4);
+  }
+  return { width: size, height: size, data };
+}
+
+function validateImageData(image: RibbonImageData, maxPixels: number): RibbonDecodeResult["status"] | null {
+  if (image.width <= 0 || image.height <= 0 || image.width * image.height > maxPixels) {
+    return "visual_sync_failed";
+  }
+  if (image.data.byteLength !== image.width * image.height * 4) {
+    return "visual_sync_failed";
+  }
+  return null;
 }
 
 function decodeQRCodeData(data: Uint8ClampedArray, width: number, height: number): RibbonDecodeResult {
