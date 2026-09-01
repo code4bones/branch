@@ -379,8 +379,11 @@ void test("ribbon block profile carries exact signed frame bytes through locator
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makeNoCarrierImage(1000, 1500);
   const region = {
-    ...computePlacement(placement, source.width, source.height, symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)),
-    size: symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)
+    x: 0,
+    y: 0,
+    size: Math.min(source.width, source.height),
+    width: source.width,
+    height: source.height
   };
   const blocked = embedBlockPayload(source, symbol.frame, region);
   const image = embedRibbonLocator(blocked, makeRibbonLocatorHint({
@@ -418,8 +421,11 @@ void test("ribbon block profile survives nearest resize with locator-scaled regi
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makeNoCarrierImage(1000, 1500);
   const sourceRegion = {
-    ...computePlacement(placement, source.width, source.height, symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)),
-    size: symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)
+    x: 0,
+    y: 0,
+    size: Math.min(source.width, source.height),
+    width: source.width,
+    height: source.height
   };
   const blocked = embedBlockPayload(source, symbol.frame, sourceRegion);
   const located = embedRibbonLocator(blocked, makeRibbonLocatorHint({
@@ -444,7 +450,7 @@ void test("ribbon block profile survives nearest resize with locator-scaled regi
 
   assert.equal(decoded.status, "block decoded locator");
   assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, { x: 227, y: 602, size: 493 });
+  assert.deepEqual(decoded.foundRegion, { x: 0, y: 0, size: 750, width: 750, height: 1125 });
 });
 
 void test("ribbon block profile has bounded default heuristic when locator is stripped", () => {
@@ -454,8 +460,11 @@ void test("ribbon block profile has bounded default heuristic when locator is st
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makeNoCarrierImage(1000, 1500);
   const sourceRegion = {
-    ...computePlacement(placement, source.width, source.height, symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)),
-    size: symbolSizePixels(symbol.diagnostics.moduleCount, quietZone, symbol.diagnostics.modulePitch)
+    x: 0,
+    y: 0,
+    size: Math.min(source.width, source.height),
+    width: source.width,
+    height: source.height
   };
   const blocked = embedBlockPayload(source, symbol.frame, sourceRegion);
   const resized = resizeNearest(blocked, 750, 1125);
@@ -470,7 +479,7 @@ void test("ribbon block profile has bounded default heuristic when locator is st
 
   assert.equal(decoded.status, "block decoded heuristic");
   assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, { x: 227, y: 602, size: 493 });
+  assert.deepEqual(decoded.foundRegion, { x: 0, y: 0, size: 750, width: 750, height: 1125 });
 });
 
 void test("ribbon locator reads legacy browser grid as bounded hint", () => {

@@ -6,27 +6,32 @@ export interface RibbonBlockRegion {
   readonly x: number;
   readonly y: number;
   readonly size: number;
+  readonly width?: number;
+  readonly height?: number;
 }
 
 interface RibbonBlockLayout {
-  readonly origin: number;
+  readonly originX: number;
+  readonly originY: number;
   readonly cellSize: number;
-  readonly gridSide: number;
-  readonly capacityBits: number;
+  readonly columns: number;
+  readonly rows: number;
+  readonly capacityCells: number;
+  readonly permutationStep: number;
 }
 
 const blockMagic = Uint8Array.from("BRBLK0", (value) => value.charCodeAt(0));
 const blockVersion = 0;
-const blockStrength = 44;
-const blockTargetGridSide = 82;
+const blockStrength = 20;
+const blockTargetGridSide = 125;
 const blockHeaderBytes = blockMagic.byteLength + 1 + 2;
 const blockTrailerBytes = 4;
-const blockRepeatCandidates = [5, 3, 1] as const;
+const blockRepeatCandidates = [15, 11, 7, 5, 3, 1] as const;
 
 export function drawBlockPayload(context: CanvasRenderingContext2D, frame: Uint8Array, region: RibbonBlockRegion): void {
   validateRegion(region);
-  const image = context.getImageData(region.x, region.y, region.size, region.size);
-  writeBlockPayload(image.data, image.width, frame, makeBlockLayout(region.size));
+  const image = context.getImageData(region.x, region.y, regionWidth(region), regionHeight(region));
+  writeBlockPayload(image.data, image.width, frame, makeBlockLayout(regionWidth(region), regionHeight(region)));
   context.putImageData(image, region.x, region.y);
 }
 
@@ -39,7 +44,7 @@ export function embedBlockPayload(image: RibbonImageData, frame: Uint8Array, reg
     height: image.height,
     data: new Uint8ClampedArray(image.data)
   };
-  writeBlockPayload(output.data, output.width, frame, makeBlockLayout(region.size), region.x, region.y);
+  writeBlockPayload(output.data, output.width, frame, makeBlockLayout(regionWidth(region), regionHeight(region)), region.x, region.y);
   return output;
 }
 
@@ -47,7 +52,7 @@ export function extractBlockPayload(image: RibbonImageData, region: RibbonBlockR
   if (!isValidImage(image) || !regionFits(image, region)) {
     return null;
   }
-  const layout = makeBlockLayout(region.size);
+  const layout = makeBlockLayout(regionWidth(region), regionHeight(region));
   for (const repeat of blockRepeatCandidates) {
     const packet = readRepeatedPacket(image, region, layout, repeat);
     const frame = decodeBlockPacket(packet);
@@ -68,12 +73,12 @@ function writeBlockPayload(
 ): void {
   const packet = encodeBlockPacket(frame);
   const packetBits = packet.byteLength * 8;
-  const repeat = selectRepeat(packetBits, layout.capacityBits);
+  const repeat = selectRepeat(packetBits, layout.capacityCells);
   for (let bitIndex = 0; bitIndex < packetBits; bitIndex += 1) {
     const byte = packet[Math.floor(bitIndex / 8)] ?? 0;
     const bit = ((byte >> (7 - bitIndex % 8)) & 1) === 1;
     for (let repeated = 0; repeated < repeat; repeated += 1) {
-      tintBlockCell(data, width, layout, offsetX, offsetY, bitIndex * repeat + repeated, bit);
+      tintBlockCell(data, width, layout, offsetX, offsetY, permuteCellIndex(layout, bitIndex * repeat + repeated), bit);
     }
   }
 }
@@ -84,13 +89,13 @@ function readRepeatedPacket(
   layout: RibbonBlockLayout,
   repeat: number
 ): Uint8Array {
-  const bitCapacity = Math.floor(layout.capacityBits / repeat);
+  const bitCapacity = Math.floor(layout.capacityCells / repeat);
   const byteCapacity = Math.floor(bitCapacity / 8);
   const packet = new Uint8Array(byteCapacity);
   for (let bitIndex = 0; bitIndex < byteCapacity * 8; bitIndex += 1) {
     let score = 0;
     for (let repeated = 0; repeated < repeat; repeated += 1) {
-      score += readBlockCellScore(image, region, layout, bitIndex * repeat + repeated);
+      score += readBlockCellScore(image, region, layout, permuteCellIndex(layout, bitIndex * repeat + repeated));
     }
     if (score < 0) {
       continue;
@@ -147,25 +152,24 @@ function tintBlockCell(
   cellIndex: number,
   bit: boolean
 ): void {
-  if (cellIndex >= layout.capacityBits) {
+  if (cellIndex >= layout.capacityCells) {
     throw new Error("block payload exceeds carrier capacity");
   }
-  const cellX = cellIndex % layout.gridSide;
-  const cellY = Math.floor(cellIndex / layout.gridSide);
-  const startX = offsetX + layout.origin + cellX * layout.cellSize;
-  const startY = offsetY + layout.origin + cellY * layout.cellSize;
-  const midpoint = startX + Math.floor(layout.cellSize / 2);
+  const cellX = cellIndex % layout.columns;
+  const cellY = Math.floor(cellIndex / layout.columns);
+  const startX = offsetX + layout.originX + cellX * layout.cellSize;
+  const startY = offsetY + layout.originY + cellY * layout.cellSize;
   for (let y = startY; y < startY + layout.cellSize; y += 1) {
     for (let x = startX; x < startX + layout.cellSize; x += 1) {
-      const leftHalf = x < midpoint;
-      const blueSide = bit ? leftHalf : !leftHalf;
+      const polarity = readCellPolarity(cellIndex, x - startX, y - startY, layout.cellSize);
       const offset = (y * width + x) * 4;
       const red = data[offset] ?? 0;
       const green = data[offset + 1] ?? 0;
       const blue = data[offset + 2] ?? 0;
-      data[offset] = clampByte(red + (blueSide ? -blockStrength : blockStrength));
-      data[offset + 1] = clampByte(green + (blueSide ? -6 : 6));
-      data[offset + 2] = clampByte(blue + (blueSide ? blockStrength : -blockStrength));
+      const delta = (bit ? polarity : -polarity) * blockStrength;
+      data[offset] = clampByte(red + delta);
+      data[offset + 1] = clampByte(green + delta);
+      data[offset + 2] = clampByte(blue + delta);
     }
   }
 }
@@ -176,36 +180,69 @@ function readBlockCellScore(
   layout: RibbonBlockLayout,
   cellIndex: number
 ): number {
-  const cellX = cellIndex % layout.gridSide;
-  const cellY = Math.floor(cellIndex / layout.gridSide);
+  const cellX = cellIndex % layout.columns;
+  const cellY = Math.floor(cellIndex / layout.columns);
   const margin = Math.max(1, Math.floor(layout.cellSize * 0.18));
-  const startX = region.x + layout.origin + cellX * layout.cellSize + margin;
-  const startY = region.y + layout.origin + cellY * layout.cellSize + margin;
-  const endX = region.x + layout.origin + (cellX + 1) * layout.cellSize - margin;
-  const endY = region.y + layout.origin + (cellY + 1) * layout.cellSize - margin;
-  const midpoint = region.x + layout.origin + cellX * layout.cellSize + Math.floor(layout.cellSize / 2);
+  const startX = region.x + layout.originX + cellX * layout.cellSize + margin;
+  const startY = region.y + layout.originY + cellY * layout.cellSize + margin;
+  const endX = region.x + layout.originX + (cellX + 1) * layout.cellSize - margin;
+  const endY = region.y + layout.originY + (cellY + 1) * layout.cellSize - margin;
+  const cellStartX = region.x + layout.originX + cellX * layout.cellSize;
+  const cellStartY = region.y + layout.originY + cellY * layout.cellSize;
   let score = 0;
   for (let y = startY; y < endY; y += 1) {
     for (let x = startX; x < endX; x += 1) {
       const offset = (y * image.width + x) * 4;
       const red = image.data[offset] ?? 0;
+      const green = image.data[offset + 1] ?? 0;
       const blue = image.data[offset + 2] ?? 0;
-      score += (x < midpoint ? 1 : -1) * (blue - red);
+      const luma = red * 0.299 + green * 0.587 + blue * 0.114;
+      score += readCellPolarity(cellIndex, x - cellStartX, y - cellStartY, layout.cellSize) * luma;
     }
   }
   return score;
 }
 
-function makeBlockLayout(size: number): RibbonBlockLayout {
-  validateRegion({ x: 0, y: 0, size });
-  const cellSize = Math.max(6, Math.floor(size / blockTargetGridSide));
-  const gridSide = Math.floor(size / cellSize);
-  const gridPixels = gridSide * cellSize;
+function readCellPolarity(cellIndex: number, x: number, y: number, cellSize: number): 1 | -1 {
+  const midpoint = Math.floor(cellSize / 2);
+  switch (hashCell(cellIndex) & 3) {
+    case 0:
+      return x < midpoint ? 1 : -1;
+    case 1:
+      return y < midpoint ? 1 : -1;
+    case 2:
+      return (x < midpoint) === (y < midpoint) ? 1 : -1;
+    default:
+      return x + y < cellSize ? 1 : -1;
+  }
+}
+
+function hashCell(cellIndex: number): number {
+  let value = (cellIndex + 1) * 0x9e3779b1;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x85ebca6b);
+  value ^= value >>> 13;
+  return value >>> 0;
+}
+
+function makeBlockLayout(width: number, height: number): RibbonBlockLayout {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 128 || height < 128 || width > 4096 || height > 4096) {
+    throw new Error("invalid block payload region");
+  }
+  const cellSize = Math.max(6, Math.floor(Math.min(width, height) / blockTargetGridSide));
+  const columns = Math.floor(width / cellSize);
+  const rows = Math.floor(height / cellSize);
+  const gridWidth = columns * cellSize;
+  const gridHeight = rows * cellSize;
+  const capacityCells = columns * rows;
   return {
-    origin: Math.floor((size - gridPixels) / 2),
+    originX: Math.floor((width - gridWidth) / 2),
+    originY: Math.floor((height - gridHeight) / 2),
     cellSize,
-    gridSide,
-    capacityBits: gridSide * gridSide
+    columns,
+    rows,
+    capacityCells,
+    permutationStep: selectPermutationStep(capacityCells)
   };
 }
 
@@ -219,20 +256,34 @@ function selectRepeat(packetBits: number, capacityBits: number): number {
 }
 
 function validateRegion(region: RibbonBlockRegion): void {
-  if (!Number.isInteger(region.x) || !Number.isInteger(region.y) || !Number.isInteger(region.size) || region.size < 128 || region.size > 4096) {
+  const width = regionWidth(region);
+  const height = regionHeight(region);
+  if (!Number.isInteger(region.x) || !Number.isInteger(region.y) || !Number.isInteger(width) || !Number.isInteger(height) || width < 128 || height < 128 || width > 4096 || height > 4096) {
     throw new Error("invalid block payload region");
   }
 }
 
 function regionFits(image: RibbonImageData, region: RibbonBlockRegion): boolean {
+  const width = regionWidth(region);
+  const height = regionHeight(region);
   return Number.isInteger(region.x) &&
     Number.isInteger(region.y) &&
-    Number.isInteger(region.size) &&
+    Number.isInteger(width) &&
+    Number.isInteger(height) &&
     region.x >= 0 &&
     region.y >= 0 &&
-    region.size >= 128 &&
-    region.x + region.size <= image.width &&
-    region.y + region.size <= image.height;
+    width >= 128 &&
+    height >= 128 &&
+    region.x + width <= image.width &&
+    region.y + height <= image.height;
+}
+
+function regionWidth(region: RibbonBlockRegion): number {
+  return region.width ?? region.size;
+}
+
+function regionHeight(region: RibbonBlockRegion): number {
+  return region.height ?? region.size;
 }
 
 function isValidImage(image: RibbonImageData): boolean {
@@ -288,4 +339,28 @@ function readUint32BE(source: Uint8Array, offset: number): number {
 
 function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function permuteCellIndex(layout: RibbonBlockLayout, sequentialIndex: number): number {
+  return (sequentialIndex * layout.permutationStep + 97) % layout.capacityCells;
+}
+
+function selectPermutationStep(capacity: number): number {
+  for (const candidate of [4093, 8191, 65537, 257, 131, 17]) {
+    if (gcd(candidate, capacity) === 1) {
+      return candidate;
+    }
+  }
+  return 1;
+}
+
+function gcd(left: number, right: number): number {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a;
 }

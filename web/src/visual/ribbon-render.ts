@@ -1,7 +1,7 @@
 import * as QRCode from "qrcode";
 
 import { computeModulePitch, computePlacement, type RibbonPlacement } from "./geometry.js";
-import { drawBlockPayload, ribbonBlockProfile } from "./ribbon-block.js";
+import { drawBlockPayload } from "./ribbon-block.js";
 import {
   branchWrapperBytes,
   encodeRibbonFrame,
@@ -97,8 +97,13 @@ export function renderRibbonImage(
   ensureCarrierFits(symbolSize, options.outputWidth, options.outputHeight);
   const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
   if (options.visualMode === "block") {
-    drawBlockPayload(context, symbol.frame, { ...placement, size: symbolSize });
-    drawLocator(context, symbol, options, ribbonBlockProfile);
+    drawBlockPayload(context, symbol.frame, {
+      x: 0,
+      y: 0,
+      size: Math.min(options.outputWidth, options.outputHeight),
+      width: options.outputWidth,
+      height: options.outputHeight
+    });
     return;
   }
 

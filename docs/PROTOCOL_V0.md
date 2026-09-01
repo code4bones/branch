@@ -1038,9 +1038,9 @@ is not a requirement for this profile.
 
 `ribbon-block/0.draft` is a browser-local measurement profile for service-upload
 survivability experiments. It carries the same exact `BRIMG0` visual frame bytes
-as `ribbon-seal/0`, but renders them into larger differential pixel cells inside
-the existing payload region instead of rendering a QR/Data Matrix symbol. The
-current draft packet is:
+as `ribbon-seal/0`, but renders them into bounded distributed differential
+pixel cells over the carrier image instead of rendering a QR/Data Matrix symbol
+or a dense local payload square. The current draft packet is:
 
 ```text
 magic           = "BRBLK0"        ; 6 ASCII bytes encoded in pixels
@@ -1050,16 +1050,19 @@ frame           = exact BRIMG0 visual frame bytes
 crc32c_frame    = uint32 big endian CRC32C(frame)
 ```
 
-Each logical packet bit is written as one or more repeated cells. A cell splits
-its pixels into left and right halves with opposite red/blue differential bias;
-the decoder averages the halves and majority-decodes repeated cells. The repeat
-factor is selected only from bounded odd values that fit the carrier capacity,
-and receivers try the same bounded repeat set before validating magic, length,
-CRC32C, and then the enclosed `BRIMG0` frame. This profile is intended to
-measure resistance to common service transformations such as JPEG/WebP
-recompression and resize. It is more visible than `ribbon-tint/0`, not a
-generic-camera barcode, and not accepted v0 conformance until the published
-corpus records its measured limits.
+Each logical packet bit is written as one or more repeated cells selected by a
+deterministic permutation. A cell applies a balanced grayscale luminance bias
+using one of a bounded set of deterministic masks; the decoder averages the
+masked luminance score and majority-decodes repeated cells. The repeat factor
+is selected only from bounded odd values that fit the carrier capacity, and
+receivers try the same bounded repeat set before validating magic, length,
+CRC32C, and then the enclosed `BRIMG0` frame. The locator is optional for this
+profile; the current generator relies on bounded full-image recovery so it does
+not draw a separate visible locator header for `ribbon-block/0.draft`. This
+profile is intended to measure resistance to common service transformations
+such as JPEG/WebP recompression and resize. It is still more visible than a
+true frequency-domain watermark, not a generic-camera barcode, and not accepted
+v0 conformance until the published corpus records its measured limits.
 
 `ribbon-watermark/0` is experimental and optional. It may use mid-frequency
 luminance modulation or another transform-resistant mark to help B.R.A.N.C.H.

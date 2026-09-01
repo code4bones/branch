@@ -251,14 +251,14 @@ function tintLocatorCell(data: Uint8ClampedArray, width: number, cellX: number, 
     for (let x = startX; x < startX + cellSize; x += 1) {
       const offset = (y * width + x) * 4;
       if (bit) {
-        data[offset] = clampByte((data[offset] ?? 0) - 36);
-        data[offset + 1] = clampByte((data[offset + 1] ?? 0) - 10);
-        data[offset + 2] = clampByte((data[offset + 2] ?? 0) + 70) | 1;
+        data[offset] = clampByte((data[offset] ?? 0) - 10);
+        data[offset + 1] = clampByte((data[offset + 1] ?? 0) - 6);
+        data[offset + 2] = clampByte((data[offset + 2] ?? 0) + 22) | 1;
         continue;
       }
-      data[offset] = clampByte((data[offset] ?? 0) + 36);
-      data[offset + 1] = clampByte((data[offset + 1] ?? 0) + 10);
-      data[offset + 2] = clampByte((data[offset + 2] ?? 0) - 70) & 0xfe;
+      data[offset] = clampByte((data[offset] ?? 0) + 10);
+      data[offset + 1] = clampByte((data[offset + 1] ?? 0) + 6);
+      data[offset + 2] = clampByte((data[offset + 2] ?? 0) - 22) & 0xfe;
     }
   }
 }
@@ -270,14 +270,14 @@ function tintLocatorCellInImage(image: RibbonImageData, layout: LocatorLayout, c
     for (let x = startX; x < startX + layout.cellSize; x += 1) {
       const offset = (y * image.width + x) * 4;
       if (bit) {
-        image.data[offset] = clampByte((image.data[offset] ?? 0) - 36);
-        image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) - 10);
-        image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) + 70) | 1;
+        image.data[offset] = clampByte((image.data[offset] ?? 0) - 10);
+        image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) - 6);
+        image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) + 22) | 1;
         continue;
       }
-      image.data[offset] = clampByte((image.data[offset] ?? 0) + 36);
-      image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) + 10);
-      image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) - 70) & 0xfe;
+      image.data[offset] = clampByte((image.data[offset] ?? 0) + 10);
+      image.data[offset + 1] = clampByte((image.data[offset + 1] ?? 0) + 6);
+      image.data[offset + 2] = clampByte((image.data[offset + 2] ?? 0) - 22) & 0xfe;
     }
   }
 }
