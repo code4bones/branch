@@ -78,7 +78,8 @@ function isDecodeOptions(options: unknown): options is DecodeRibbonImageOptions 
     isOptionalNumber(options["maxDirectPixels"]) &&
     isOptionalNumber(options["maxVersionAttempts"]) &&
     isOptionalNumber(options["maxTintCandidates"]) &&
-    isOptionalNumber(options["preferredVersion"]);
+    isOptionalNumber(options["preferredVersion"]) &&
+    isOptionalBoolean(options["skipFullImagePayloads"]);
 }
 
 function isPlacement(value: unknown): value is DecodeRibbonImageOptions["placement"] {
@@ -95,6 +96,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isOptionalNumber(value: unknown): boolean {
   return value === undefined || typeof value === "number";
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === "boolean";
 }
 
 function readWorkerSelf(): RibbonDecodeWorkerGlobal | null {

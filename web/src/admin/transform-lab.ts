@@ -8,16 +8,12 @@ export type TransformLabPresetId =
   | "resize-75"
   | "resize-50"
   | "resize-75-jpeg-80"
-  | "thumbnail-center-crop"
-  | "thumbnail-fit-padding"
   | "screenshot-scale-2"
   | "pinterest-like-simulation";
 
 export type TransformOperationKind =
   | "recompress"
   | "resize"
-  | "center-crop"
-  | "fit-padding"
   | "screenshot";
 
 export type TransformOutputMime = "image/png" | "image/jpeg" | "image/webp";
@@ -108,7 +104,7 @@ export interface TransformClassificationInput {
   readonly failureReason?: string;
 }
 
-export const maxTransformLabMatrixPresets = 13;
+export const maxTransformLabMatrixPresets = 11;
 
 export const transformLabPresets: readonly TransformLabPreset[] = [
   {
@@ -167,18 +163,6 @@ export const transformLabPresets: readonly TransformLabPreset[] = [
       { kind: "resize", label: "resize 75%", percent: 0.75 },
       { kind: "recompress", label: "JPEG quality 80", mime: "image/jpeg", quality: 0.8 }
     ]
-  },
-  {
-    id: "thumbnail-center-crop",
-    label: "Thumbnail crop",
-    simulation: false,
-    operations: [{ kind: "center-crop", label: "center crop 80%", percent: 0.8 }]
-  },
-  {
-    id: "thumbnail-fit-padding",
-    label: "Thumbnail padding",
-    simulation: false,
-    operations: [{ kind: "fit-padding", label: "fit with padding 75%", percent: 0.75 }]
   },
   {
     id: "screenshot-scale-2",

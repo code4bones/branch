@@ -3,7 +3,7 @@ import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/r
 import { fixedRibbonPlacement } from "../visual/geometry.js";
 import type { RibbonImageData } from "../visual/ribbon-image.js";
 
-export const maxAutoDecodeCandidates = 48;
+export const maxAutoDecodeCandidates = 24;
 
 const autoQuietZones: readonly number[] = [8, 4, 12];
 const autoPreferredVersions: readonly number[] = [10, 11, 9, 12, 8, 13];
@@ -14,11 +14,16 @@ export async function decodeRibbonImageAutoWithWorker(
   signal?: AbortSignal
 ): Promise<DecodedRibbonWrapper> {
   let lastStatus = "no carrier detected";
+  let fullImagePayloadsTried = false;
   for (const candidate of makeAutoDecodeCandidates(image.width, image.height)) {
     if (signal?.aborted === true) {
       return { status: "decode cancelled", wrapper: "" };
     }
-    const result = await decodeRibbonImageWithWorker(image, candidate, undefined, signal);
+    const options = fullImagePayloadsTried
+      ? { ...candidate, skipFullImagePayloads: true }
+      : candidate;
+    const result = await decodeRibbonImageWithWorker(image, options, undefined, signal);
+    fullImagePayloadsTried = true;
     if (result.wrapper !== "") {
       return {
         status: `${result.status} auto`,
@@ -81,9 +86,9 @@ export function makeAutoDecodeBaseOptions(width: number, height: number): Decode
 }
 
 function appendFastTintCandidates(candidates: DecodeRibbonImageOptions[], minSide: number): void {
-  for (const carrierSize of estimateCarrierSizes(minSide)) {
-    for (const quietZone of autoQuietZones) {
-      for (const preferredVersion of autoPreferredVersions) {
+  for (const quietZone of autoQuietZones) {
+    for (const preferredVersion of autoPreferredVersions) {
+      for (const carrierSize of estimateCarrierSizes(minSide)) {
         candidates.push({
           quietZone,
           carrierSize,

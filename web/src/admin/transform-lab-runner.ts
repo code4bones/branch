@@ -1,8 +1,4 @@
-import {
-  centerCrop,
-  fitInsideWithPadding,
-  screenshotScale
-} from "../visual/corpus.js";
+import { screenshotScale } from "../visual/corpus.js";
 import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/ribbon-decode.js";
 import type { RibbonImageData } from "../visual/ribbon-image.js";
 import {
@@ -207,10 +203,6 @@ async function applyOperation(
       return recompressImage(image, operation.mime ?? "image/jpeg", operation.quality ?? 0.8, signal);
     case "resize":
       return resizeByPercent(image, operation.percent ?? 1);
-    case "center-crop":
-      return centerCropByPercent(image, operation.percent ?? 0.8);
-    case "fit-padding":
-      return fitPaddingByPercent(image, operation.percent ?? 0.75);
     case "screenshot":
       return applyImageOnly(screenshotScale(image, operation.percent ?? 2), 1);
   }
@@ -245,24 +237,6 @@ function resizeByPercent(image: RibbonImageData, percent: number): AppliedTransf
   const width = Math.max(1, Math.round(image.width * percent));
   const height = Math.max(1, Math.round(image.height * percent));
   return applyImageOnly(resizeWithCanvas(image, width, height), percent);
-}
-
-function centerCropByPercent(image: RibbonImageData, percent: number): AppliedTransform {
-  if (!Number.isFinite(percent) || percent <= 0 || percent > 1) {
-    throw new Error("crop percent outside bounds");
-  }
-  const width = Math.max(1, Math.round(image.width * percent));
-  const height = Math.max(1, Math.round(image.height * percent));
-  return applyImageOnly(centerCrop(image, width, height), 1);
-}
-
-function fitPaddingByPercent(image: RibbonImageData, percent: number): AppliedTransform {
-  if (!Number.isFinite(percent) || percent <= 0 || percent > 1) {
-    throw new Error("padding percent outside bounds");
-  }
-  const width = Math.max(1, Math.round(image.width * percent));
-  const height = Math.max(1, Math.round(image.height * percent));
-  return applyImageOnly(fitInsideWithPadding(image, width, height, [248, 251, 255]), percent);
 }
 
 function applyImageOnly(image: RibbonImageData, carrierScale: number): AppliedTransform {

@@ -156,10 +156,10 @@ void test("transform lab preset catalog covers service-processing simulations", 
   assert(ids.includes("resize-75"));
   assert(ids.includes("resize-50"));
   assert(ids.includes("resize-75-jpeg-80"));
-  assert(ids.includes("thumbnail-center-crop"));
-  assert(ids.includes("thumbnail-fit-padding"));
   assert(ids.includes("screenshot-scale-2"));
   assert(ids.includes("pinterest-like-simulation"));
+  assert(!idSet.has("thumbnail-center-crop"));
+  assert(!idSet.has("thumbnail-fit-padding"));
   assert(!idSet.has("rotate-90"));
   assert(!idSet.has("rotate-180"));
   assert(!idSet.has("color-shift"));
@@ -298,15 +298,22 @@ void test("transform lab report may include safe found-region metadata", () => {
 
 void test("auto decode candidate search is bounded and does not need UI geometry hints", () => {
   const candidates = makeAutoDecodeCandidates(1000, 1500);
+  const resizedCandidates = makeAutoDecodeCandidates(750, 1125);
 
   assert(candidates.length > 1);
   assert(candidates.length <= maxAutoDecodeCandidates);
+  assert(resizedCandidates.length <= maxAutoDecodeCandidates);
   const firstCandidate = candidates[0] ?? failCandidate();
   assert.equal(firstCandidate.carrierSize, 720);
   assert.equal(firstCandidate.maxDirectPixels, 1);
   assert.equal(firstCandidate.preferredVersion, 10);
   assert.equal(firstCandidate.placement, fixedRibbonPlacement);
   assert.deepEqual(new Set(candidates.map((candidate) => candidate.placement)), new Set([fixedRibbonPlacement]));
+  assert(resizedCandidates.some((candidate) =>
+    candidate.quietZone === 8 &&
+    candidate.preferredVersion === 10 &&
+    candidate.carrierSize === 540
+  ));
 });
 
 void test("auto decode prioritizes default generated tint images", () => {
@@ -329,6 +336,69 @@ void test("auto decode prioritizes default generated tint images", () => {
   assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
   assert.equal(decoded.wrapper, defaultBranchWrapper);
   assert.deepEqual(decoded.foundRegion, { x: 40, y: 40, size: 657 });
+});
+
+void test("auto decode can skip repeated full-image payload extraction after first candidate", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const placement = fixedRibbonPlacement;
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const source = makeNoCarrierImage(1000, 1500);
+  const region = {
+    x: 0,
+    y: 0,
+    size: Math.min(source.width, source.height),
+    width: source.width,
+    height: source.height
+  };
+  const watermarked = embedWatermarkPayload(source, symbol.frame, region);
+  const firstDecoded = decodeRibbonImage(watermarked, {
+    quietZone,
+    carrierSize,
+    placement,
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2
+  });
+  const repeatedDecoded = decodeRibbonImage(watermarked, {
+    quietZone,
+    carrierSize,
+    placement,
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2,
+    skipFullImagePayloads: true
+  });
+
+  assert.equal(firstDecoded.status, "watermark decoded heuristic");
+  assert.equal(firstDecoded.wrapper, defaultBranchWrapper);
+  assert.equal(repeatedDecoded.status, "tint extraction failed");
+  assert.equal(repeatedDecoded.wrapper, "");
+});
+
+void test("ribbon decode worker accepts bounded full-image skip option", () => {
+  const image = makeNoCarrierImage(8, 8);
+  const response = handleWorkerMessage({
+    type: "decode-ribbon-image",
+    requestId: 2,
+    image: {
+      width: image.width,
+      height: image.height,
+      data: copyToArrayBuffer(image.data)
+    },
+    options: {
+      quietZone: 8,
+      carrierSize: 320,
+      placement: fixedRibbonPlacement,
+      maxDirectPixels: 1,
+      maxVersionAttempts: 1,
+      maxTintCandidates: 1,
+      skipFullImagePayloads: true
+    }
+  });
+
+  assert.equal(response.type, "decode-ribbon-image-result");
+  assert.equal(response.result.wrapper, "");
 });
 
 void test("ribbon locator embeds pixel magic and accelerates hidden tint decode", () => {

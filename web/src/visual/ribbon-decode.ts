@@ -29,6 +29,7 @@ export interface DecodeRibbonImageOptions {
   readonly maxVersionAttempts?: number;
   readonly maxTintCandidates?: number;
   readonly preferredVersion?: number;
+  readonly skipFullImagePayloads?: boolean;
 }
 
 export interface DecodedRibbonWrapper {
@@ -69,17 +70,21 @@ export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonI
   }
 
   const attempts = selectVersionAttempts(image, options);
-  const watermarked = decodeWatermarkImage(image, options);
-  if (watermarked.wrapper !== "") {
-    return watermarked;
+  if (options.skipFullImagePayloads !== true) {
+    const watermarked = decodeWatermarkImage(image, options);
+    if (watermarked.wrapper !== "") {
+      return watermarked;
+    }
   }
   const blocked = decodeBlockImage(image, options, attempts);
   if (blocked.wrapper !== "") {
     return blocked;
   }
-  const heuristicBlock = decodeDefaultBlockImage(image, options);
-  if (heuristicBlock.wrapper !== "") {
-    return heuristicBlock;
+  if (options.skipFullImagePayloads !== true) {
+    const heuristicBlock = decodeDefaultBlockImage(image, options);
+    if (heuristicBlock.wrapper !== "") {
+      return heuristicBlock;
+    }
   }
 
   const placedDirect = decodePlacedQRCode(image, options, attempts);

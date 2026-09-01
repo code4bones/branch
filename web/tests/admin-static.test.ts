@@ -140,10 +140,13 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(decodeClient, /AbortSignal/);
   assert.match(decodeWorker, /handleWorkerMessage/);
   assert.match(decodeWorker, /decodeRibbonImage\(image, message\.options\)/);
+  assert.match(decodeWorker, /skipFullImagePayloads/);
   assert.match(autoDecode, /maxAutoDecodeCandidates/);
   assert.match(autoDecode, /decodeRibbonImageAutoWithWorker/);
   assert.match(autoDecode, /decodeRibbonImageWithWorker/);
+  assert.match(autoDecode, /fullImagePayloadsTried/);
   assert.match(transformLab, /Pinterest-like simulation/);
+  assert.doesNotMatch(transformLab, /thumbnail-center-crop|thumbnail-fit-padding/);
   assert.match(transformLab, /branch\.transform-lab\/0/);
   assert.match(transformLab, /sourceProfile/);
   assert.match(transformLab, /foundRegion/);
