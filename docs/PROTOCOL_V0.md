@@ -909,7 +909,7 @@ adapters. It may contain:
   ],
   "records_path": ".branch/records.br0",
   "badge_path": ".branch/ribbon.svg",
-  "root_readme_snippet": "optional generated text containing branchbootstrapv0 and protocol markers",
+  "root_readme_snippet": "optional generated badge markdown for the repository README",
   "github_repository_description": "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon",
   "github_repository_topics": ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"],
   "generated_at": 0,
@@ -920,9 +920,12 @@ adapters. It may contain:
 
 The manifest never authenticates a beacon, extends expiry, revokes records,
 authorizes a mirror, proves relay liveness, or changes failure-domain counting.
-Its paths are local repository hints only. SearchCarrier implementations may use
-it to find candidate bytes more efficiently, then must validate the signed
-records exactly as if they had been found in README text.
+Its paths are local repository hints only. For the GitHub publication profile,
+`branchbootstrapv0` is carried as repository topic metadata and searched with
+`topic:branchbootstrapv0`; README marker search is a bounded legacy fallback.
+SearchCarrier implementations may use unsigned metadata to find candidate bytes
+more efficiently, then must validate the signed records exactly as if they had
+been found in README text.
 
 The Admin GitHub Check surface may display candidate repository status together
 with local protocol-core validation of extracted `BRANCH0.` wrappers, including

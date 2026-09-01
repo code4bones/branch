@@ -101,7 +101,10 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /createBootstrapBeaconWrapper/);
   assert.match(githubTool, /id="relay-endpoint-uri"/);
   assert.match(githubTool, /id="github-badge-snippet"/);
-  assert.match(githubTool, /README carrier block/);
+  assert.match(githubTool, /README badge snippet/);
+  assert.match(githubTool, /id="github-topics"/);
+  assert.match(githubTool, /GitHub topics/);
+  assert.match(githubTool, /githubRepositoryTopics/);
   assert.match(githubTool, /makeRootReadmeSnippet/);
   assert.match(githubTool, /<textarea[\s\S]*id="github-badge-snippet"/);
   assert.match(githubTool, /id="github-discovery-form"/);
@@ -117,6 +120,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
   assert.match(publicationProfile, /branchBootstrapLocator = "branchbootstrapv0"/);
   assert.match(publicationProfile, /githubPrimaryLocatorQuery/);
+  assert.match(publicationProfile, /topic:\$\{branchBootstrapLocator\}/);
   assert.match(publicationProfile, /githubRepositoryTopics/);
   assert.match(defaults, /branch-github-dropin\.zip/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}`, /\bfetch\s*\(/);

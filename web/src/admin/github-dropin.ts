@@ -147,9 +147,9 @@ Search markers: ${branchPublicationMarkers().join(" ")}
 
 ${modeNote}
 
-Optional root README snippet. Insert it manually into an existing repository
-README only if you want the badge and public locator visible there. This bundle
-does not create or replace a root README.md file.
+Optional root README badge snippet. Insert it manually into an existing
+repository README only if you want the badge visible there. This bundle does not
+create or replace a root README.md file.
 
 \`\`\`md
 ${makeRootReadmeSnippet().trimEnd()}

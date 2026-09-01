@@ -4,7 +4,7 @@ export const branchCampaignMarker = "carry-the-ribbon" as const;
 export const githubBadgeAltText = "B.R.A.N.C.H. Blue Ribbon - Carry the Ribbon" as const;
 export const githubRepositoryTopics = ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"] as const;
 export const githubRepositoryDescription = "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon" as const;
-export const githubPrimaryLocatorQuery = `${branchBootstrapLocator} in:readme` as const;
+export const githubPrimaryLocatorQuery = `topic:${branchBootstrapLocator}` as const;
 export const githubLegacyMarkerQuery = `${branchProtocolSearchMarkers.join(" ")} in:readme` as const;
 
 export function branchPublicationMarkers(): readonly string[] {
@@ -13,7 +13,5 @@ export function branchPublicationMarkers(): readonly string[] {
 
 export function makeRootReadmeSnippet(): string {
   return `[![${githubBadgeAltText}](.branch/ribbon.svg)](.branch/README.md)
-
-<!-- B.R.A.N.C.H. bootstrap carrier: ${branchBootstrapLocator} -->
 `;
 }

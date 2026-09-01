@@ -11,7 +11,7 @@ import {
   type GitHubValidatedRecord
 } from "../../discovery/github.js";
 import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
-import { makeRootReadmeSnippet } from "../publication-profile.js";
+import { githubRepositoryTopics, makeRootReadmeSnippet } from "../publication-profile.js";
 import { useAdminStore } from "../store.js";
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
 import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
@@ -19,6 +19,7 @@ import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon
 export function GitHubTool(): React.JSX.Element {
   const outputRef = useRef<HTMLTextAreaElement | null>(null);
   const badgeRef = useRef<HTMLTextAreaElement | null>(null);
+  const topicsRef = useRef<HTMLInputElement | null>(null);
   const discoveryAbortRef = useRef<AbortController | null>(null);
   const githubTab = useAdminStore((state) => state.githubTab);
   const github = useAdminStore((state) => state.github);
@@ -40,6 +41,7 @@ export function GitHubTool(): React.JSX.Element {
   const setGitHubDiscoveryResults = useAdminStore((state) => state.setGitHubDiscoveryResults);
   const setGitHubDiscoveryStatus = useAdminStore((state) => state.setGitHubDiscoveryStatus);
   const selectedFile = github.files[github.selectedFile] ?? null;
+  const githubTopics = githubRepositoryTopics.join(", ");
 
   async function onGenerate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -220,14 +222,22 @@ export function GitHubTool(): React.JSX.Element {
             </div>
             <p className={github.statusClass}>{github.status}</p>
 
-            <label htmlFor="github-badge-snippet">README carrier block</label>
+            <label htmlFor="github-badge-snippet">README badge snippet</label>
             <textarea
               id="github-badge-snippet"
               ref={badgeRef}
               readOnly
-              rows={4}
+              rows={2}
               spellCheck={false}
               value={github.badgeSnippet}
+            />
+            <label htmlFor="github-topics">GitHub topics</label>
+            <input
+              id="github-topics"
+              ref={topicsRef}
+              readOnly
+              type="text"
+              value={githubTopics}
             />
             <div className="button-row">
               <button
@@ -236,6 +246,12 @@ export function GitHubTool(): React.JSX.Element {
                 onClick={() => { void copyTextFromFallback(github.badgeSnippet, badgeRef.current); }}
               >
                 Copy snippet
+              </button>
+              <button
+                type="button"
+                onClick={() => { void copyTextFromFallback(githubTopics, topicsRef.current); }}
+              >
+                Copy topics
               </button>
             </div>
           </form>

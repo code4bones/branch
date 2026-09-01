@@ -50,6 +50,7 @@ void test("github drop-in module validates exact BRANCH0 records and emits local
   assert.match(bundle, /branchbootstrapv0/);
   assert.match(bundle, /"locator": "branchbootstrapv0"/);
   assert.match(bundle, /"root_readme_snippet": "\[!\[B\.R\.A\.N\.C\.H\. Blue Ribbon/);
+  assert.doesNotMatch(bundle, /<!-- B\.R\.A\.N\.C\.H\. bootstrap carrier/);
   assert.match(bundle, /"github_repository_description": "B\.R\.A\.N\.C\.H\. bootstrap carrier branchbootstrapv0 carry-the-ribbon"/);
   assert.match(bundle, /"mode": "demo"/);
   assert.match(bundle, /"record_count": 1/);
@@ -76,7 +77,7 @@ void test("github drop-in archive contains repository paths", async () => {
   assert.match(readZipFileText(archive, ".branch/manifest.json"), /branch\.repository-dropin\/0/);
   assert.match(readZipFileText(archive, ".branch/manifest.json"), /branchbootstrapv0/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /demo fixture/);
-  assert.match(readZipFileText(archive, ".branch/README.md"), /does not create or replace a root README\.md file/);
+  assert.match(readZipFileText(archive, ".branch/README.md"), /does not\s+create or replace a root README\.md file/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /Search locator: branchbootstrapv0/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /\[!\[B\.R\.A\.N\.C\.H\. Blue Ribbon/);
   assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /drop-in lint/);
@@ -104,12 +105,10 @@ void test("github publication profile exposes canonical locator metadata", () =>
   const rootSnippet = makeRootReadmeSnippet();
 
   assert.equal(branchBootstrapLocator, "branchbootstrapv0");
-  assert.match(githubDiscoveryDefaultQuery, /^branchbootstrapv0 in:readme$/);
+  assert.equal(githubDiscoveryDefaultQuery, "topic:branchbootstrapv0");
   assert.doesNotMatch(makeBadgeSnippet(), /branchbootstrapv0/);
   assert.match(rootSnippet, /\[!\[B\.R\.A\.N\.C\.H\. Blue Ribbon/);
-  assert.match(rootSnippet, /\n\n<!-- B\.R\.A\.N\.C\.H\. bootstrap carrier: branchbootstrapv0 -->\n$/);
-  assert.doesNotMatch(rootSnippet, /\n\nB\.R\.A\.N\.C\.H\. bootstrap carrier: branchbootstrapv0\n$/);
-  assert.doesNotMatch(rootSnippet, /BRANCH0 branch\/connectivity\/0 branch-bootstrap-v0 carry-the-ribbon/);
+  assert.doesNotMatch(rootSnippet, /branchbootstrapv0|BRANCH0|branch\/connectivity\/0|branch-bootstrap-v0|carry-the-ribbon/);
   assert.equal(githubRepositoryDescription, "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon");
   assert.deepEqual(githubRepositoryTopics, ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"]);
 });

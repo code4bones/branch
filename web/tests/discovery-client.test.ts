@@ -25,9 +25,9 @@ void test("client discovery runs GitHub canonical locator then legacy fallback",
       const query = new URL(input).searchParams.get("q") ?? "";
       queries.push(query);
       return Promise.resolve(jsonResponse({
-        total_count: query.startsWith("branchbootstrapv0") ? 0 : 1,
+        total_count: query.startsWith("topic:branchbootstrapv0") ? 0 : 1,
         incomplete_results: false,
-        items: query.startsWith("branchbootstrapv0") ? [] : [repositoryItem("alice/carrier")]
+        items: query.startsWith("topic:branchbootstrapv0") ? [] : [repositoryItem("alice/carrier")]
       }));
     }
     return Promise.resolve(recordsResponse(wrapper));
@@ -44,7 +44,7 @@ void test("client discovery runs GitHub canonical locator then legacy fallback",
   const report = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
 
   assert.deepEqual(queries, [
-    "branchbootstrapv0 in:readme",
+    "topic:branchbootstrapv0",
     "BRANCH0 branch/connectivity/0 branch-bootstrap-v0 in:readme"
   ]);
   assert.equal(discovery.status, "ok");
@@ -140,7 +140,7 @@ void test("client discovery clamps carrier request bounds and dedupes accepted b
 
   const report = await discoverClientBootstrapBeacons({
     carrier,
-    primaryQuery: "branchbootstrapv0 in:readme",
+    primaryQuery: "topic:branchbootstrapv0",
     includeFallback: true,
     perPage: 99,
     page: 99

@@ -232,7 +232,7 @@ export function makeGitHubRepositorySearchUrl(request: GitHubDiscoveryRequest): 
 }
 
 export const githubDiscoveryConstraints = [
-  "Uses branchbootstrapv0 as the primary public locator; legacy marker queries are bounded transition fallbacks.",
+  "Uses topic:branchbootstrapv0 as the primary GitHub metadata locator; legacy README marker queries are bounded transition fallbacks.",
   "Reads .branch/records.br0 from the repository default branch through the GitHub contents API.",
   "Unauthenticated requests are IP rate limited; 403/429 and x-ratelimit headers are surfaced to the operator.",
   "Search may be incomplete, delayed, paginated, fork-filtered, or missing recently pushed records.",
