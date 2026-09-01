@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { defaultBranchWrapper } from "../src/admin/defaults.js";
 import { makeBundle, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
+import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
 import { computeModulePitch, computePlacement } from "../src/visual/geometry.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
 import { generateRibbonSymbol, symbolSizePixels } from "../src/visual/ribbon-render.js";
@@ -61,6 +62,32 @@ void test("large undecodable ribbon image uses bounded decode work", () => {
   assert.equal(decoded.wrapper, "");
 });
 
+void test("ribbon decode worker reconstructs generated tint wrapper", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const image = makeStegoImage(symbol.modules, symbol.diagnostics.modulePitch, quietZone);
+  const response = handleWorkerMessage({
+    type: "decode-ribbon-image",
+    requestId: 1,
+    image: {
+      width: image.width,
+      height: image.height,
+      data: copyToArrayBuffer(image.data)
+    },
+    options: {
+      quietZone,
+      carrierSize,
+      placement: "top-left",
+      preferredVersion: symbol.diagnostics.sourceSymbolVersion
+    }
+  });
+
+  assert.equal(response.type, "decode-ribbon-image-result");
+  assert.equal(response.result.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
+  assert.equal(response.result.wrapper, defaultBranchWrapper);
+});
+
 void test("raw stego candidates remain valid ribbon seal images", () => {
   const quietZone = 8;
   const carrierSize = 720;
@@ -112,4 +139,10 @@ function makeNoCarrierImage(width: number, height: number): RibbonImageData {
     data[index + 3] = 255;
   }
   return { width, height, data };
+}
+
+function copyToArrayBuffer(data: Uint8ClampedArray): ArrayBuffer {
+  const buffer = new ArrayBuffer(data.byteLength);
+  new Uint8ClampedArray(buffer).set(data);
+  return buffer;
 }

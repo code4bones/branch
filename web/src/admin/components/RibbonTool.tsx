@@ -11,8 +11,8 @@ import {
   type LoadedBrowserImage
 } from "../../visual/canvas-image.js";
 import { clamp } from "../../visual/geometry.js";
-import { decodeRibbonImage } from "../../visual/ribbon-decode.js";
 import type { DecodeRibbonImageOptions } from "../../visual/ribbon-decode.js";
+import { decodeRibbonImageWithWorker } from "../ribbon-decode-client.js";
 import {
   drawCoverPreview,
   drawIdleCanvas,
@@ -122,7 +122,7 @@ export function RibbonTool(): React.JSX.Element {
         carrierSize,
         placement: ribbon.placement
       };
-      const result = decodeRibbonImage(
+      const result = await decodeRibbonImageWithWorker(
         image,
         preferredVersion === undefined ? decodeOptions : { ...decodeOptions, preferredVersion }
       );

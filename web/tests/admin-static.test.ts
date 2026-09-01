@@ -12,6 +12,8 @@ const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.t
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
 const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
 const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
+const ribbonDecodeClientPath = resolve(process.cwd(), "src/admin/ribbon-decode-client.ts");
+const ribbonDecodeWorkerPath = resolve(process.cwd(), "src/admin/ribbon-decode-worker.ts");
 const ribbonTintPath = resolve(process.cwd(), "src/visual/ribbon-tint.ts");
 const adminCssPath = resolve(process.cwd(), "public/admin/admin.css");
 const buildScriptPath = resolve(process.cwd(), "scripts/build-static.mjs");
@@ -50,6 +52,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="carrier-placement"/);
   assert.match(ribbonTool, /id="decode-image"/);
   assert.match(ribbonTool, /id="decoded-wrapper"/);
+  assert.match(ribbonTool, /decodeRibbonImageWithWorker/);
   assert.match(ribbonTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /id="github-form"/);
   assert.match(githubTool, /className="tool-grid is-active"/);
@@ -60,6 +63,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
 void test("admin ribbon logic is split into typed visual modules", async () => {
   const render = await readFile(ribbonRenderPath, "utf8");
   const decode = await readFile(ribbonDecodePath, "utf8");
+  const decodeClient = await readFile(ribbonDecodeClientPath, "utf8");
+  const decodeWorker = await readFile(ribbonDecodeWorkerPath, "utf8");
   const tint = await readFile(ribbonTintPath, "utf8");
 
   assert.match(render, /generateRibbonSymbol/);
@@ -69,10 +74,15 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(decode, /decodeRibbonImage/);
   assert.match(decode, /decodeRibbonFrame/);
   assert.match(decode, /extractStegoTintCandidates/);
+  assert.match(decodeClient, /new Worker/);
+  assert.match(decodeClient, /postMessage\(request, \[request\.image\.data\]\)/);
+  assert.match(decodeClient, /decodeRibbonImage\(image, options\)/);
+  assert.match(decodeWorker, /handleWorkerMessage/);
+  assert.match(decodeWorker, /decodeRibbonImage\(image, message\.options\)/);
   assert.match(tint, /drawTintQR/);
   assert.match(tint, /extractStegoTintCandidates/);
   assert.match(tint, /extractChromaTintCandidates/);
-  assert.doesNotMatch(`${render}\n${decode}\n${tint}`, /window\.BranchQRCode|window\.jsQR/);
+  assert.doesNotMatch(`${render}\n${decode}\n${decodeClient}\n${decodeWorker}\n${tint}`, /window\.BranchQRCode|window\.jsQR/);
 });
 
 void test("admin github generator stays offline and produces local drop-in paths", async () => {
@@ -100,7 +110,9 @@ void test("static build bundles the React admin app from local dependencies", as
   const source = await readFile(buildScriptPath, "utf8");
 
   assert.match(source, /src\/admin\/main\.tsx/);
+  assert.match(source, /src\/admin\/ribbon-decode-worker\.ts/);
   assert.match(source, /admin-app\.js/);
+  assert.match(source, /ribbon-decode-worker\.js/);
   assert.match(source, /esbuild/);
   assert.doesNotMatch(source, /qrcode-browser\.js|vendor\/jsqr\.js|createRequire/);
 });
@@ -109,4 +121,5 @@ void test("nginx csp permits local cover image object urls", async () => {
   const source = await readFile(nginxConfigPath, "utf8");
 
   assert.match(source, /img-src 'self' data: blob:/);
+  assert.match(source, /worker-src 'self'/);
 });
