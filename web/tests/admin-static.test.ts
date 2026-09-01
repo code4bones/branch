@@ -53,6 +53,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(store, /ribbonTab: "encode"/);
   assert.match(store, /setRibbonTab/);
   assert.match(store, /transformLab/);
+  assert.match(store, /progress: null/);
+  assert.match(store, /setTransformLabProgress/);
   assert.match(store, /tintStrength: "0"/);
   assert.match(ribbonTool, /id="ribbon-tab-encode"/);
   assert.match(ribbonTool, /id="ribbon-tab-decode"/);
@@ -65,6 +67,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="run-transform-preset"/);
   assert.match(ribbonTool, /id="run-transform-matrix"/);
   assert.match(ribbonTool, /id="cancel-transform-lab"/);
+  assert.match(ribbonTool, /Transform Lab progress/);
+  assert.match(ribbonTool, /running \$\{String\(progress\.current\)\}\/\$\{String\(progress\.total\)\}/);
   assert.match(ribbonTool, /id="copy-transform-report"/);
   assert.match(ribbonTool, /id="download-transform-report"/);
   assert.match(ribbonTool, /decodeRibbonImageAutoWithWorker/);
@@ -127,8 +131,10 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(transformLab, /branch\.transform-lab\/0/);
   assert.match(transformLab, /foundRegion/);
   assert.match(transformLab, /locatorProfile/);
+  assert.match(transformLab, /TransformLabProgress/);
   assert.match(transformLabRunner, /canvas\.toBlob/);
   assert.match(transformLabRunner, /decoded\.foundRegion/);
+  assert.match(transformLabRunner, /onProgress/);
   assert.match(transformLabRunner, /request\.decode\(request\.image, request\.decodeOptions, request\.signal\)/);
   assert.match(canvasImage, /willReadFrequently:\s*true/);
   assert.match(render, /willReadFrequently:\s*true/);

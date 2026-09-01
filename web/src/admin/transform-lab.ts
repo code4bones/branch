@@ -66,6 +66,12 @@ export interface TransformFoundRegion {
   readonly source: "heuristic" | "locator";
 }
 
+export interface TransformLabProgress {
+  readonly current: number;
+  readonly total: number;
+  readonly label: string;
+}
+
 export interface TransformLabResult {
   readonly presetId: TransformLabPresetId | "original";
   readonly presetLabel: string;

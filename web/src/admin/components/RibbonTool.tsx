@@ -60,6 +60,7 @@ export function RibbonTool(): React.JSX.Element {
   const setDiagnostics = useAdminStore((state) => state.setDiagnostics);
   const setTransformLabSelectedPreset = useAdminStore((state) => state.setTransformLabSelectedPreset);
   const setTransformLabRunning = useAdminStore((state) => state.setTransformLabRunning);
+  const setTransformLabProgress = useAdminStore((state) => state.setTransformLabProgress);
   const setTransformLabResults = useAdminStore((state) => state.setTransformLabResults);
   const setTransformLabStatus = useAdminStore((state) => state.setTransformLabStatus);
 
@@ -186,17 +187,23 @@ export function RibbonTool(): React.JSX.Element {
     const controller = new AbortController();
     transformAbortRef.current = controller;
     setTransformLabRunning(true);
-    setTransformLabStatus("running", "status-warn");
+    setTransformLabProgress(null);
+    setTransformLabStatus("preparing", "status-warn");
     setTransformLabResults([], "");
 
     try {
       const image = await loadDecodeImage();
+      const presets = selectTransformLabPresets(mode, transformLab.selectedPresetId);
       const results = await runTransformLab({
         source: image,
         sourceMime: readDecodeSourceMime(decodeFileRef.current?.files?.[0]),
-        presets: selectTransformLabPresets(mode, transformLab.selectedPresetId),
+        presets,
         decodeOptions: makeAutoDecodeBaseOptions(image.width, image.height),
         decode: (candidate, _options, signal) => decodeRibbonImageAutoWithWorker(candidate, signal),
+        onProgress: (progress) => {
+          setTransformLabProgress(progress);
+          setTransformLabStatus(`running ${String(progress.current)}/${String(progress.total)}: ${progress.label}`, "status-warn");
+        },
         signal: controller.signal
       });
       const reportJson = makeTransformLabJson(results);
@@ -208,6 +215,7 @@ export function RibbonTool(): React.JSX.Element {
       setTransformLabStatus(cancelled ? "cancelled" : errorMessage(error), cancelled ? "status-warn" : "status-bad");
     } finally {
       setTransformLabRunning(false);
+      setTransformLabProgress(null);
       if (transformAbortRef.current === controller) {
         transformAbortRef.current = null;
       }
@@ -533,6 +541,9 @@ function TransformLabPanel(
 
       <div className="lab-status">
         <span className={transformLab.statusClass}>{transformLab.status}</span>
+        {transformLab.progress === null ? null : (
+          <progress value={transformLab.progress.current} max={transformLab.progress.total} aria-label="Transform Lab progress" />
+        )}
         <div className="button-row">
           <button type="button" id="copy-transform-report" disabled={transformLab.reportJson === ""} onClick={() => void onCopyReport()}>
             Copy JSON

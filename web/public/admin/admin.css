@@ -269,6 +269,14 @@ label {
   font-weight: 700;
 }
 
+.lab-status progress {
+  flex: 1 1 180px;
+  min-width: 140px;
+  max-width: 320px;
+  height: 10px;
+  accent-color: #38e8ff;
+}
+
 .lab-empty {
   padding: 12px;
   border: 1px solid var(--admin-line);

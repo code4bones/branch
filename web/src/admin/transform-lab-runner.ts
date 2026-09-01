@@ -15,6 +15,7 @@ import {
   type SignatureValidationStatus,
   type TransformImageSummary,
   type TransformLabPreset,
+  type TransformLabProgress,
   type TransformLabResult,
   type TransformOperation,
   type TransformOutputMime
@@ -32,6 +33,7 @@ export interface RunTransformLabRequest {
   readonly presets: readonly TransformLabPreset[];
   readonly decodeOptions: DecodeRibbonImageOptions;
   readonly decode: TransformLabDecode;
+  readonly onProgress?: (progress: TransformLabProgress) => void;
   readonly signal: AbortSignal;
 }
 
@@ -55,6 +57,8 @@ export async function runTransformLab(request: RunTransformLabRequest): Promise<
   validateTransformImage(request.source);
   const sourceSummary = summarizeImage(request.source, request.sourceMime, null, null);
   const results: TransformLabResult[] = [];
+  const total = request.presets.length + 1;
+  await reportProgress(request, { current: 1, total, label: "Original decode" });
   const baseline = await decodeOne({
     image: request.source,
     input: sourceSummary,
@@ -71,8 +75,9 @@ export async function runTransformLab(request: RunTransformLabRequest): Promise<
   results.push(baseline.result);
 
   const baselineSha256 = baseline.wrapperSha256;
-  for (const preset of request.presets) {
+  for (const [index, preset] of request.presets.entries()) {
     throwIfAborted(request.signal);
+    await reportProgress(request, { current: index + 2, total, label: preset.label });
     const startedAt = performance.now();
     try {
       const transformed = await applyPreset(request.source, request.sourceMime, preset, request.signal);
@@ -108,6 +113,13 @@ export async function runTransformLab(request: RunTransformLabRequest): Promise<
   }
 
   return results;
+}
+
+async function reportProgress(request: RunTransformLabRequest, progress: TransformLabProgress): Promise<void> {
+  request.onProgress?.(progress);
+  await new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, 0);
+  });
 }
 
 async function decodeOne(

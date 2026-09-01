@@ -4,7 +4,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { defaultBranchWrapper, ribbonProfileLabel } from "./defaults.js";
 import type { GitHubDropInFile } from "./github-dropin.js";
-import type { TransformLabResult } from "./transform-lab.js";
+import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
 import type { RibbonPlacement } from "../visual/geometry.js";
 import type { RibbonVisualMode } from "../visual/ribbon-render.js";
@@ -57,6 +57,7 @@ export interface TransformLabState {
   readonly running: boolean;
   readonly status: string;
   readonly statusClass: StatusClass;
+  readonly progress: TransformLabProgress | null;
   readonly results: readonly TransformLabResult[];
   readonly reportJson: string;
 }
@@ -83,6 +84,7 @@ export interface AdminActions {
   readonly setDiagnostics: (diagnostics: DiagnosticsState) => void;
   readonly setTransformLabSelectedPreset: (presetId: string) => void;
   readonly setTransformLabRunning: (running: boolean) => void;
+  readonly setTransformLabProgress: (progress: TransformLabProgress | null) => void;
   readonly setTransformLabResults: (results: readonly TransformLabResult[], reportJson: string) => void;
   readonly setTransformLabStatus: (status: string, statusClass: StatusClass) => void;
   readonly setGitHubRecords: (records: string) => void;
@@ -152,6 +154,7 @@ function createAdminStore(): AdminStoreApi {
       running: false,
       status: "idle",
       statusClass: "status-warn",
+      progress: null,
       results: [],
       reportJson: ""
     },
@@ -188,6 +191,13 @@ function createAdminStore(): AdminStoreApi {
         transformLab: {
           ...state.transformLab,
           running
+        }
+      })); },
+    setTransformLabProgress: (progress) =>
+      { set((state) => ({
+        transformLab: {
+          ...state.transformLab,
+          progress
         }
       })); },
     setTransformLabResults: (results, reportJson) =>

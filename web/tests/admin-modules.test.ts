@@ -5,6 +5,7 @@ import { defaultBranchWrapper } from "../src/admin/defaults.js";
 import { makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
 import { makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
+import { runTransformLab } from "../src/admin/transform-lab-runner.js";
 import {
   classifyTransformLabResult,
   makeFailedTransformLabResult,
@@ -12,7 +13,8 @@ import {
   maxTransformLabMatrixPresets,
   selectTransformLabPresets,
   transformLabPresets,
-  type TransformImageSummary
+  type TransformImageSummary,
+  type TransformLabPreset
 } from "../src/admin/transform-lab.js";
 import { boxBlur, fitInsideWithPadding, resizeNearest, sharpen } from "../src/visual/corpus.js";
 import { computeModulePitch, computePlacement, type RibbonPlacement } from "../src/visual/geometry.js";
@@ -167,6 +169,35 @@ void test("transform lab selection is bounded and has stable fallback", () => {
   assert.deepEqual(selectTransformLabPresets("selected", "jpeg-60").map((preset) => preset.id), ["jpeg-60"]);
   assert.deepEqual(selectTransformLabPresets("selected", "missing").map((preset) => preset.id), ["jpeg-80"]);
   assert.equal(selectTransformLabPresets("matrix", "jpeg-60").length, maxTransformLabMatrixPresets);
+});
+
+void test("transform lab runner reports visible per-case progress", async () => {
+  const progress: string[] = [];
+  const image = makeNoCarrierImage(4, 4);
+  const noOpPreset: TransformLabPreset = {
+    id: "jpeg-80",
+    label: "No-op preset",
+    simulation: false,
+    operations: []
+  };
+  const results = await runTransformLab({
+    source: image,
+    sourceMime: "image/png",
+    presets: [noOpPreset],
+    decodeOptions: {
+      quietZone: 8,
+      carrierSize: 320,
+      placement: "bottom-right"
+    },
+    decode: () => Promise.resolve({ status: "seal decoded", wrapper: defaultBranchWrapper }),
+    onProgress: (step) => {
+      progress.push(`${String(step.current)}/${String(step.total)} ${step.label}`);
+    },
+    signal: new AbortController().signal
+  });
+
+  assert.deepEqual(progress, ["1/2 Original decode", "2/2 No-op preset"]);
+  assert.equal(results.length, 2);
 });
 
 void test("transform lab classification requires exact baseline match and reports unverified signatures honestly", () => {
