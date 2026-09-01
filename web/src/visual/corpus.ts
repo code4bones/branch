@@ -142,6 +142,91 @@ export function screenshotScale(image: RibbonImageData, displayScale: number): R
   return resizeNearest(resizeNearest(image, downWidth, downHeight), image.width, image.height);
 }
 
+export function fitInsideWithPadding(
+  image: RibbonImageData,
+  width: number,
+  height: number,
+  background: readonly [number, number, number] = [255, 255, 255]
+): RibbonImageData {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw new Error("target dimensions must be positive integers");
+  }
+
+  const scale = Math.min(width / image.width, height / image.height);
+  const fitWidth = Math.max(1, Math.round(image.width * scale));
+  const fitHeight = Math.max(1, Math.round(image.height * scale));
+  const resized = resizeNearest(image, fitWidth, fitHeight);
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < data.length; offset += 4) {
+    data[offset] = background[0];
+    data[offset + 1] = background[1];
+    data[offset + 2] = background[2];
+    data[offset + 3] = 255;
+  }
+
+  const startX = Math.floor((width - fitWidth) / 2);
+  const startY = Math.floor((height - fitHeight) / 2);
+  for (let y = 0; y < fitHeight; y += 1) {
+    for (let x = 0; x < fitWidth; x += 1) {
+      copyPixel(resized.data, resized.width, x, y, data, width, startX + x, startY + y);
+    }
+  }
+  return { width, height, data };
+}
+
+export function boxBlur(image: RibbonImageData, radius: number): RibbonImageData {
+  if (!Number.isInteger(radius) || radius < 1 || radius > 4) {
+    throw new Error("blur radius outside 1-4");
+  }
+
+  const data = new Uint8ClampedArray(image.data.length);
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      let alpha = 0;
+      let count = 0;
+      for (let sampleY = Math.max(0, y - radius); sampleY <= Math.min(image.height - 1, y + radius); sampleY += 1) {
+        for (let sampleX = Math.max(0, x - radius); sampleX <= Math.min(image.width - 1, x + radius); sampleX += 1) {
+          const offset = (sampleY * image.width + sampleX) * 4;
+          red += image.data[offset] ?? 0;
+          green += image.data[offset + 1] ?? 0;
+          blue += image.data[offset + 2] ?? 0;
+          alpha += image.data[offset + 3] ?? 255;
+          count += 1;
+        }
+      }
+      const target = (y * image.width + x) * 4;
+      data[target] = clampByte(red / count);
+      data[target + 1] = clampByte(green / count);
+      data[target + 2] = clampByte(blue / count);
+      data[target + 3] = clampByte(alpha / count);
+    }
+  }
+  return { width: image.width, height: image.height, data };
+}
+
+export function sharpen(image: RibbonImageData): RibbonImageData {
+  const data = new Uint8ClampedArray(image.data.length);
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const target = (y * image.width + x) * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const center = readChannel(image, x, y, channel) * 5;
+        const sharpened = center -
+          readChannel(image, x - 1, y, channel) -
+          readChannel(image, x + 1, y, channel) -
+          readChannel(image, x, y - 1, channel) -
+          readChannel(image, x, y + 1, channel);
+        data[target + channel] = clampByte(sharpened);
+      }
+      data[target + 3] = image.data[target + 3] ?? 255;
+    }
+  }
+  return { width: image.width, height: image.height, data };
+}
+
 export function mildCameraPerspective(image: RibbonImageData): RibbonImageData {
   const insetTop = Math.max(1, Math.round(image.width * 0.04));
   const data = new Uint8ClampedArray(image.width * image.height * 4);
@@ -196,4 +281,10 @@ function adjustChannel(value: number, brightness: number, contrast: number, gamm
 
 function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function readChannel(image: RibbonImageData, x: number, y: number, channel: number): number {
+  const boundedX = Math.max(0, Math.min(image.width - 1, x));
+  const boundedY = Math.max(0, Math.min(image.height - 1, y));
+  return image.data[(boundedY * image.width + boundedX) * 4 + channel] ?? 0;
 }

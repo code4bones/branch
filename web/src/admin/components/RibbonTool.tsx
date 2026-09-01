@@ -1,8 +1,25 @@
 import { useEffect, useRef } from "react";
 
-import { downloadURL } from "../browser-files.js";
+import { copyTextFromFallback, downloadText, downloadURL } from "../browser-files.js";
 import { ribbonPngFilename } from "../defaults.js";
-import { createDiagnostics, useAdminStore, type DiagnosticsState, type RibbonFormState, type RibbonTab } from "../store.js";
+import { decodeRibbonImageAutoWithWorker, makeAutoDecodeBaseOptions } from "../ribbon-auto-decode.js";
+import {
+  createDiagnostics,
+  useAdminStore,
+  type DiagnosticsState,
+  type RibbonFormState,
+  type RibbonTab,
+  type StatusClass,
+  type TransformLabState
+} from "../store.js";
+import {
+  makeTransformLabJson,
+  selectTransformLabPresets,
+  transformLabPresets,
+  type TransformLabResult,
+  type TransformRunMode
+} from "../transform-lab.js";
+import { runTransformLab } from "../transform-lab-runner.js";
 import {
   canvasToImageData,
   canvasToPngBlob,
@@ -11,8 +28,6 @@ import {
   type LoadedBrowserImage
 } from "../../visual/canvas-image.js";
 import { clamp } from "../../visual/geometry.js";
-import type { DecodeRibbonImageOptions } from "../../visual/ribbon-decode.js";
-import { decodeRibbonImageWithWorker } from "../ribbon-decode-client.js";
 import {
   drawCoverPreview,
   drawIdleCanvas,
@@ -27,17 +42,24 @@ type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonF
 export function RibbonTool(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const decodeFileRef = useRef<HTMLInputElement | null>(null);
+  const transformAbortRef = useRef<AbortController | null>(null);
+  const transformReportFallbackRef = useRef<HTMLTextAreaElement | null>(null);
   const ribbonTab = useAdminStore((state) => state.ribbonTab);
   const ribbon = useAdminStore((state) => state.ribbon);
   const cover = useAdminStore((state) => state.cover);
   const ribbonPngUrl = useAdminStore((state) => state.ribbonPngUrl);
   const decodedWrapper = useAdminStore((state) => state.decodedWrapper);
+  const transformLab = useAdminStore((state) => state.transformLab);
   const setRibbonTab = useAdminStore((state) => state.setRibbonTab);
   const setRibbonField = useAdminStore((state) => state.setRibbonField);
   const setCover = useAdminStore((state) => state.setCover);
   const setRibbonPngUrl = useAdminStore((state) => state.setRibbonPngUrl);
   const setDecodedWrapper = useAdminStore((state) => state.setDecodedWrapper);
   const setDiagnostics = useAdminStore((state) => state.setDiagnostics);
+  const setTransformLabSelectedPreset = useAdminStore((state) => state.setTransformLabSelectedPreset);
+  const setTransformLabRunning = useAdminStore((state) => state.setTransformLabRunning);
+  const setTransformLabResults = useAdminStore((state) => state.setTransformLabResults);
+  const setTransformLabStatus = useAdminStore((state) => state.setTransformLabStatus);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -117,19 +139,7 @@ export function RibbonTool(): React.JSX.Element {
   async function onDecode(): Promise<void> {
     try {
       const image = await loadDecodeImage();
-      const carrierSize = fitCarrierSize(ribbon.carrierSize, image.width, image.height);
-      const quietZone = readBoundedInteger(ribbon.quietZone, 4, 12, "quiet zone");
-      setRibbonField("carrierSize", String(carrierSize));
-      const preferredVersion = readPreferredVersion(ribbon.wrapper, quietZone, carrierSize);
-      const decodeOptions: DecodeRibbonImageOptions = {
-        quietZone,
-        carrierSize,
-        placement: ribbon.placement
-      };
-      const result = await decodeRibbonImageWithWorker(
-        image,
-        preferredVersion === undefined ? decodeOptions : { ...decodeOptions, preferredVersion }
-      );
+      const result = await decodeRibbonImageAutoWithWorker(image);
       setDecodedWrapper(result.wrapper);
       setDiagnostics(createDiagnostics(result.status, result.wrapper === "" ? "status-bad" : "status-good", {
         mode: ribbon.visualMode,
@@ -139,6 +149,68 @@ export function RibbonTool(): React.JSX.Element {
       setDecodedWrapper("");
       setDiagnostics(createDiagnostics(error instanceof Error ? error.message : "decode failed", "status-bad", { mode: ribbon.visualMode }));
     }
+  }
+
+  async function onRunTransformLab(mode: TransformRunMode): Promise<void> {
+    if (transformLab.running) {
+      return;
+    }
+
+    const controller = new AbortController();
+    transformAbortRef.current = controller;
+    setTransformLabRunning(true);
+    setTransformLabStatus("running", "status-warn");
+    setTransformLabResults([], "");
+
+    try {
+      const image = await loadDecodeImage();
+      const results = await runTransformLab({
+        source: image,
+        sourceMime: readDecodeSourceMime(decodeFileRef.current?.files?.[0]),
+        presets: selectTransformLabPresets(mode, transformLab.selectedPresetId),
+        decodeOptions: makeAutoDecodeBaseOptions(image.width, image.height),
+        decode: (candidate, _options, signal) => decodeRibbonImageAutoWithWorker(candidate, signal),
+        signal: controller.signal
+      });
+      const reportJson = makeTransformLabJson(results);
+      setTransformLabResults(results, reportJson);
+      const [status, statusClass] = transformLabStatusFromResults(results, controller.signal.aborted);
+      setTransformLabStatus(status, statusClass);
+    } catch (error) {
+      const cancelled = controller.signal.aborted;
+      setTransformLabStatus(cancelled ? "cancelled" : errorMessage(error), cancelled ? "status-warn" : "status-bad");
+    } finally {
+      setTransformLabRunning(false);
+      if (transformAbortRef.current === controller) {
+        transformAbortRef.current = null;
+      }
+    }
+  }
+
+  function onCancelTransformLab(): void {
+    transformAbortRef.current?.abort();
+    setTransformLabStatus("cancelling", "status-warn");
+  }
+
+  async function onCopyTransformLabReport(): Promise<void> {
+    if (transformLab.reportJson === "") {
+      setTransformLabStatus("no report", "status-warn");
+      return;
+    }
+    try {
+      await copyTextFromFallback(transformLab.reportJson, transformReportFallbackRef.current);
+      setTransformLabStatus("report copied", "status-good");
+    } catch {
+      setTransformLabStatus("copy failed", "status-bad");
+    }
+  }
+
+  function onDownloadTransformLabReport(): void {
+    if (transformLab.reportJson === "") {
+      setTransformLabStatus("no report", "status-warn");
+      return;
+    }
+    downloadText(transformLab.reportJson, "branch-transform-lab.json", "application/json");
   }
 
   async function loadDecodeImage() {
@@ -191,9 +263,14 @@ export function RibbonTool(): React.JSX.Element {
           <RibbonDecodePanel
             decodeFileRef={decodeFileRef}
             decodedWrapper={decodedWrapper}
-            ribbon={ribbon}
-            setRibbonField={setRibbonField}
             onDecode={onDecode}
+            transformLab={transformLab}
+            transformReportFallbackRef={transformReportFallbackRef}
+            onPresetChange={setTransformLabSelectedPreset}
+            onRunTransformLab={onRunTransformLab}
+            onCancelTransformLab={onCancelTransformLab}
+            onCopyTransformLabReport={onCopyTransformLabReport}
+            onDownloadTransformLabReport={onDownloadTransformLabReport}
           />
         )}
       </div>
@@ -300,12 +377,28 @@ function RibbonEncodePanel(
 }
 
 function RibbonDecodePanel(
-  { decodeFileRef, decodedWrapper, ribbon, setRibbonField, onDecode }: {
+  {
+    decodeFileRef,
+    decodedWrapper,
+    onDecode,
+    transformLab,
+    transformReportFallbackRef,
+    onPresetChange,
+    onRunTransformLab,
+    onCancelTransformLab,
+    onCopyTransformLabReport,
+    onDownloadTransformLabReport
+  }: {
     readonly decodeFileRef: React.RefObject<HTMLInputElement | null>;
     readonly decodedWrapper: string;
-    readonly ribbon: RibbonFormState;
-    readonly setRibbonField: SetRibbonField;
     readonly onDecode: () => Promise<void>;
+    readonly transformLab: TransformLabState;
+    readonly transformReportFallbackRef: React.RefObject<HTMLTextAreaElement | null>;
+    readonly onPresetChange: (presetId: string) => void;
+    readonly onRunTransformLab: (mode: TransformRunMode) => Promise<void>;
+    readonly onCancelTransformLab: () => void;
+    readonly onCopyTransformLabReport: () => Promise<void>;
+    readonly onDownloadTransformLabReport: () => void;
   }
 ): React.JSX.Element {
   return (
@@ -318,11 +411,120 @@ function RibbonDecodePanel(
         </button>
       </div>
 
-      <RibbonGeometryControls idPrefix="decode" ribbon={ribbon} setRibbonField={setRibbonField} includeOutputSize={false} />
-
       <label htmlFor="decoded-wrapper">Decoded wrapper</label>
       <textarea id="decoded-wrapper" spellCheck={false} readOnly rows={7} value={decodedWrapper} />
+
+      <TransformLabPanel
+        transformLab={transformLab}
+        reportFallbackRef={transformReportFallbackRef}
+        onPresetChange={onPresetChange}
+        onRun={onRunTransformLab}
+        onCancel={onCancelTransformLab}
+        onCopyReport={onCopyTransformLabReport}
+        onDownloadReport={onDownloadTransformLabReport}
+      />
     </section>
+  );
+}
+
+function TransformLabPanel(
+  { transformLab, reportFallbackRef, onPresetChange, onRun, onCancel, onCopyReport, onDownloadReport }: {
+    readonly transformLab: TransformLabState;
+    readonly reportFallbackRef: React.RefObject<HTMLTextAreaElement | null>;
+    readonly onPresetChange: (presetId: string) => void;
+    readonly onRun: (mode: TransformRunMode) => Promise<void>;
+    readonly onCancel: () => void;
+    readonly onCopyReport: () => Promise<void>;
+    readonly onDownloadReport: () => void;
+  }
+): React.JSX.Element {
+  return (
+    <section className="transform-lab" aria-labelledby="transform-lab-title">
+      <h2 id="transform-lab-title">Transform Lab</h2>
+      <div className="control-row">
+        <label htmlFor="transform-preset">Preset</label>
+        <select
+          id="transform-preset"
+          name="transform-preset"
+          value={transformLab.selectedPresetId}
+          onChange={(event) => { onPresetChange(event.currentTarget.value); }}
+        >
+          {transformLabPresets.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="button-row lab-actions">
+        <button type="button" id="run-transform-preset" disabled={transformLab.running} onClick={() => void onRun("selected")}>
+          Run selected
+        </button>
+        <button type="button" id="run-transform-matrix" disabled={transformLab.running} onClick={() => void onRun("matrix")}>
+          Run matrix
+        </button>
+        <button type="button" id="cancel-transform-lab" disabled={!transformLab.running} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+
+      <div className="lab-status">
+        <span className={transformLab.statusClass}>{transformLab.status}</span>
+        <div className="button-row">
+          <button type="button" id="copy-transform-report" disabled={transformLab.reportJson === ""} onClick={() => void onCopyReport()}>
+            Copy JSON
+          </button>
+          <button type="button" id="download-transform-report" disabled={transformLab.reportJson === ""} onClick={onDownloadReport}>
+            Download JSON
+          </button>
+        </div>
+      </div>
+
+      <TransformLabResults results={transformLab.results} />
+      <textarea ref={reportFallbackRef} className="copy-fallback" readOnly tabIndex={-1} value={transformLab.reportJson} />
+    </section>
+  );
+}
+
+function TransformLabResults({ results }: { readonly results: readonly TransformLabResult[] }): React.JSX.Element {
+  if (results.length === 0) {
+    return <div className="lab-empty">No results</div>;
+  }
+
+  return (
+    <div className="lab-table-wrap">
+      <table className="lab-results">
+        <thead>
+          <tr>
+            <th scope="col">Preset</th>
+            <th scope="col">Result</th>
+            <th scope="col">Output</th>
+            <th scope="col">MIME</th>
+            <th scope="col">Bytes</th>
+            <th scope="col">Decode</th>
+            <th scope="col">Match</th>
+            <th scope="col">Signature</th>
+            <th scope="col">ms</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((result) => (
+            <tr key={result.presetId}>
+              <td>{result.presetLabel}</td>
+              <td className={statusClassForTransformResult(result)}>{result.status}</td>
+              <td>{`${String(result.output.width)}x${String(result.output.height)}`}</td>
+              <td>{formatMime(result)}</td>
+              <td>{result.output.byteSize === null ? "-" : String(result.output.byteSize)}</td>
+              <td>{result.failureReason ?? result.decodeStatus}</td>
+              <td>{result.exactMatch ? "exact" : "-"}</td>
+              <td>{result.signatureValidation}</td>
+              <td>{String(result.durationMs)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -382,6 +584,44 @@ function controlId(prefix: "" | "decode", id: string): string {
   return prefix === "" ? id : `${prefix}-${id}`;
 }
 
+function transformLabStatusFromResults(results: readonly TransformLabResult[], cancelled: boolean): readonly [string, StatusClass] {
+  if (cancelled || results.some((result) => result.status === "cancelled")) {
+    return [`cancelled ${String(results.length)} cases`, "status-warn"];
+  }
+  const exact = results.filter((result) => result.status === "verified" || result.status === "exact-unverified").length;
+  const rejected = results.filter((result) => result.status === "rejected" || result.status === "mismatch").length;
+  const failed = results.filter((result) => result.status === "failed").length;
+  const unsupported = results.filter((result) => result.status === "unsupported").length;
+  const status = `${String(exact)} exact, ${String(rejected)} rejected, ${String(failed)} failed, ${String(unsupported)} unsupported`;
+  return [status, failed === 0 ? "status-good" : "status-warn"];
+}
+
+function statusClassForTransformResult(result: TransformLabResult): StatusClass {
+  if (result.status === "verified" || result.status === "exact-unverified") {
+    return "status-good";
+  }
+  if (result.status === "rejected" || result.status === "unsupported" || result.status === "cancelled") {
+    return "status-warn";
+  }
+  return "status-bad";
+}
+
+function formatMime(result: TransformLabResult): string {
+  const quality = result.output.quality === null ? "" : `/${String(Math.round(result.output.quality * 100))}`;
+  return `${result.output.mime}${quality}`;
+}
+
+function readDecodeSourceMime(file: File | undefined): "image/png" | "image/jpeg" | "image/webp" | "image/unknown" {
+  if (file?.type === "image/png" || file?.type === "image/jpeg" || file?.type === "image/webp") {
+    return file.type;
+  }
+  return "image/unknown";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "operation failed";
+}
+
 function diagnosticsFromSymbol(
   symbol: GeneratedRibbonSymbol,
   mode: string,
@@ -425,12 +665,4 @@ function readPlacement(value: string) {
     return value;
   }
   return "bottom-right";
-}
-
-function readPreferredVersion(wrapper: string, quietZone: number, carrierSize: number): number | undefined {
-  try {
-    return generateRibbonSymbol(wrapper.trim(), quietZone, carrierSize).diagnostics.sourceSymbolVersion;
-  } catch {
-    return undefined;
-  }
 }

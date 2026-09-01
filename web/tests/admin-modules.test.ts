@@ -3,7 +3,18 @@ import assert from "node:assert/strict";
 
 import { defaultBranchWrapper } from "../src/admin/defaults.js";
 import { makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
+import { makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
+import {
+  classifyTransformLabResult,
+  makeFailedTransformLabResult,
+  makeTransformLabJson,
+  maxTransformLabMatrixPresets,
+  selectTransformLabPresets,
+  transformLabPresets,
+  type TransformImageSummary
+} from "../src/admin/transform-lab.js";
+import { boxBlur, fitInsideWithPadding, sharpen } from "../src/visual/corpus.js";
 import { computeModulePitch, computePlacement } from "../src/visual/geometry.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
 import { generateRibbonSymbol, symbolSizePixels } from "../src/visual/ribbon-render.js";
@@ -120,6 +131,112 @@ void test("raw stego candidates remain valid ribbon seal images", () => {
   assert.equal(candidate === undefined ? "missing" : decodeRibbonSeal(candidate).status, "beacon_accepted");
 });
 
+void test("transform lab preset catalog covers service-processing simulations", () => {
+  const ids = transformLabPresets.map((preset) => preset.id);
+
+  assert.deepEqual(ids.slice(0, maxTransformLabMatrixPresets), ids);
+  assert(ids.includes("jpeg-95"));
+  assert(ids.includes("jpeg-80"));
+  assert(ids.includes("jpeg-60"));
+  assert(ids.includes("webp-95"));
+  assert(ids.includes("webp-80"));
+  assert(ids.includes("webp-60"));
+  assert(ids.includes("resize-75"));
+  assert(ids.includes("resize-50"));
+  assert(ids.includes("resize-75-jpeg-80"));
+  assert(ids.includes("thumbnail-center-crop"));
+  assert(ids.includes("thumbnail-fit-padding"));
+  assert(ids.includes("rotate-90"));
+  assert(ids.includes("rotate-180"));
+  assert(ids.includes("color-shift"));
+  assert(ids.includes("blur"));
+  assert(ids.includes("sharpen"));
+  assert(ids.includes("screenshot-scale-2"));
+  assert(ids.includes("pinterest-like-simulation"));
+  assert.equal(transformLabPresets.find((preset) => preset.id === "pinterest-like-simulation")?.label, "Pinterest-like simulation");
+});
+
+void test("transform lab selection is bounded and has stable fallback", () => {
+  assert.deepEqual(selectTransformLabPresets("selected", "jpeg-60").map((preset) => preset.id), ["jpeg-60"]);
+  assert.deepEqual(selectTransformLabPresets("selected", "missing").map((preset) => preset.id), ["jpeg-80"]);
+  assert.equal(selectTransformLabPresets("matrix", "jpeg-60").length, maxTransformLabMatrixPresets);
+});
+
+void test("transform lab classification requires exact baseline match and reports unverified signatures honestly", () => {
+  const summary: TransformImageSummary = {
+    width: 1000,
+    height: 1500,
+    mime: "image/png",
+    quality: null,
+    byteSize: 1234
+  };
+  const exactInput = {
+    presetId: "jpeg-80",
+    presetLabel: "JPEG 80",
+    simulation: false,
+    input: summary,
+    output: { ...summary, mime: "image/jpeg", quality: 0.8 },
+    operations: ["JPEG quality 80"],
+    decodeStatus: "seal decoded auto",
+    decodedWrapper: defaultBranchWrapper,
+    wrapperSha256: "abc",
+    baselineSha256: "abc",
+    signatureValidation: "not_available",
+    durationMs: 12.6
+  } as const;
+  const exact = classifyTransformLabResult(exactInput);
+  const mismatch = classifyTransformLabResult({
+    ...exactInput,
+    decodedWrapper: "BRANCH0.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    wrapperSha256: "def"
+  });
+
+  assert.equal(exact.status, "exact-unverified");
+  assert.equal(exact.signatureValidation, "not_available");
+  assert.equal(mismatch.status, "mismatch");
+});
+
+void test("transform lab report omits image bytes filenames and raw wrappers", () => {
+  const summary: TransformImageSummary = {
+    width: 1000,
+    height: 1500,
+    mime: "image/jpeg",
+    quality: 0.8,
+    byteSize: 4567
+  };
+  const failed = makeFailedTransformLabResult(
+    transformLabPresets[1] ?? failPreset(),
+    summary,
+    "unsupported",
+    5,
+    "webp encoder unsupported"
+  );
+  const json = makeTransformLabJson([failed], "2026-09-01T00:00:00.000Z");
+
+  assert.match(json, /branch\.transform-lab\/0/);
+  assert.match(json, /webp encoder unsupported/);
+  assert.doesNotMatch(json, /BRANCH0\.|data:|blob:|source\.png|samples\//);
+  assert.doesNotMatch(json, /"data"\s*:/);
+});
+
+void test("auto decode candidate search is bounded and does not need UI geometry hints", () => {
+  const candidates = makeAutoDecodeCandidates(1000, 1500);
+
+  assert(candidates.length > 1);
+  assert(candidates.length <= maxAutoDecodeCandidates);
+  assert.equal(candidates[0]?.maxDirectPixels, 1000 * 1500);
+  assert.equal(new Set(candidates.map((candidate) => candidate.placement)).size, 5);
+});
+
+void test("transform lab rgba helpers preserve bounds", () => {
+  const image = makeNoCarrierImage(12, 10);
+
+  assert.deepEqual(fitInsideWithPadding(image, 8, 8).data.byteLength, 8 * 8 * 4);
+  assert.deepEqual(boxBlur(image, 1).data.byteLength, image.data.byteLength);
+  assert.deepEqual(sharpen(image).data.byteLength, image.data.byteLength);
+  assert.throws(() => boxBlur(image, 8), /blur radius outside/);
+});
+
 function makeStegoImage(
   modules: { readonly size: number; get(x: number, y: number): unknown },
   modulePitch: number,
@@ -161,6 +278,10 @@ function copyToArrayBuffer(data: Uint8ClampedArray): ArrayBuffer {
   const buffer = new ArrayBuffer(data.byteLength);
   new Uint8ClampedArray(buffer).set(data);
   return buffer;
+}
+
+function failPreset(): never {
+  throw new Error("missing test preset");
 }
 
 function readZipEntryPaths(archive: Uint8Array): readonly string[] {

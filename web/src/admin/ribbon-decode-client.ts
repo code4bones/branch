@@ -18,8 +18,13 @@ let nextRequestId = 1;
 export async function decodeRibbonImageWithWorker(
   image: RibbonImageData,
   options: DecodeRibbonImageOptions,
-  workerFactory: RibbonDecodeWorkerFactory = createWorker
+  workerFactory: RibbonDecodeWorkerFactory = createWorker,
+  signal?: AbortSignal
 ): Promise<DecodedRibbonWrapper> {
+  if (signal?.aborted === true) {
+    return { status: "decode cancelled", wrapper: "" };
+  }
+
   let worker: Worker;
   try {
     worker = workerFactory(ribbonDecodeWorkerScript);
@@ -40,6 +45,7 @@ export async function decodeRibbonImageWithWorker(
       window.clearTimeout(timeout);
       worker.removeEventListener("message", onMessage);
       worker.removeEventListener("error", onError);
+      signal?.removeEventListener("abort", onAbort);
       worker.terminate();
     };
 
@@ -62,8 +68,14 @@ export async function decodeRibbonImageWithWorker(
       resolve({ status: "decode worker failed", wrapper: "" });
     };
 
+    const onAbort = () => {
+      cleanup();
+      resolve({ status: "decode cancelled", wrapper: "" });
+    };
+
     worker.addEventListener("message", onMessage);
     worker.addEventListener("error", onError);
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     const request: RibbonDecodeWorkerRequest = {
       type: "decode-ribbon-image",

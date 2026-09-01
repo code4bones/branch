@@ -15,6 +15,9 @@ const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
 const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
 const ribbonDecodeClientPath = resolve(process.cwd(), "src/admin/ribbon-decode-client.ts");
 const ribbonDecodeWorkerPath = resolve(process.cwd(), "src/admin/ribbon-decode-worker.ts");
+const ribbonAutoDecodePath = resolve(process.cwd(), "src/admin/ribbon-auto-decode.ts");
+const transformLabPath = resolve(process.cwd(), "src/admin/transform-lab.ts");
+const transformLabRunnerPath = resolve(process.cwd(), "src/admin/transform-lab-runner.ts");
 const ribbonTintPath = resolve(process.cwd(), "src/visual/ribbon-tint.ts");
 const adminCssPath = resolve(process.cwd(), "public/admin/admin.css");
 const buildScriptPath = resolve(process.cwd(), "scripts/build-static.mjs");
@@ -47,6 +50,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(store, /export type RibbonTab = "encode" \| "decode"/);
   assert.match(store, /ribbonTab: "encode"/);
   assert.match(store, /setRibbonTab/);
+  assert.match(store, /transformLab/);
   assert.match(store, /tintStrength: "0"/);
   assert.match(ribbonTool, /id="ribbon-tab-encode"/);
   assert.match(ribbonTool, /id="ribbon-tab-decode"/);
@@ -54,6 +58,14 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="ribbon-panel-decode"/);
   assert.match(ribbonTool, /RibbonEncodePanel/);
   assert.match(ribbonTool, /RibbonDecodePanel/);
+  assert.match(ribbonTool, /TransformLabPanel/);
+  assert.match(ribbonTool, /id="transform-preset"/);
+  assert.match(ribbonTool, /id="run-transform-preset"/);
+  assert.match(ribbonTool, /id="run-transform-matrix"/);
+  assert.match(ribbonTool, /id="cancel-transform-lab"/);
+  assert.match(ribbonTool, /id="copy-transform-report"/);
+  assert.match(ribbonTool, /id="download-transform-report"/);
+  assert.match(ribbonTool, /decodeRibbonImageAutoWithWorker/);
   assert.match(ribbonTool, /id="cover-image"/);
   assert.match(ribbonTool, /id="visual-mode"/);
   assert.match(ribbonTool, /id="tint-strength"/);
@@ -62,10 +74,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /step="1"/);
   assert.match(ribbonTool, /controlId\(idPrefix, "carrier-placement"\)/);
   assert.match(ribbonTool, /idPrefix=""/);
-  assert.match(ribbonTool, /idPrefix="decode"/);
+  assert.doesNotMatch(ribbonTool, /idPrefix="decode"/);
   assert.match(ribbonTool, /id="decode-image"/);
   assert.match(ribbonTool, /id="decoded-wrapper"/);
-  assert.match(ribbonTool, /decodeRibbonImageWithWorker/);
   assert.match(ribbonTool, /className="tool-grid is-active ribbon-tool"/);
   assert.match(githubTool, /id="github-form"/);
   assert.match(githubTool, /className="tool-grid is-active"/);
@@ -80,6 +91,9 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   const decode = await readFile(ribbonDecodePath, "utf8");
   const decodeClient = await readFile(ribbonDecodeClientPath, "utf8");
   const decodeWorker = await readFile(ribbonDecodeWorkerPath, "utf8");
+  const autoDecode = await readFile(ribbonAutoDecodePath, "utf8");
+  const transformLab = await readFile(transformLabPath, "utf8");
+  const transformLabRunner = await readFile(transformLabRunnerPath, "utf8");
   const tint = await readFile(ribbonTintPath, "utf8");
 
   assert.match(render, /generateRibbonSymbol/);
@@ -92,12 +106,20 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(decodeClient, /new Worker/);
   assert.match(decodeClient, /postMessage\(request, \[request\.image\.data\]\)/);
   assert.match(decodeClient, /decodeRibbonImage\(image, options\)/);
+  assert.match(decodeClient, /AbortSignal/);
   assert.match(decodeWorker, /handleWorkerMessage/);
   assert.match(decodeWorker, /decodeRibbonImage\(image, message\.options\)/);
+  assert.match(autoDecode, /maxAutoDecodeCandidates/);
+  assert.match(autoDecode, /decodeRibbonImageAutoWithWorker/);
+  assert.match(autoDecode, /decodeRibbonImageWithWorker/);
+  assert.match(transformLab, /Pinterest-like simulation/);
+  assert.match(transformLab, /branch\.transform-lab\/0/);
+  assert.match(transformLabRunner, /canvas\.toBlob/);
+  assert.match(transformLabRunner, /request\.decode\(request\.image, request\.decodeOptions, request\.signal\)/);
   assert.match(tint, /drawTintQR/);
   assert.match(tint, /extractStegoTintCandidates/);
   assert.match(tint, /extractChromaTintCandidates/);
-  assert.doesNotMatch(`${render}\n${decode}\n${decodeClient}\n${decodeWorker}\n${tint}`, /window\.BranchQRCode|window\.jsQR/);
+  assert.doesNotMatch(`${render}\n${decode}\n${decodeClient}\n${decodeWorker}\n${autoDecode}\n${transformLab}\n${transformLabRunner}\n${tint}`, /window\.BranchQRCode|window\.jsQR|fetch\s*\(|XMLHttpRequest|WebSocket/);
 });
 
 void test("admin github generator stays offline and produces local drop-in paths", async () => {
