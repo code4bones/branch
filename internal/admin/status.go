@@ -26,6 +26,8 @@ type StatusSnapshot struct {
 	ProtocolVersions  []string       `json:"protocol_versions"`
 	Capabilities      []string       `json:"capabilities"`
 	SessionsActive    int            `json:"sessions_active"`
+	RoutesActive      int            `json:"routes_active"`
+	PresenceActive    int            `json:"presence_active"`
 	QueueDepth        int            `json:"queue_depth"`
 	ExporterAvailable bool           `json:"exporter_available"`
 }
