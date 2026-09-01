@@ -9,6 +9,7 @@ const adminMainPath = resolve(process.cwd(), "src/admin/main.tsx");
 const adminStorePath = resolve(process.cwd(), "src/admin/store.tsx");
 const ribbonToolPath = resolve(process.cwd(), "src/admin/components/RibbonTool.tsx");
 const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.tsx");
+const githubDiscoveryPath = resolve(process.cwd(), "src/admin/github-discovery.ts");
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
 const defaultsPath = resolve(process.cwd(), "src/admin/defaults.ts");
 const canvasImagePath = resolve(process.cwd(), "src/visual/canvas-image.ts");
@@ -51,6 +52,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(app, /AdminStoreProvider/);
   assert.match(store, /zustand\/vanilla/);
   assert.match(store, /defaultBranchWrapper/);
+  assert.match(store, /githubDiscoveryDefaultQuery/);
   assert.match(store, /export type RibbonTab = "encode" \| "decode"/);
   assert.match(store, /ribbonTab: "encode"/);
   assert.match(store, /setRibbonTab/);
@@ -91,10 +93,18 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="decoded-wrapper"/);
   assert.match(ribbonTool, /className="tool-grid is-active ribbon-tool"/);
   assert.match(githubTool, /id="github-form"/);
+  assert.match(githubTool, /id="github-mode"/);
+  assert.match(githubTool, /Demo fixture/);
+  assert.match(githubTool, /Live publishable/);
+  assert.match(githubTool, /id="github-badge-snippet"/);
+  assert.match(githubTool, /id="github-discovery-form"/);
+  assert.match(githubTool, /id="github-discovery-query"/);
+  assert.match(githubTool, /id="github-discovery-forks"/);
+  assert.match(githubTool, /discoverGitHubDropIns/);
   assert.match(githubTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
   assert.match(defaults, /branch-github-dropin\.zip/);
-  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}`, /\bfetch\s*\(/);
+  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}`, /\bfetch\s*\(/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}`, /XMLHttpRequest|localStorage|indexedDB/);
 });
 
@@ -169,12 +179,33 @@ void test("admin github generator stays offline and produces local drop-in paths
   const source = await readFile(githubDropInPath, "utf8");
 
   assert.match(source, /makeGitHubArchive/);
+  assert.match(source, /mode/);
+  assert.match(source, /records_sha256/);
+  assert.match(source, /makeBadgeSnippet/);
+  assert.match(source, /live GitHub drop-in refuses the demo BRANCH0 fixture/);
   assert.match(source, /\.branch\/records\.br0/);
   assert.match(source, /\.branch\/manifest\.json/);
   assert.match(source, /\.branch\/ribbon\.svg/);
   assert.match(source, /\.github\/workflows\/branch-carry-ribbon\.yml/);
+  assert.match(source, /drop-in lint/);
+  assert.match(source, /pull_request/);
   assert.match(source, /permissions:[\s\S]*contents: read/);
-  assert.doesNotMatch(source, /api\.github\.com|GITHUB_TOKEN|actions\/checkout|contents: write/);
+  assert.doesNotMatch(source, /api\.github\.com|GITHUB_TOKEN|actions\/checkout|contents: write|schedule:/);
+});
+
+void test("admin github discovery uses bounded public GitHub API reads", async () => {
+  const source = await readFile(githubDiscoveryPath, "utf8");
+
+  assert.match(source, /https:\/\/api\.github\.com\/search\/repositories/);
+  assert.match(source, /\.branch\/records\.br0/);
+  assert.match(source, /x-ratelimit-remaining/);
+  assert.match(source, /403/);
+  assert.match(source, /429/);
+  assert.match(source, /incomplete_results/);
+  assert.match(source, /fork:true/);
+  assert.match(source, /default branch/);
+  assert.match(source, /extractBranchTextWrappers/);
+  assert.doesNotMatch(source, /GITHUB_TOKEN|Authorization|raw\.githubusercontent\.com|contents: write/);
 });
 
 void test("admin css remains dark and bounded", async () => {
@@ -202,5 +233,7 @@ void test("nginx csp permits local cover image object urls", async () => {
   const source = await readFile(nginxConfigPath, "utf8");
 
   assert.match(source, /img-src 'self' data: blob:/);
+  assert.match(source, /connect-src 'self' https:\/\/api\.github\.com/);
   assert.match(source, /worker-src 'self'/);
+  assert.doesNotMatch(source, /raw\.githubusercontent\.com|\*/);
 });

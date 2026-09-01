@@ -23,7 +23,7 @@ export function downloadURL(url: string, filename: string): void {
   link.remove();
 }
 
-export async function copyTextFromFallback(text: string, fallback: HTMLTextAreaElement | null): Promise<void> {
+export async function copyTextFromFallback(text: string, fallback: HTMLInputElement | HTMLTextAreaElement | null): Promise<void> {
   if (window.isSecureContext) {
     await navigator.clipboard.writeText(text);
     return;

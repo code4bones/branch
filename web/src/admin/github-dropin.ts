@@ -1,9 +1,10 @@
 import { defaultBranchWrapper } from "./defaults.js";
 import { makeStoredZipArchive } from "./zip-archive.js";
+import { branchTextWrapperPrefix, isBranchTextWrapper } from "../protocol/v0/text-carrier.js";
 
-const branchPrefix = "BRANCH0.";
-const maxRecordBytes = 64 * 1024;
 const encoder = new TextEncoder();
+
+export type GitHubDropInMode = "demo" | "live";
 
 export interface GitHubDropInFile {
   readonly path: string;
@@ -11,7 +12,12 @@ export interface GitHubDropInFile {
   readonly content: string;
 }
 
-export function parseBranchRecords(source: string): readonly string[] {
+export interface ParseBranchRecordsOptions {
+  readonly mode?: GitHubDropInMode;
+}
+
+export function parseBranchRecords(source: string, options: ParseBranchRecordsOptions = {}): readonly string[] {
+  const mode = options.mode ?? "demo";
   const records = source
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -20,24 +26,40 @@ export function parseBranchRecords(source: string): readonly string[] {
     throw new Error("at least one BRANCH0. record is required");
   }
   for (const record of records) {
-    if (!record.startsWith(branchPrefix)) {
+    if (!record.startsWith(branchTextWrapperPrefix)) {
       throw new Error("records.br0 accepts exact BRANCH0. wrappers only");
     }
-    if (encoder.encode(record).byteLength > maxRecordBytes) {
-      throw new Error("record too large");
+    if (!isBranchTextWrapper(record)) {
+      throw new Error("records.br0 accepts bounded unpadded base64url BRANCH0. wrappers only");
+    }
+    if (mode === "live") {
+      validateLiveBranchRecord(record);
     }
   }
   return records;
 }
 
-export function makeGitHubFiles(records: readonly string[], sourceCommit: string, generatedAt: number): readonly GitHubDropInFile[] {
+export async function makeGitHubFiles(
+  records: readonly string[],
+  sourceCommit: string,
+  generatedAt: number,
+  mode: GitHubDropInMode = "demo"
+): Promise<readonly GitHubDropInFile[]> {
+  const recordsContent = `${records.join("\n")}\n`;
   const manifest = {
     schema: "branch.repository-dropin/0",
+    mode,
     markers: ["BRANCH0", "branch/connectivity/0", "branch-bootstrap-v0", "carry-the-ribbon"],
     records_path: ".branch/records.br0",
     badge_path: ".branch/ribbon.svg",
     generated_at: generatedAt,
     source_commit: sourceCommit || undefined,
+    record_count: records.length,
+    records_sha256: await sha256Hex(recordsContent),
+    diagnostics: {
+      authority: "unsigned carrier metadata only; signed BootstrapBeacon bytes remain authoritative",
+      validation: mode === "demo" ? "fixture records are not live beacons" : "live records validated before archive generation"
+    },
     tool: "branch-admin-front/0"
   };
 
@@ -45,7 +67,7 @@ export function makeGitHubFiles(records: readonly string[], sourceCommit: string
     {
       path: ".branch/records.br0",
       type: "text/plain",
-      content: `${records.join("\n")}\n`
+      content: recordsContent
     },
     {
       path: ".branch/manifest.json",
@@ -55,7 +77,7 @@ export function makeGitHubFiles(records: readonly string[], sourceCommit: string
     {
       path: ".branch/README.md",
       type: "text/markdown",
-      content: makeDropInReadme()
+      content: makeDropInReadme(mode)
     },
     {
       path: ".branch/ribbon.svg",
@@ -78,7 +100,25 @@ export function makeGitHubArchive(files: readonly GitHubDropInFile[]): Uint8Arra
   return makeStoredZipArchive(files);
 }
 
-function makeDropInReadme(): string {
+export function makeBadgeSnippet(): string {
+  return "[![Blue Ribbon — Carry the Ribbon](.branch/ribbon.svg)](.branch/README.md)";
+}
+
+function validateLiveBranchRecord(record: string): void {
+  if (record === defaultBranchWrapper) {
+    throw new Error("live GitHub drop-in refuses the demo BRANCH0 fixture");
+  }
+  if (encoder.encode(record).byteLength > 512) {
+    throw new Error("live GitHub drop-in currently accepts only compact BootstrapBeacon candidates");
+  }
+  throw new Error("live GitHub drop-in requires signed bootstrap.beacon validation before export");
+}
+
+function makeDropInReadme(mode: GitHubDropInMode): string {
+  const modeNote = mode === "demo"
+    ? "This generated bundle is a demo fixture. Replace records.br0 with current signed bootstrap.beacon wrappers before treating it as live discovery material."
+    : "This bundle was generated from live signed bootstrap.beacon wrappers accepted by the local tool.";
+
   return `# Carry the Ribbon
 
 B.R.A.N.C.H. — Blue Ribbon Autonomous Network for Carrier Hopping
@@ -92,6 +132,14 @@ From symbol to protocol.
 The ribbon no longer merely hangs on the Web. It becomes a route through it.
 
 Search markers: BRANCH0 branch/connectivity/0 branch-bootstrap-v0 carry-the-ribbon
+
+${modeNote}
+
+Optional root README badge:
+
+\`\`\`md
+${makeBadgeSnippet()}
+\`\`\`
 
 The signed records are stored in \`.branch/records.br0\`. Repository ownership,
 badges, topics, branch names, and CI status are publication evidence only. The
@@ -113,22 +161,24 @@ function makeRibbonSvg(): string {
 }
 
 function makeWorkflow(): string {
-  return `name: Carry the Ribbon
+  return `name: B.R.A.N.C.H. drop-in lint
 
 on:
   push:
     paths:
       - ".branch/**"
       - "README.md"
+  pull_request:
+    paths:
+      - ".branch/**"
+      - "README.md"
   workflow_dispatch:
-  schedule:
-    - cron: "17 4 * * 1"
 
 permissions:
   contents: read
 
 jobs:
-  verify-dropin:
+  lint-dropin:
     runs-on: ubuntu-latest
     steps:
       - name: Prepare repository workspace
@@ -138,18 +188,24 @@ jobs:
           git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout --detach FETCH_HEAD
-      - name: Verify local B.R.A.N.C.H. carrier files
+      - name: Lint local B.R.A.N.C.H. carrier files
         shell: bash
         run: |
           test -f .branch/records.br0
           test -f .branch/manifest.json
           grep -Eq '^BRANCH0\\.' .branch/records.br0
           grep -q 'branch.repository-dropin/0' .branch/manifest.json
+          grep -q 'branch-bootstrap-v0' .branch/manifest.json
 `;
 }
 
 function dropUndefined(source: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(source).filter((entry) => entry[1] !== undefined));
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function defaultGitHubRecords(): string {

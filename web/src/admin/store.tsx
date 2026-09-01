@@ -3,6 +3,7 @@ import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { defaultBranchWrapper, ribbonProfileLabel } from "./defaults.js";
+import { githubDiscoveryDefaultQuery, type GitHubDiscoveryResult } from "./github-discovery.js";
 import type { GitHubDropInFile } from "./github-dropin.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
@@ -42,12 +43,22 @@ export interface DiagnosticsState {
 }
 
 export interface GitHubState {
+  readonly mode: "demo" | "live";
   readonly records: string;
   readonly sourceCommit: string;
   readonly files: readonly GitHubDropInFile[];
   readonly selectedFile: number;
+  readonly badgeSnippet: string;
+  readonly discoveryQuery: string;
+  readonly discoveryIncludeForks: boolean;
+  readonly discoveryPerPage: string;
+  readonly discoveryPage: string;
+  readonly discoveryRunning: boolean;
+  readonly discoveryResults: readonly GitHubDiscoveryResult[];
   readonly status: string;
   readonly statusClass: StatusClass;
+  readonly discoveryStatus: string;
+  readonly discoveryStatusClass: StatusClass;
 }
 
 export interface TransformLabState {
@@ -86,10 +97,19 @@ export interface AdminActions {
   readonly setTransformLabResults: (results: readonly TransformLabResult[], reportJson: string) => void;
   readonly setTransformLabStatus: (status: string, statusClass: StatusClass) => void;
   readonly setGitHubRecords: (records: string) => void;
+  readonly setGitHubMode: (mode: GitHubState["mode"]) => void;
   readonly setGitHubSourceCommit: (sourceCommit: string) => void;
   readonly setGitHubFiles: (files: readonly GitHubDropInFile[]) => void;
+  readonly setGitHubBadgeSnippet: (badgeSnippet: string) => void;
   readonly setSelectedGitHubFile: (index: number) => void;
   readonly setGitHubStatus: (status: string, statusClass: StatusClass) => void;
+  readonly setGitHubDiscoveryQuery: (query: string) => void;
+  readonly setGitHubDiscoveryIncludeForks: (includeForks: boolean) => void;
+  readonly setGitHubDiscoveryPerPage: (perPage: string) => void;
+  readonly setGitHubDiscoveryPage: (page: string) => void;
+  readonly setGitHubDiscoveryRunning: (running: boolean) => void;
+  readonly setGitHubDiscoveryResults: (results: readonly GitHubDiscoveryResult[]) => void;
+  readonly setGitHubDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
 }
 
 export type AdminStore = AdminState & AdminActions;
@@ -156,12 +176,22 @@ function createAdminStore(): AdminStoreApi {
       reportJson: ""
     },
     github: {
+      mode: "demo",
       records: "",
       sourceCommit: "",
       files: [],
       selectedFile: 0,
+      badgeSnippet: "",
+      discoveryQuery: githubDiscoveryDefaultQuery,
+      discoveryIncludeForks: false,
+      discoveryPerPage: "5",
+      discoveryPage: "1",
+      discoveryRunning: false,
+      discoveryResults: [],
       status: "idle",
-      statusClass: "status-warn"
+      statusClass: "status-warn",
+      discoveryStatus: "idle",
+      discoveryStatusClass: "status-warn"
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
     setRibbonTab: (tab) => { set({ ribbonTab: tab }); },
@@ -220,6 +250,13 @@ function createAdminStore(): AdminStoreApi {
           records
         }
       })); },
+    setGitHubMode: (mode) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          mode
+        }
+      })); },
     setGitHubSourceCommit: (sourceCommit) =>
       { set((state) => ({
         github: {
@@ -235,6 +272,13 @@ function createAdminStore(): AdminStoreApi {
           selectedFile: 0
         }
       })); },
+    setGitHubBadgeSnippet: (badgeSnippet) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          badgeSnippet
+        }
+      })); },
     setSelectedGitHubFile: (index) =>
       { set((state) => ({
         github: {
@@ -248,6 +292,56 @@ function createAdminStore(): AdminStoreApi {
           ...state.github,
           status,
           statusClass
+        }
+      })); },
+    setGitHubDiscoveryQuery: (discoveryQuery) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryQuery
+        }
+      })); },
+    setGitHubDiscoveryIncludeForks: (discoveryIncludeForks) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryIncludeForks
+        }
+      })); },
+    setGitHubDiscoveryPerPage: (discoveryPerPage) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryPerPage
+        }
+      })); },
+    setGitHubDiscoveryPage: (discoveryPage) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryPage
+        }
+      })); },
+    setGitHubDiscoveryRunning: (discoveryRunning) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryRunning
+        }
+      })); },
+    setGitHubDiscoveryResults: (discoveryResults) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryResults
+        }
+      })); },
+    setGitHubDiscoveryStatus: (discoveryStatus, discoveryStatusClass) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryStatus,
+          discoveryStatusClass
         }
       })); }
   }));

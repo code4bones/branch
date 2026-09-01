@@ -2,7 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { defaultBranchWrapper } from "../src/admin/defaults.js";
-import { makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
+import {
+  discoverGitHubDropIns,
+  githubDiscoveryDefaultQuery,
+  githubDiscoveryConstraints,
+  makeGitHubRepositorySearchUrl
+} from "../src/admin/github-discovery.js";
+import { makeBadgeSnippet, makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
 import { makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
 import { runTransformLab } from "../src/admin/transform-lab-runner.js";
@@ -31,22 +37,27 @@ import { generateRibbonSymbol, symbolSizePixels } from "../src/visual/ribbon-ren
 import { extractStegoTintCandidates } from "../src/visual/ribbon-tint.js";
 import { embedWatermarkPayload, extractWatermarkPayload, ribbonWatermarkProfile } from "../src/visual/ribbon-watermark.js";
 import { decodeRibbonSeal, type RibbonImageData } from "../src/visual/ribbon-image.js";
+import { extractBranchTextWrappers, isBranchTextWrapper } from "../src/protocol/v0/text-carrier.js";
 
-void test("github drop-in module validates exact BRANCH0 records and emits local files", () => {
+void test("github drop-in module validates exact BRANCH0 records and emits local files", async () => {
   const records = parseBranchRecords(`# comment\n${defaultBranchWrapper}\n`);
-  const files = makeGitHubFiles(records, "abc123", 1_789_000_000);
+  const files = await makeGitHubFiles(records, "abc123", 1_789_000_000);
   const bundle = makeBundle(files);
 
   assert.deepEqual(records, [defaultBranchWrapper]);
   assert.equal(files[0]?.path, ".branch/records.br0");
   assert.match(bundle, /Blue Ribbon Autonomous Network for Carrier Hopping/);
   assert.match(bundle, /branch.repository-dropin\/0/);
+  assert.match(bundle, /"mode": "demo"/);
+  assert.match(bundle, /"record_count": 1/);
+  assert.match(bundle, /"records_sha256": "[a-f0-9]{64}"/);
+  assert.match(bundle, /fixture records are not live beacons/);
   assert.doesNotMatch(bundle, /GITHUB_TOKEN|contents: write/);
 });
 
-void test("github drop-in archive contains repository paths", () => {
+void test("github drop-in archive contains repository paths", async () => {
   const records = parseBranchRecords(defaultBranchWrapper);
-  const files = makeGitHubFiles(records, "", 1_789_000_000);
+  const files = await makeGitHubFiles(records, "", 1_789_000_000);
   const archive = makeGitHubArchive(files);
 
   assert.deepEqual(readZipEntryPaths(archive), [
@@ -58,10 +69,93 @@ void test("github drop-in archive contains repository paths", () => {
   ]);
   assert.equal(readZipFileText(archive, ".branch/records.br0"), `${defaultBranchWrapper}\n`);
   assert.match(readZipFileText(archive, ".branch/manifest.json"), /branch\.repository-dropin\/0/);
+  assert.match(readZipFileText(archive, ".branch/README.md"), /demo fixture/);
+  assert.match(readZipFileText(archive, ".branch/README.md"), /\[!\[Blue Ribbon/);
+  assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /drop-in lint/);
+  assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /pull_request/);
+  assert.doesNotMatch(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /schedule|verify-dropin|Verify local/);
 });
 
 void test("github drop-in module rejects non-BRANCH0 records", () => {
   assert.throws(() => parseBranchRecords("not-a-wrapper"), /records\.br0 accepts exact BRANCH0/);
+  assert.throws(() => parseBranchRecords("BRANCH0.abc=", { mode: "demo" }), /bounded unpadded base64url/);
+  assert.throws(() => parseBranchRecords(defaultBranchWrapper, { mode: "live" }), /refuses the demo BRANCH0 fixture/);
+  assert.match(makeBadgeSnippet(), /\.branch\/ribbon\.svg/);
+});
+
+void test("text carrier extracts bounded BRANCH0 wrappers without normalization", () => {
+  const source = `noise ${defaultBranchWrapper}\n${defaultBranchWrapper}\nBRANCH0.invalid=`;
+  const wrappers = extractBranchTextWrappers(source);
+
+  assert.equal(isBranchTextWrapper(defaultBranchWrapper), true);
+  assert.equal(isBranchTextWrapper("BRANCH0.invalid="), false);
+  assert.deepEqual(wrappers, [{ wrapper: defaultBranchWrapper, offset: 6 }]);
+});
+
+void test("github discovery searches repositories and reads default-branch drop-in records", async () => {
+  const fetched: string[] = [];
+  const fetcher = (input: string): Promise<Response> => {
+    fetched.push(input);
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 1,
+        incomplete_results: false,
+        items: [{
+          full_name: "alice/carrier",
+          fork: false,
+          html_url: "https://github.com/alice/carrier",
+          default_branch: "main",
+          owner: { login: "alice" },
+          name: "carrier"
+        }]
+      }, { "x-ratelimit-remaining": "9", "x-ratelimit-reset": "1780000000" }));
+    }
+    return Promise.resolve(jsonResponse({
+      type: "file",
+      encoding: "base64",
+      content: base64Text(`${defaultBranchWrapper}\n`)
+    }));
+  };
+  const report = await discoverGitHubDropIns({
+    query: githubDiscoveryDefaultQuery,
+    includeForks: false,
+    perPage: 5,
+    page: 1
+  }, fetcher);
+  const firstResult = report.results[0] ?? failGitHubDiscoveryResult();
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.rateLimitRemaining, "9");
+  assert.equal(firstResult.repository, "alice/carrier");
+  assert.equal(firstResult.defaultBranch, "main");
+  assert.equal(firstResult.wrapperCount, 1);
+  assert.match(fetched[0] ?? "", /search\/repositories/);
+  assert.match(fetched[0] ?? "", /in%3Areadme/);
+  assert.match(fetched[1] ?? "", /repos\/alice\/carrier\/contents\/.branch\/records.br0\?ref=main/);
+  assert(githubDiscoveryConstraints.some((constraint) => constraint.includes("403/429")));
+});
+
+void test("github discovery surfaces API rate limits and bounded query construction", async () => {
+  const url = makeGitHubRepositorySearchUrl({
+    query: "BRANCH0 branch/connectivity/0",
+    includeForks: true,
+    perPage: 99,
+    page: 99
+  });
+  const fetcher = (): Promise<Response> =>
+    Promise.resolve(jsonResponse({ message: "rate limited" }, { "x-ratelimit-remaining": "0" }, 403));
+  const report = await discoverGitHubDropIns({
+    query: "BRANCH0",
+    includeForks: false,
+    perPage: 5,
+    page: 1
+  }, fetcher);
+
+  assert.match(url, /fork%3Atrue/);
+  assert.match(url, /per_page=10/);
+  assert.match(url, /page=10/);
+  assert.equal(report.status, "rate_limited");
+  assert.equal(report.rateLimitRemaining, "0");
 });
 
 void test("visual geometry preserves bounded placement and pitch", () => {
@@ -700,6 +794,20 @@ function makeStegoImage(
   return { width: size, height: size, data };
 }
 
+function jsonResponse(value: unknown, headers: Record<string, string> = {}, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: {
+      "content-type": "application/json",
+      ...headers
+    }
+  });
+}
+
+function base64Text(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
 function makePlacedStegoImage(
   width: number,
   height: number,
@@ -785,6 +893,10 @@ function failCandidate(): never {
 
 function failLocator(): never {
   throw new Error("missing ribbon locator");
+}
+
+function failGitHubDiscoveryResult(): never {
+  throw new Error("missing GitHub discovery result");
 }
 
 function readZipEntryPaths(archive: Uint8Array): readonly string[] {

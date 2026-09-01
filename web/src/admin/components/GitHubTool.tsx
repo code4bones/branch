@@ -2,20 +2,32 @@ import { useRef } from "react";
 
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
 import { defaultBranchWrapper, githubBundleFilename } from "../defaults.js";
-import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
+import { discoverGitHubDropIns, githubDiscoveryConstraints } from "../github-discovery.js";
+import { makeBadgeSnippet, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
 import { useAdminStore } from "../store.js";
 
 export function GitHubTool(): React.JSX.Element {
   const outputRef = useRef<HTMLTextAreaElement | null>(null);
+  const badgeRef = useRef<HTMLInputElement | null>(null);
+  const discoveryAbortRef = useRef<AbortController | null>(null);
   const github = useAdminStore((state) => state.github);
+  const setGitHubMode = useAdminStore((state) => state.setGitHubMode);
   const setGitHubRecords = useAdminStore((state) => state.setGitHubRecords);
   const setGitHubSourceCommit = useAdminStore((state) => state.setGitHubSourceCommit);
   const setGitHubFiles = useAdminStore((state) => state.setGitHubFiles);
+  const setGitHubBadgeSnippet = useAdminStore((state) => state.setGitHubBadgeSnippet);
   const setSelectedGitHubFile = useAdminStore((state) => state.setSelectedGitHubFile);
   const setGitHubStatus = useAdminStore((state) => state.setGitHubStatus);
+  const setGitHubDiscoveryQuery = useAdminStore((state) => state.setGitHubDiscoveryQuery);
+  const setGitHubDiscoveryIncludeForks = useAdminStore((state) => state.setGitHubDiscoveryIncludeForks);
+  const setGitHubDiscoveryPerPage = useAdminStore((state) => state.setGitHubDiscoveryPerPage);
+  const setGitHubDiscoveryPage = useAdminStore((state) => state.setGitHubDiscoveryPage);
+  const setGitHubDiscoveryRunning = useAdminStore((state) => state.setGitHubDiscoveryRunning);
+  const setGitHubDiscoveryResults = useAdminStore((state) => state.setGitHubDiscoveryResults);
+  const setGitHubDiscoveryStatus = useAdminStore((state) => state.setGitHubDiscoveryStatus);
   const selectedFile = github.files[github.selectedFile] ?? null;
 
-  function onGenerate(event: React.FormEvent<HTMLFormElement>): void {
+  async function onGenerate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const recordsInput = readFormString(formData, "github-records");
@@ -23,19 +35,68 @@ export function GitHubTool(): React.JSX.Element {
     setGitHubRecords(recordsInput);
     setGitHubSourceCommit(sourceCommit);
     try {
-      const records = parseBranchRecords(recordsInput);
-      const files = makeGitHubFiles(records, sourceCommit.trim(), Math.floor(Date.now() / 1000));
+      setGitHubStatus("generating", "status-warn");
+      const records = parseBranchRecords(recordsInput, { mode: github.mode });
+      const files = await makeGitHubFiles(records, sourceCommit.trim(), Math.floor(Date.now() / 1000), github.mode);
       setGitHubFiles(files);
-      setGitHubStatus("generated", "status-good");
+      setGitHubBadgeSnippet(makeBadgeSnippet());
+      setGitHubStatus(github.mode === "demo" ? "demo fixture generated" : "live bundle generated", "status-good");
     } catch (error) {
       setGitHubFiles([]);
+      setGitHubBadgeSnippet("");
       setGitHubStatus(error instanceof Error ? error.message : "generation failed", "status-bad");
     }
   }
 
+  async function onDiscover(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    discoveryAbortRef.current?.abort();
+    const controller = new AbortController();
+    discoveryAbortRef.current = controller;
+    setGitHubDiscoveryRunning(true);
+    setGitHubDiscoveryResults([]);
+    setGitHubDiscoveryStatus("searching GitHub", "status-warn");
+    try {
+      const report = await discoverGitHubDropIns({
+        query: github.discoveryQuery,
+        includeForks: github.discoveryIncludeForks,
+        perPage: readBoundedInteger(github.discoveryPerPage, 1, 10, 5),
+        page: readBoundedInteger(github.discoveryPage, 1, 10, 1),
+        signal: controller.signal
+      });
+      setGitHubDiscoveryResults(report.results);
+      const incomplete = report.incompleteResults ? ", incomplete" : "";
+      setGitHubDiscoveryStatus(
+        `${report.message}${incomplete}; rate ${report.rateLimitRemaining ?? "unknown"}`,
+        report.status === "ok" ? "status-good" : report.status === "failed" || report.status === "rate_limited" ? "status-bad" : "status-warn"
+      );
+    } catch (error) {
+      setGitHubDiscoveryStatus(controller.signal.aborted ? "cancelled" : errorMessage(error), controller.signal.aborted ? "status-warn" : "status-bad");
+    } finally {
+      setGitHubDiscoveryRunning(false);
+    }
+  }
+
+  function onCancelDiscover(): void {
+    discoveryAbortRef.current?.abort();
+  }
+
   return (
     <section className="tool-grid is-active" data-panel="github" aria-label="GitHub carrier generator">
-      <form className="panel control-panel" id="github-form" onSubmit={onGenerate}>
+      <form className="panel control-panel" id="github-form" onSubmit={(event) => { void onGenerate(event); }}>
+        <div className="control-row">
+          <label htmlFor="github-mode">Bundle mode</label>
+          <select
+            id="github-mode"
+            name="github-mode"
+            value={github.mode}
+            onChange={(event) => { setGitHubMode(event.currentTarget.value === "live" ? "live" : "demo"); }}
+          >
+            <option value="demo">Demo fixture</option>
+            <option value="live">Live publishable</option>
+          </select>
+        </div>
+
         <label htmlFor="github-records">BRANCH0 records</label>
         <textarea
           id="github-records"
@@ -72,6 +133,24 @@ export function GitHubTool(): React.JSX.Element {
           </button>
         </div>
         <p className={github.statusClass}>{github.status}</p>
+
+        <label htmlFor="github-badge-snippet">README badge</label>
+        <input
+          id="github-badge-snippet"
+          ref={badgeRef}
+          readOnly
+          type="text"
+          value={github.badgeSnippet}
+        />
+        <div className="button-row">
+          <button
+            type="button"
+            disabled={github.badgeSnippet === ""}
+            onClick={() => { void copyTextFromFallback(github.badgeSnippet, badgeRef.current); }}
+          >
+            Copy badge
+          </button>
+        </div>
       </form>
 
       <section className="panel output-panel" aria-label="Generated GitHub files">
@@ -115,6 +194,89 @@ export function GitHubTool(): React.JSX.Element {
           </button>
         </div>
       </section>
+
+      <form className="panel control-panel github-discovery-panel" id="github-discovery-form" onSubmit={(event) => { void onDiscover(event); }}>
+        <label htmlFor="github-discovery-query">Discovery query</label>
+        <textarea
+          id="github-discovery-query"
+          name="github-discovery-query"
+          spellCheck={false}
+          rows={3}
+          value={github.discoveryQuery}
+          onChange={(event) => { setGitHubDiscoveryQuery(event.currentTarget.value); }}
+        />
+
+        <div className="control-row">
+          <label htmlFor="github-discovery-per-page">Page size</label>
+          <input
+            id="github-discovery-per-page"
+            name="github-discovery-per-page"
+            type="number"
+            min="1"
+            max="10"
+            value={github.discoveryPerPage}
+            onChange={(event) => { setGitHubDiscoveryPerPage(event.currentTarget.value); }}
+          />
+        </div>
+
+        <div className="control-row">
+          <label htmlFor="github-discovery-page">Page</label>
+          <input
+            id="github-discovery-page"
+            name="github-discovery-page"
+            type="number"
+            min="1"
+            max="10"
+            value={github.discoveryPage}
+            onChange={(event) => { setGitHubDiscoveryPage(event.currentTarget.value); }}
+          />
+        </div>
+
+        <label className="checkbox-row" htmlFor="github-discovery-forks">
+          <input
+            id="github-discovery-forks"
+            name="github-discovery-forks"
+            type="checkbox"
+            checked={github.discoveryIncludeForks}
+            onChange={(event) => { setGitHubDiscoveryIncludeForks(event.currentTarget.checked); }}
+          />
+          <span>Include forks</span>
+        </label>
+
+        <div className="button-row">
+          <button type="submit" disabled={github.discoveryRunning}>Discover</button>
+          <button type="button" disabled={!github.discoveryRunning} onClick={onCancelDiscover}>Cancel</button>
+        </div>
+        <p className={github.discoveryStatusClass}>{github.discoveryStatus}</p>
+      </form>
+
+      <section className="panel output-panel github-discovery-results" aria-label="GitHub discovery results">
+        <table>
+          <thead>
+            <tr>
+              <th>Repository</th>
+              <th>Branch</th>
+              <th>Records</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {github.discoveryResults.map((result) => (
+              <tr key={result.recordsUrl}>
+                <td><a href={result.htmlUrl} rel="noreferrer" target="_blank">{result.repository}</a></td>
+                <td>{result.defaultBranch}{result.fork ? " fork" : ""}</td>
+                <td>{result.wrapperCount}{result.firstWrapperPreview === null ? "" : ` ${result.firstWrapperPreview}`}</td>
+                <td>{result.reason ?? result.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <ul className="github-discovery-notes">
+          {githubDiscoveryConstraints.map((constraint) => (
+            <li key={constraint}>{constraint}</li>
+          ))}
+        </ul>
+      </section>
     </section>
   );
 }
@@ -122,4 +284,16 @@ export function GitHubTool(): React.JSX.Element {
 function readFormString(formData: FormData, name: string): string {
   const value = formData.get(name);
   return typeof value === "string" ? value : "";
+}
+
+function readBoundedInteger(value: string, min: number, max: number, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "GitHub discovery failed";
 }
