@@ -341,6 +341,14 @@ label {
   grid-column: 1 / -1;
 }
 
+.client-tool {
+  grid-template-columns: minmax(280px, 0.36fr) minmax(480px, 1fr);
+}
+
+.client-summary {
+  align-self: start;
+}
+
 .github-discovery-results {
   overflow-x: auto;
 }

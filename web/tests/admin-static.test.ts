@@ -9,6 +9,7 @@ const adminMainPath = resolve(process.cwd(), "src/admin/main.tsx");
 const adminStorePath = resolve(process.cwd(), "src/admin/store.tsx");
 const ribbonToolPath = resolve(process.cwd(), "src/admin/components/RibbonTool.tsx");
 const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.tsx");
+const clientToolPath = resolve(process.cwd(), "src/admin/components/ClientTool.tsx");
 const githubDiscoveryPath = resolve(process.cwd(), "src/admin/github-discovery.ts");
 const discoveryGitHubPath = resolve(process.cwd(), "src/discovery/github.ts");
 const discoveryClientPath = resolve(process.cwd(), "src/discovery/client.ts");
@@ -45,12 +46,19 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const store = await readFile(adminStorePath, "utf8");
   const ribbonTool = await readFile(ribbonToolPath, "utf8");
   const githubTool = await readFile(githubToolPath, "utf8");
+  const clientTool = await readFile(clientToolPath, "utf8");
   const publicationProfile = await readFile(publicationProfilePath, "utf8");
   const defaults = await readFile(defaultsPath, "utf8");
 
   assert.match(main, /createRoot/);
   assert.match(app, /Blue Ribbon Autonomous Network for Carrier Hopping/);
   assert.match(app, /AdminStoreProvider/);
+  assert.match(app, /ClientTool/);
+  assert.match(app, /useEffect/);
+  assert.match(app, /window\.location\.hash === "#client"/);
+  assert.match(app, /window\.history\.replaceState\(null, "", "\/admin\/#client"\)/);
+  assert.match(app, /data-tab="client"/);
+  assert.match(app, /href="\/admin\/#client"/);
   assert.match(store, /zustand\/vanilla/);
   assert.match(store, /defaultBranchWrapper/);
   assert.match(store, /githubDiscoveryDefaultQuery/);
@@ -58,6 +66,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(store, /export type GitHubTab = "generate" \| "check"/);
   assert.match(store, /ribbonTab: "encode"/);
   assert.match(store, /githubTab: "generate"/);
+  assert.match(store, /client:/);
+  assert.match(store, /setClientDiscoveryResults/);
+  assert.match(store, /setClientDiscoveryStatus/);
   assert.match(store, /setRibbonTab/);
   assert.match(store, /setGitHubTab/);
   assert.match(store, /transformLab/);
@@ -118,13 +129,25 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /formatUnixSeconds/);
   assert.match(githubTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
+  assert.match(clientTool, /useEffect/);
+  assert.match(clientTool, /data-panel="client"/);
+  assert.match(clientTool, /id="client-discovery-query"/);
+  assert.match(clientTool, /discoverClientBootstrapBeacons/);
+  assert.match(clientTool, /createGitHubSearchCarrier/);
+  assert.match(clientTool, /fallbackQuery: null/);
+  assert.match(clientTool, /perPage: 5/);
+  assert.match(clientTool, /page: 1/);
+  assert.match(clientTool, /setClientDiscoveryResults/);
+  assert.match(clientTool, /rateLimitRemaining/);
+  assert.match(clientTool, /relayEndpoint/);
+  assert.doesNotMatch(clientTool, /localStorage|indexedDB|WebSocket|GITHUB_TOKEN|Authorization/);
   assert.match(publicationProfile, /branchBootstrapLocator = "branchbootstrapv0"/);
   assert.match(publicationProfile, /githubPrimaryLocatorQuery/);
   assert.match(publicationProfile, /topic:\$\{branchBootstrapLocator\}/);
   assert.match(publicationProfile, /githubRepositoryTopics/);
   assert.match(defaults, /branch-github-dropin\.zip/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}`, /\bfetch\s*\(/);
-  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}`, /XMLHttpRequest|localStorage|indexedDB/);
+  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}\n${clientTool}`, /XMLHttpRequest|localStorage|indexedDB/);
 });
 
 void test("admin ribbon logic is split into typed visual modules", async () => {

@@ -9,7 +9,7 @@ import type { TransformLabProgress, TransformLabResult } from "./transform-lab.j
 import { defaultBootstrapRelayEndpointUri } from "../protocol/v0/bootstrap-beacon.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
 
-export type AdminTab = "ribbon" | "github";
+export type AdminTab = "ribbon" | "github" | "client";
 export type RibbonTab = "encode" | "decode";
 export type GitHubTab = "generate" | "check";
 export type StatusClass = "status-good" | "status-warn" | "status-bad";
@@ -56,6 +56,16 @@ export interface GitHubState {
   readonly discoveryStatusClass: StatusClass;
 }
 
+export interface ClientState {
+  readonly discoveryRunning: boolean;
+  readonly discoveryStatus: string;
+  readonly discoveryStatusClass: StatusClass;
+  readonly discoveryQuery: string;
+  readonly discoveryResults: readonly GitHubDiscoveryResult[];
+  readonly rateLimitRemaining: string | null;
+  readonly incompleteResults: boolean;
+}
+
 export interface TransformLabState {
   readonly selectedPresetId: string;
   readonly running: boolean;
@@ -77,6 +87,7 @@ export interface AdminState {
   readonly diagnostics: DiagnosticsState;
   readonly transformLab: TransformLabState;
   readonly github: GitHubState;
+  readonly client: ClientState;
 }
 
 export interface AdminActions {
@@ -109,6 +120,13 @@ export interface AdminActions {
   readonly setGitHubDiscoveryRunning: (running: boolean) => void;
   readonly setGitHubDiscoveryResults: (results: readonly GitHubDiscoveryResult[]) => void;
   readonly setGitHubDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
+  readonly setClientDiscoveryRunning: (running: boolean) => void;
+  readonly setClientDiscoveryResults: (
+    results: readonly GitHubDiscoveryResult[],
+    rateLimitRemaining: string | null,
+    incompleteResults: boolean
+  ) => void;
+  readonly setClientDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
 }
 
 export type AdminStore = AdminState & AdminActions;
@@ -186,6 +204,15 @@ function createAdminStore(): AdminStoreApi {
       statusClass: "status-warn",
       discoveryStatus: "idle",
       discoveryStatusClass: "status-warn"
+    },
+    client: {
+      discoveryRunning: false,
+      discoveryStatus: "idle",
+      discoveryStatusClass: "status-warn",
+      discoveryQuery: githubDiscoveryDefaultQuery,
+      discoveryResults: [],
+      rateLimitRemaining: null,
+      incompleteResults: false
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
     setRibbonTab: (tab) => { set({ ribbonTab: tab }); },
@@ -349,6 +376,30 @@ function createAdminStore(): AdminStoreApi {
       { set((state) => ({
         github: {
           ...state.github,
+          discoveryStatus,
+          discoveryStatusClass
+        }
+      })); },
+    setClientDiscoveryRunning: (discoveryRunning) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          discoveryRunning
+        }
+      })); },
+    setClientDiscoveryResults: (discoveryResults, rateLimitRemaining, incompleteResults) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          discoveryResults,
+          rateLimitRemaining,
+          incompleteResults
+        }
+      })); },
+    setClientDiscoveryStatus: (discoveryStatus, discoveryStatusClass) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
           discoveryStatus,
           discoveryStatusClass
         }

@@ -1,4 +1,7 @@
+import { useEffect } from "react";
+
 import { AdminStoreProvider, useAdminStore } from "./store.js";
+import { ClientTool } from "./components/ClientTool.js";
 import { GitHubTool } from "./components/GitHubTool.js";
 import { RibbonTool } from "./components/RibbonTool.js";
 
@@ -14,6 +17,19 @@ function AdminShell(): React.JSX.Element {
   const activeTab = useAdminStore((state) => state.activeTab);
   const setActiveTab = useAdminStore((state) => state.setActiveTab);
 
+  useEffect(() => {
+    function syncHashTab(): void {
+      if (window.location.hash === "#client") {
+        setActiveTab("client");
+      }
+    }
+    syncHashTab();
+    window.addEventListener("hashchange", syncHashTab);
+    return () => {
+      window.removeEventListener("hashchange", syncHashTab);
+    };
+  }, [setActiveTab]);
+
   return (
     <main className="admin-shell" aria-labelledby="admin-title">
       <header className="admin-header">
@@ -23,22 +39,44 @@ function AdminShell(): React.JSX.Element {
         </div>
         <nav className="admin-nav" aria-label="Admin navigation">
           <a href="/">Status</a>
-          <a href="/admin/" aria-current="page">
+          <a
+            href="/admin/"
+            aria-current={activeTab === "client" ? undefined : "page"}
+            onClick={(event) => {
+              event.preventDefault();
+              window.history.replaceState(null, "", "/admin/");
+              setActiveTab("ribbon");
+            }}
+          >
             Admin
+          </a>
+          <a
+            href="/admin/#client"
+            aria-current={activeTab === "client" ? "page" : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              window.history.replaceState(null, "", "/admin/#client");
+              setActiveTab("client");
+            }}
+          >
+            Client
           </a>
         </nav>
       </header>
 
       <section className="admin-tabs" aria-label="Admin tools">
-        <button className={`tab${activeTab === "ribbon" ? " is-active" : ""}`} type="button" data-tab="ribbon" onClick={() => { setActiveTab("ribbon"); }}>
+        <button className={`tab${activeTab === "ribbon" ? " is-active" : ""}`} type="button" data-tab="ribbon" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("ribbon"); }}>
           Ribbon Image
         </button>
-        <button className={`tab${activeTab === "github" ? " is-active" : ""}`} type="button" data-tab="github" onClick={() => { setActiveTab("github"); }}>
+        <button className={`tab${activeTab === "github" ? " is-active" : ""}`} type="button" data-tab="github" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("github"); }}>
           GitHub
+        </button>
+        <button className={`tab${activeTab === "client" ? " is-active" : ""}`} type="button" data-tab="client" onClick={() => { window.history.replaceState(null, "", "/admin/#client"); setActiveTab("client"); }}>
+          Client
         </button>
       </section>
 
-      {activeTab === "ribbon" ? <RibbonTool /> : <GitHubTool />}
+      {activeTab === "client" ? <ClientTool /> : activeTab === "ribbon" ? <RibbonTool /> : <GitHubTool />}
     </main>
   );
 }
