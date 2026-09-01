@@ -14,10 +14,15 @@ void test("admin surface is static and open", async () => {
 
   assert.match(html, /\/admin\/admin\.js/);
   assert.match(html, /\/vendor\/qrcode-browser\.js/);
+  assert.match(html, /\/vendor\/jsqr\.js/);
+  assert.match(html, />BRANCH0\.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA<\/textarea>/);
   assert.match(html, /id="cover-image"/);
   assert.match(html, /id="visual-mode"/);
   assert.match(html, /id="tint-strength"/);
+  assert.match(html, /type="range" min="0" max="24" step="1" value="0"/);
   assert.match(html, /id="carrier-placement"/);
+  assert.match(html, /id="decode-image"/);
+  assert.match(html, /id="decoded-wrapper"/);
   assert.doesNotMatch(html, /login|password|token/i);
 });
 
@@ -42,6 +47,12 @@ void test("admin ribbon generator mirrors ribbon-seal frame constants", async ()
   assert.match(source, /drawTintQR/);
   assert.match(source, /tintStrength/);
   assert.match(source, /visualMode/);
+  assert.match(source, /decodeRibbonImage/);
+  assert.match(source, /decodeTintImage/);
+  assert.match(source, /extractStegoTintCandidates/);
+  assert.match(source, /sampleTintStegoBits/);
+  assert.match(source, /extractTintCandidates/);
+  assert.match(source, /decodeRibbonFrame/);
   assert.doesNotMatch(source, /\bfetch\s*\(/);
   assert.doesNotMatch(source, /XMLHttpRequest|localStorage|indexedDB/);
 });
@@ -72,6 +83,8 @@ void test("static build bundles qrcode from local dependency", async () => {
 
   assert.match(source, /node_modules\/qrcode\/lib\/browser\.js/);
   assert.match(source, /qrcode-browser\.js/);
+  assert.match(source, /node_modules\/jsqr\/dist\/jsQR\.js/);
+  assert.match(source, /vendor\/jsqr\.js/);
   assert.match(source, /createRequire/);
 });
 

@@ -9,9 +9,10 @@
     >
     <title>B.R.A.N.C.H. Admin</title>
     <link rel="stylesheet" href="/assets/app.css?v=20260831-dark">
-    <link rel="stylesheet" href="/admin/admin.css?v=20260901-tint">
+    <link rel="stylesheet" href="/admin/admin.css?v=20260901-stego-decode">
     <script src="/vendor/qrcode-browser.js?v=20260901-admin" defer></script>
-    <script src="/admin/admin.js?v=20260901-tint" defer></script>
+    <script src="/vendor/jsqr.js?v=20260901-decode" defer></script>
+    <script src="/admin/admin.js?v=20260901-stego-decode" defer></script>
   </head>
   <body>
     <main class="admin-shell" aria-labelledby="admin-title">
@@ -40,7 +41,7 @@
             spellcheck="false"
             rows="9"
             placeholder="BRANCH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-          ></textarea>
+          >BRANCH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</textarea>
 
           <div class="control-row">
             <label for="cover-image">Cover image</label>
@@ -67,7 +68,7 @@
 
           <div class="control-row">
             <label for="tint-strength">Tint strength</label>
-            <input id="tint-strength" name="tint-strength" type="range" min="6" max="42" step="1" value="18">
+            <input id="tint-strength" name="tint-strength" type="range" min="0" max="24" step="1" value="0">
           </div>
 
           <div class="control-row">
@@ -109,6 +110,12 @@
               <dd>idle</dd>
             </div>
           </dl>
+          <div class="decode-controls">
+            <label for="decode-image">Decode image</label>
+            <input id="decode-image" name="decode-image" type="file" accept="image/png,image/jpeg,image/webp">
+            <button type="button" id="decode-ribbon">Decode</button>
+          </div>
+          <textarea id="decoded-wrapper" spellcheck="false" readonly rows="5"></textarea>
         </section>
       </section>
 

@@ -16,6 +16,10 @@ await bundleCommonJS(
   resolve(target, "vendor/qrcode-browser.js"),
   "BranchQRCode"
 );
+await cp(
+  resolve(root, "node_modules/jsqr/dist/jsQR.js"),
+  resolve(target, "vendor/jsqr.js")
+);
 
 async function bundleCommonJS(entryPath, outputPath, globalName) {
   const modules = [];

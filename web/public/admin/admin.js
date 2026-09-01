@@ -32,6 +32,9 @@
     canvas: document.getElementById("ribbon-canvas"),
     diagnostics: document.getElementById("ribbon-diagnostics"),
     downloadRibbon: document.getElementById("download-ribbon"),
+    decodeImage: document.getElementById("decode-image"),
+    decodeRibbon: document.getElementById("decode-ribbon"),
+    decodedWrapper: document.getElementById("decoded-wrapper"),
     githubForm: document.getElementById("github-form"),
     githubRecords: document.getElementById("github-records"),
     sourceCommit: document.getElementById("source-commit"),
@@ -109,7 +112,7 @@
           outputHeight,
           carrierSize,
           visualMode: elements.visualMode.value,
-          tintStrength: readBoundedInteger(elements.tintStrength.value, 6, 42, "tint strength"),
+          tintStrength: readBoundedInteger(elements.tintStrength.value, 0, 24, "tint strength"),
           placement: elements.carrierPlacement.value,
           coverImage: state.coverImage
         });
@@ -136,6 +139,22 @@
         return;
       }
       downloadURL(state.ribbonPngUrl, "branch-ribbon-seal.png");
+    });
+
+    elements.decodeRibbon.addEventListener("click", async () => {
+      try {
+        const image = await loadDecodeImage();
+        const result = decodeRibbonImage(image, {
+          quietZone: readBoundedInteger(elements.quietZone.value, 4, 12, "quiet zone"),
+          carrierSize: fitCarrierSizeToOutput(image.width, image.height),
+          placement: elements.carrierPlacement.value
+        });
+        elements.decodedWrapper.value = result.wrapper || "";
+        setRibbonDiagnostics(emptyDiagnostics(), result.status, result.wrapper ? "status-good" : "status-bad");
+      } catch (error) {
+        elements.decodedWrapper.value = "";
+        setRibbonDiagnostics(emptyDiagnostics(), error instanceof Error ? error.message : "decode failed", "status-bad");
+      }
     });
   }
 
@@ -331,20 +350,245 @@
         }
 
         const offset = (pixelY * size + pixelX) * 4;
-        if (modules.get(moduleX, moduleY) === 1) {
+        const dark = modules.get(moduleX, moduleY) === 1;
+        if (dark) {
+          data[offset + 2] = (data[offset + 2] || 0) | 1;
+          if (tintStrength === 0) {
+            continue;
+          }
           data[offset] = clamp(data[offset] - Math.round(tintStrength * 0.55), 0, 255);
           data[offset + 1] = clamp(data[offset + 1] - Math.round(tintStrength * 0.35), 0, 255);
           data[offset + 2] = clamp(data[offset + 2] + tintStrength, 0, 255);
+          data[offset + 2] |= 1;
           continue;
         }
 
+        data[offset + 2] = (data[offset + 2] || 0) & 0xfe;
+        if (tintStrength === 0) {
+          continue;
+        }
         data[offset] = clamp(data[offset] + Math.round(tintStrength * 0.18), 0, 255);
         data[offset + 1] = clamp(data[offset + 1] + Math.round(tintStrength * 0.12), 0, 255);
         data[offset + 2] = clamp(data[offset + 2] - Math.round(tintStrength * 0.2), 0, 255);
+        data[offset + 2] &= 0xfe;
       }
     }
 
     context.putImageData(image, x, y);
+  }
+
+  function decodeRibbonImage(image, options) {
+    const qrApi = window.jsQR;
+    if (typeof qrApi !== "function") {
+      throw new Error("QR decoder unavailable");
+    }
+
+    const direct = decodeQRCodeData(image.data, image.width, image.height);
+    if (direct.wrapper) {
+      return { status: "seal decoded", wrapper: direct.wrapper };
+    }
+
+    const tinted = decodeTintImage(image, options);
+    if (tinted.wrapper) {
+      return { status: `tint decoded v${tinted.version}`, wrapper: tinted.wrapper };
+    }
+
+    return { status: tinted.status || direct.status || "no carrier detected", wrapper: "" };
+  }
+
+  function decodeTintImage(image, options) {
+    for (let version = 1; version <= 30; version += 1) {
+      const moduleCount = 21 + (version - 1) * 4;
+      const modulePitch = computeModulePitch(moduleCount, options.quietZone, options.carrierSize);
+      const symbolSize = (moduleCount + options.quietZone * 2) * modulePitch;
+      if (symbolSize > image.width || symbolSize > image.height) {
+        continue;
+      }
+
+      const placement = computePlacement(options.placement, image.width, image.height, symbolSize);
+      for (const candidate of extractStegoTintCandidates(image, placement, moduleCount, modulePitch, options.quietZone)) {
+        const decoded = decodeQRCodeData(candidate.data, candidate.width, candidate.height);
+        if (decoded.wrapper) {
+          return { status: decoded.status, wrapper: decoded.wrapper, version };
+        }
+      }
+
+      for (const candidate of extractTintCandidates(image, placement, moduleCount, modulePitch, options.quietZone)) {
+        const decoded = decodeQRCodeData(candidate.data, candidate.width, candidate.height);
+        if (decoded.wrapper) {
+          return { status: decoded.status, wrapper: decoded.wrapper, version };
+        }
+      }
+    }
+    return { status: "tint extraction failed", wrapper: "" };
+  }
+
+  function extractStegoTintCandidates(image, placement, moduleCount, modulePitch, quietZone) {
+    const bits = sampleTintStegoBits(image, placement, moduleCount, modulePitch, quietZone);
+    return [
+      renderBitQR(bits, moduleCount, false),
+      renderBitQR(bits, moduleCount, true)
+    ];
+  }
+
+  function sampleTintStegoBits(image, placement, moduleCount, modulePitch, quietZone) {
+    const bits = [];
+    const margin = Math.max(0, Math.floor(modulePitch * 0.2));
+    for (let moduleY = 0; moduleY < moduleCount; moduleY += 1) {
+      for (let moduleX = 0; moduleX < moduleCount; moduleX += 1) {
+        let ones = 0;
+        let count = 0;
+        const startX = placement.x + (moduleX + quietZone) * modulePitch + margin;
+        const startY = placement.y + (moduleY + quietZone) * modulePitch + margin;
+        const endX = placement.x + (moduleX + quietZone + 1) * modulePitch - margin;
+        const endY = placement.y + (moduleY + quietZone + 1) * modulePitch - margin;
+        for (let y = startY; y < endY; y += 1) {
+          for (let x = startX; x < endX; x += 1) {
+            const offset = (y * image.width + x) * 4;
+            ones += (image.data[offset + 2] || 0) & 1;
+            count += 1;
+          }
+        }
+        bits.push(count > 0 && ones / count >= 0.5);
+      }
+    }
+    return bits;
+  }
+
+  function extractTintCandidates(image, placement, moduleCount, modulePitch, quietZone) {
+    const scores = sampleTintModules(image, placement, moduleCount, modulePitch, quietZone);
+    const sorted = [...scores].sort((left, right) => left - right);
+    const thresholds = [0.42, 0.5, 0.58].map((quantile) => sorted[Math.floor(sorted.length * quantile)]);
+    return thresholds.flatMap((threshold) => [
+      renderExtractedQR(scores, moduleCount, threshold, false),
+      renderExtractedQR(scores, moduleCount, threshold, true)
+    ]);
+  }
+
+  function sampleTintModules(image, placement, moduleCount, modulePitch, quietZone) {
+    const scores = [];
+    const margin = Math.max(0, Math.floor(modulePitch * 0.2));
+    for (let moduleY = 0; moduleY < moduleCount; moduleY += 1) {
+      for (let moduleX = 0; moduleX < moduleCount; moduleX += 1) {
+        let total = 0;
+        let count = 0;
+        const startX = placement.x + (moduleX + quietZone) * modulePitch + margin;
+        const startY = placement.y + (moduleY + quietZone) * modulePitch + margin;
+        const endX = placement.x + (moduleX + quietZone + 1) * modulePitch - margin;
+        const endY = placement.y + (moduleY + quietZone + 1) * modulePitch - margin;
+        for (let y = startY; y < endY; y += 1) {
+          for (let x = startX; x < endX; x += 1) {
+            const offset = (y * image.width + x) * 4;
+            const red = image.data[offset] || 0;
+            const green = image.data[offset + 1] || 0;
+            const blue = image.data[offset + 2] || 0;
+            total += blue - (red + green) / 2;
+            count += 1;
+          }
+        }
+        scores.push(count === 0 ? 0 : total / count);
+      }
+    }
+    return scores;
+  }
+
+  function renderExtractedQR(scores, moduleCount, threshold, invert) {
+    return renderBitQR(scores.map((score) => score > threshold), moduleCount, invert);
+  }
+
+  function renderBitQR(bits, moduleCount, invert) {
+    const renderPitch = 8;
+    const renderQuietZone = 4;
+    const width = (moduleCount + renderQuietZone * 2) * renderPitch;
+    const data = new Uint8ClampedArray(width * width * 4);
+    data.fill(255);
+    for (let index = 3; index < data.length; index += 4) {
+      data[index] = 255;
+    }
+
+    for (let moduleY = 0; moduleY < moduleCount; moduleY += 1) {
+      for (let moduleX = 0; moduleX < moduleCount; moduleX += 1) {
+        const index = moduleY * moduleCount + moduleX;
+        let dark = Boolean(bits[index]);
+        if (invert) {
+          dark = !dark;
+        }
+        if (!dark) {
+          continue;
+        }
+        fillExtractedModule(data, width, moduleX + renderQuietZone, moduleY + renderQuietZone, renderPitch);
+      }
+    }
+    return { width, height: width, data };
+  }
+
+  function fillExtractedModule(data, width, moduleX, moduleY, modulePitch) {
+    const startX = moduleX * modulePitch;
+    const startY = moduleY * modulePitch;
+    for (let y = startY; y < startY + modulePitch; y += 1) {
+      for (let x = startX; x < startX + modulePitch; x += 1) {
+        const offset = (y * width + x) * 4;
+        data[offset] = 0;
+        data[offset + 1] = 0;
+        data[offset + 2] = 0;
+        data[offset + 3] = 255;
+      }
+    }
+  }
+
+  function decodeQRCodeData(data, width, height) {
+    const code = window.jsQR(data, width, height, { inversionAttempts: "attemptBoth" });
+    if (!code || !code.binaryData) {
+      return { status: "no carrier detected", wrapper: "" };
+    }
+    return decodeRibbonFrame(Uint8Array.from(code.binaryData));
+  }
+
+  function decodeRibbonFrame(frame) {
+    if (frame.byteLength < magic.byteLength + 1 + 1 + 2 + 4) {
+      return { status: "visual sync failed", wrapper: "" };
+    }
+    let offset = 0;
+    for (const expected of magic) {
+      if (frame[offset] !== expected) {
+        return { status: "visual sync failed", wrapper: "" };
+      }
+      offset += 1;
+    }
+
+    const profileLength = frame[offset];
+    offset += 1;
+    if (!profileLength || offset + profileLength + 1 + 2 + 4 > frame.byteLength) {
+      return { status: "visual sync failed", wrapper: "" };
+    }
+    if (decodeUTF8(frame.slice(offset, offset + profileLength)) !== profile) {
+      return { status: "profile unsupported", wrapper: "" };
+    }
+    offset += profileLength;
+
+    const flags = frame[offset];
+    offset += 1;
+    if (flags !== 0x01) {
+      return { status: "payload kind unsupported", wrapper: "" };
+    }
+
+    const payloadLength = ((frame[offset] || 0) << 8) | (frame[offset + 1] || 0);
+    offset += 2;
+    if (payloadLength > payloadLimit || offset + payloadLength + 4 !== frame.byteLength) {
+      return { status: "payload size invalid", wrapper: "" };
+    }
+
+    const payload = frame.slice(offset, offset + payloadLength);
+    offset += payloadLength;
+    if (readUint32BE(frame, offset) !== crc32c(payload)) {
+      return { status: "visual crc failed", wrapper: "" };
+    }
+
+    const wrapper = decodeUTF8(payload);
+    if (!wrapper.startsWith(branchPrefix)) {
+      return { status: "payload not BRANCH0", wrapper: "" };
+    }
+    return { status: "decoded", wrapper };
   }
 
   function drawCoverPreview(coverImage, outputWidth, outputHeight) {
@@ -661,6 +905,37 @@ jobs:
     });
   }
 
+  async function loadDecodeImage() {
+    const file = elements.decodeImage.files && elements.decodeImage.files[0];
+    if (!file) {
+      return getCanvasImage();
+    }
+    const loaded = await loadLocalImage(file);
+    return imageToData(loaded);
+  }
+
+  function imageToData(loaded) {
+    const canvas = document.createElement("canvas");
+    canvas.width = loaded.width;
+    canvas.height = loaded.height;
+    const context = canvas.getContext("2d");
+    context.drawImage(loaded.image, 0, 0, loaded.width, loaded.height);
+    return {
+      width: loaded.width,
+      height: loaded.height,
+      data: context.getImageData(0, 0, loaded.width, loaded.height).data
+    };
+  }
+
+  function getCanvasImage() {
+    const context = elements.canvas.getContext("2d");
+    return {
+      width: elements.canvas.width,
+      height: elements.canvas.height,
+      data: context.getImageData(0, 0, elements.canvas.width, elements.canvas.height).data
+    };
+  }
+
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
   }
@@ -739,6 +1014,24 @@ jobs:
     target[offset + 1] = (value >>> 16) & 0xff;
     target[offset + 2] = (value >>> 8) & 0xff;
     target[offset + 3] = value & 0xff;
+  }
+
+  function readUint32BE(source, offset) {
+    return (
+      (((source[offset] || 0) << 24) |
+        ((source[offset + 1] || 0) << 16) |
+        ((source[offset + 2] || 0) << 8) |
+        (source[offset + 3] || 0)) >>>
+      0
+    );
+  }
+
+  function decodeUTF8(data) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(data);
+    } catch {
+      return "";
+    }
   }
 
   function encodeAscii(text) {

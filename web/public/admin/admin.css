@@ -217,6 +217,13 @@ label {
   flex: 0 1 auto;
 }
 
+.decode-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(220px, 1.8fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
 #ribbon-canvas {
   width: 100%;
   max-width: 760px;
@@ -260,6 +267,10 @@ label {
   min-height: 430px;
 }
 
+#decoded-wrapper {
+  min-height: 116px;
+}
+
 .status-good {
   color: var(--admin-green);
 }
@@ -292,6 +303,10 @@ label {
   }
 
   .diagnostics {
+    grid-template-columns: 1fr;
+  }
+
+  .decode-controls {
     grid-template-columns: 1fr;
   }
 }
