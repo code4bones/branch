@@ -141,6 +141,14 @@ recorded in a decision before a published v0 profile hash is accepted. Until
 then, sealed payloads and session handshakes are specified by required
 properties and transcript bindings, not by invented cryptographic bytes.
 
+D-BRANCH-036 selects a beta-only HPKE payload envelope path for the proof of
+concept. Its draft suite identifier is `branch.hpke/0.draft`; the preferred
+candidate is RFC 9180 `DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM`.
+This lets test clients stop forwarding plaintext-like payloads through
+`ENVELOPE` frames while keeping relays as opaque live transit. It is not a
+published v0 session suite and does not by itself freeze the final profile hash,
+frame encoding, traffic-key schedule, or conformance vectors.
+
 ### Capability registry rules
 
 Capabilities describe optional behaviour, not trust. A capability name is
@@ -327,6 +335,13 @@ The data-plane frame contract is:
 Frame bytes, header encoding, traffic-key schedule, and replay windows become
 immutable only when the reviewed session suite and machine-readable profile are
 accepted. The properties above are mandatory for any candidate suite.
+
+For the beta HPKE payload path from D-BRANCH-036, additional authenticated data
+binds the protocol identifier, profile multihash, sender and recipient peer
+keys, delivery id, path epoch, stream id, frame type, acknowledgement flag, and
+the beta suite identifier. It deliberately does not bind a relay hostname or
+carrier repository so the same encrypted delivery can be retried over another
+validated path during migration.
 
 ### Path migration state machine
 

@@ -73,7 +73,9 @@ their reasoning rather than silently replacing earlier assumptions.
 
 - Which direct transport should the first prototype use?
 - Which reviewed payload encryption and authenticated data-plane session suite
-  should the published v0 profile select?
+  should the published v0 profile select? D-BRANCH-036 selects HPKE only for the
+  beta proof-of-concept payload path; published v0 remains open until the final
+  profile, vectors, and crypto review are accepted.
 - Which exact frame encoding and key schedule instantiate the authenticated
   framing contract in docs/PROTOCOL_V0.md?
 - Which direct transport should be mandatory-to-implement, if any, beyond the

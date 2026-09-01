@@ -19,6 +19,14 @@ import {
   routesFromBeaconObservations,
   runDiscoveredCarrierHopPoC
 } from "../src/discovery/carrier-hop-client.js";
+import {
+  createBetaPayloadKeyPair,
+  decodeBetaPayloadText,
+  makeBetaPayloadAAD,
+  openBetaPayload,
+  sealBetaPayload
+} from "../src/connectivity/payload-crypto.js";
+import { protocolID } from "../src/protocol/v0/envelope.js";
 import type { BeaconObservation, SearchCarrier } from "../src/discovery/client.js";
 import { routeFromDiscoveryResults } from "../src/admin/use-same-relay-transport-lab.js";
 import type { GitHubDiscoveryResult } from "../src/discovery/github.js";
@@ -82,6 +90,31 @@ void test("same-relay browser transport handles live forwarding, unavailable, an
   assert(aliceEvents.some((event) => event.type === "pending_retried" && event.count === 1));
   assert(aliceEvents.some((event) => event.type === "peer_receipt" && event.deliveryId === retryID));
   assert.equal(alice.pendingCount, 0);
+});
+
+void test("beta HPKE payload envelope seals, opens, and rejects wrong AAD", async () => {
+  const recipient = await createBetaPayloadKeyPair();
+  const aad = makePayloadTestAAD("delivery-a");
+  const sealed = await sealBetaPayload({
+    recipientPublicKey: recipient.publicKey,
+    plaintext: "secret branch payload",
+    aad
+  });
+  const opened = await openBetaPayload({
+    recipientPrivateKey: recipient.privateKey,
+    sealedPayload: sealed,
+    aad
+  });
+
+  assert.equal(decodeBetaPayloadText(opened), "secret branch payload");
+  assert(!sealed.includes("secret branch payload"));
+  await assert.rejects(
+    openBetaPayload({
+      recipientPrivateKey: recipient.privateKey,
+      sealedPayload: sealed,
+      aad: makePayloadTestAAD("delivery-b")
+    })
+  );
 });
 
 void test("client transport route uses validated bootstrap observations only", () => {
@@ -270,6 +303,20 @@ void test("beacon observation route snapshot dedupes without carrier-specific re
     profileMultihash: developmentProfileMultihash
   }]);
 });
+
+function makePayloadTestAAD(deliveryId: string): Uint8Array {
+  return makeBetaPayloadAAD({
+    protocol: protocolID,
+    profileMultihash: developmentProfileMultihash,
+    senderPeerId: fixedToken(32, 21),
+    recipientPeerId: fixedToken(32, 22),
+    deliveryId,
+    pathEpoch: 0,
+    streamId: 0,
+    frameType: "ENVELOPE",
+    ackRequested: true
+  });
+}
 
 function multiplexRelays(relays: Readonly<Record<string, FakeRelay>>): BrowserRelaySocketFactory {
   return (url) => {

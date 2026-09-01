@@ -6,6 +6,15 @@ import {
   type SameRelayPendingEnvelope,
   type SameRelayTransportEvent
 } from "./same-relay.js";
+import {
+  createBetaPayloadKeyPair,
+  makeBetaPayloadAAD,
+  openBetaPayload,
+  sealBetaPayload,
+  type BetaPayloadKeyPair
+} from "./payload-crypto.js";
+import { encodeBase64URL } from "../protocol/v0/base64url.js";
+import { protocolID } from "../protocol/v0/envelope.js";
 
 export type CarrierHoppingPoCStatus = "ok" | "degraded" | "failed";
 
@@ -46,6 +55,8 @@ interface CarrierHoppingCounters {
 const maxRoutes = 4;
 const maxEventCount = 32;
 const defaultStepTimeoutMs = 3_000;
+const defaultStreamID = 0;
+const defaultPathEpoch = 0;
 
 export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): Promise<CarrierHoppingPoCReport> {
   const routes = options.routes.slice(0, maxRoutes);
@@ -75,15 +86,16 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
     SameRelayTransportClient.createIdentity(options.crypto),
     SameRelayTransportClient.createIdentity(options.crypto)
   ]);
+  const bobPayloadKey = await createBetaPayloadKeyPair();
   const timeoutMs = boundedTimeout(options.stepTimeoutMs ?? defaultStepTimeoutMs);
   let activePair: TransportPair | null = null;
   let pendingAfterUnavailable: readonly SameRelayPendingEnvelope[] = [];
 
   try {
     record(`route.selected ${routeLabel(primaryRoute)}`);
-    activePair = await attachPair(primaryRoute, aliceIdentity, bobIdentity, [], options.socketFactory, options.crypto, record, counters);
+    activePair = await attachPair(primaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, [], options.socketFactory, options.crypto, record, counters);
     record("carrier.disabled discovery snapshot retained");
-    const carrierOffDeliveryId = activePair.alice.sendEnvelope("carrier disabled opaque payload");
+    const carrierOffDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "carrier disabled opaque payload", options.crypto);
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === carrierOffDeliveryId, timeoutMs);
     record("carrier.disabled delivery continued");
 
@@ -115,7 +127,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
 
     activePair.bob.disconnect();
     await settle();
-    const migrationDeliveryId = activePair.alice.sendEnvelope("client-owned migration retry payload");
+    const migrationDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "client-owned migration retry payload", options.crypto);
     await waitForEvent(activePair.events, (event) => event.type === "peer_unavailable", timeoutMs);
     pendingAfterUnavailable = activePair.alice.exportPendingEnvelopes();
     record(`route.unavailable pending=${String(pendingAfterUnavailable.length)}`);
@@ -124,7 +136,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
     activePair.bob.disconnect();
 
     record(`route.migration.started ${routeLabel(secondaryRoute)}`);
-    activePair = await attachPair(secondaryRoute, aliceIdentity, bobIdentity, pendingAfterUnavailable, options.socketFactory, options.crypto, record, counters);
+    activePair = await attachPair(secondaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, pendingAfterUnavailable, options.socketFactory, options.crypto, record, counters);
     activePair.alice.retryPending();
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === migrationDeliveryId, timeoutMs);
     record("route.migration.completed");
@@ -162,6 +174,7 @@ async function attachPair(
   route: RelayRouteMaterial,
   aliceIdentity: SameRelayIdentity,
   bobIdentity: SameRelayIdentity,
+  bobPayloadKey: BetaPayloadKeyPair,
   alicePending: readonly SameRelayPendingEnvelope[],
   socketFactory: BrowserRelaySocketFactory | undefined,
   crypto: Crypto | undefined,
@@ -190,7 +203,15 @@ async function attachPair(
     bob.addEventListener((event) => {
       events.push(event);
       if (event.type === "envelope_received") {
-        alice.markPeerReceipt(event.deliveryId);
+        void openBetaPayload({
+          recipientPrivateKey: bobPayloadKey.privateKey,
+          sealedPayload: event.ciphertext,
+          aad: makeEnvelopeAAD(route, alice.peerId, bob.peerId, event.deliveryId)
+        }).then(() => {
+          alice.markPeerReceipt(event.deliveryId);
+        }).catch((error: unknown) => {
+          record(`Bob: payload rejected ${errorMessage(error)}`);
+        });
       }
       recordTransportEvent("Bob", event, record, counters);
     })
@@ -210,6 +231,38 @@ async function attachPair(
       }
     }
   };
+}
+
+async function sendEncryptedEnvelope(
+  alice: SameRelayTransportClient,
+  bob: SameRelayTransportClient,
+  bobPayloadKey: BetaPayloadKeyPair,
+  route: RelayRouteMaterial,
+  plaintext: string,
+  crypto: Crypto | undefined
+): Promise<string> {
+  const deliveryId = randomToken(crypto ?? globalThis.crypto, 16);
+  const sealedPayload = await sealBetaPayload({
+    recipientPublicKey: bobPayloadKey.publicKey,
+    plaintext,
+    aad: makeEnvelopeAAD(route, alice.peerId, bob.peerId, deliveryId)
+  });
+  alice.sendSealedEnvelope(sealedPayload, { deliveryId });
+  return deliveryId;
+}
+
+function makeEnvelopeAAD(route: RelayRouteMaterial, senderPeerId: string, recipientPeerId: string, deliveryId: string): Uint8Array {
+  return makeBetaPayloadAAD({
+    protocol: protocolID,
+    profileMultihash: route.profileMultihash,
+    senderPeerId,
+    recipientPeerId,
+    deliveryId,
+    pathEpoch: defaultPathEpoch,
+    streamId: defaultStreamID,
+    frameType: "ENVELOPE",
+    ackRequested: true
+  });
 }
 
 function recordTransportEvent(
@@ -316,6 +369,12 @@ function routeLabel(route: RelayRouteMaterial): string {
 
 function shortId(value: string): string {
   return value.length <= 10 ? value : `${value.slice(0, 10)}...`;
+}
+
+function randomToken(crypto: Crypto, size: number): string {
+  const bytes = new Uint8Array(size);
+  crypto.getRandomValues(bytes);
+  return encodeBase64URL(bytes);
 }
 
 function settle(): Promise<void> {

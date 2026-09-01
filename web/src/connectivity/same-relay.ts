@@ -300,10 +300,15 @@ export class SameRelayTransportClient {
   }
 
   sendEnvelope(ciphertext: string, options: { readonly deliveryId?: string; readonly ackRequested?: boolean } = {}): string {
+    return this.sendSealedEnvelope(encodeBase64URL(new TextEncoder().encode(ciphertext)), options);
+  }
+
+  sendSealedEnvelope(sealedPayload: string, options: { readonly deliveryId?: string; readonly ackRequested?: boolean } = {}): string {
+    decodeBase64URL(sealedPayload);
     const deliveryId = options.deliveryId ?? this.randomToken(16);
     const pending = {
       deliveryId,
-      ciphertext: encodeBase64URL(new TextEncoder().encode(ciphertext)),
+      ciphertext: sealedPayload,
       streamId: defaultStreamID,
       ackRequested: options.ackRequested ?? true
     } satisfies PendingEnvelope;
@@ -420,7 +425,6 @@ export class SameRelayTransportClient {
           ciphertext: readString(record, "ciphertext"),
           routeId: readString(record, "route_id")
         });
-        this.emit({ type: "peer_receipt", deliveryId, durable: false });
         return;
       }
       case "ERROR": {
