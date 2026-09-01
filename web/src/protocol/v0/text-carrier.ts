@@ -1,7 +1,8 @@
 export const branchTextWrapperPrefix = "BRANCH0." as const;
 export const maxTextCarrierRecordBytes = 64 * 1024;
 
-const base64URLPattern = /^[A-Za-z0-9_-]+$/;
+import { validBase64URL } from "./base64url.js";
+
 const wrapperPattern = /\bBRANCH0\.([A-Za-z0-9_-]+)(?=$|[\s"'<>),;])/g;
 const encoder = new TextEncoder();
 
@@ -15,10 +16,7 @@ export function isBranchTextWrapper(value: string): boolean {
     return false;
   }
   const encoded = value.slice(branchTextWrapperPrefix.length);
-  return encoded.length > 0 &&
-    encoded.length % 4 !== 1 &&
-    base64URLPattern.test(encoded) &&
-    encoder.encode(value).byteLength <= maxTextCarrierRecordBytes;
+  return validBase64URL(encoded) && encoder.encode(value).byteLength <= maxTextCarrierRecordBytes;
 }
 
 export function extractBranchTextWrappers(source: string, maxWrappers = 32): readonly BranchTextWrapper[] {

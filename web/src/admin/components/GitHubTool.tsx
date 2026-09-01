@@ -5,6 +5,7 @@ import { defaultBranchWrapper, githubBundleFilename } from "../defaults.js";
 import { discoverGitHubDropIns, githubDiscoveryConstraints } from "../github-discovery.js";
 import { makeBadgeSnippet, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
 import { useAdminStore } from "../store.js";
+import { createBetaBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
 
 export function GitHubTool(): React.JSX.Element {
   const outputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -36,7 +37,7 @@ export function GitHubTool(): React.JSX.Element {
     setGitHubSourceCommit(sourceCommit);
     try {
       setGitHubStatus("generating", "status-warn");
-      const records = parseBranchRecords(recordsInput, { mode: github.mode });
+      const records = await parseBranchRecords(recordsInput, { mode: github.mode });
       const files = await makeGitHubFiles(records, sourceCommit.trim(), Math.floor(Date.now() / 1000), github.mode);
       setGitHubFiles(files);
       setGitHubBadgeSnippet(makeBadgeSnippet());
@@ -81,6 +82,18 @@ export function GitHubTool(): React.JSX.Element {
     discoveryAbortRef.current?.abort();
   }
 
+  async function onGenerateBetaBeacon(): Promise<void> {
+    try {
+      setGitHubStatus("generating beta bootstrap.beacon", "status-warn");
+      const wrapper = await createBetaBootstrapBeaconWrapper();
+      setGitHubMode("live");
+      setGitHubRecords(wrapper);
+      setGitHubStatus("beta bootstrap.beacon generated", "status-good");
+    } catch (error) {
+      setGitHubStatus(errorMessage(error), "status-bad");
+    }
+  }
+
   return (
     <section className="tool-grid is-active" data-panel="github" aria-label="GitHub carrier generator">
       <form className="panel control-panel" id="github-form" onSubmit={(event) => { void onGenerate(event); }}>
@@ -122,6 +135,12 @@ export function GitHubTool(): React.JSX.Element {
         </div>
 
         <div className="button-row">
+          <button
+            type="button"
+            onClick={() => { void onGenerateBetaBeacon(); }}
+          >
+            Generate beta beacon
+          </button>
           <button type="submit">Generate</button>
           <button
             type="button"

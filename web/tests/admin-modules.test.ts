@@ -9,6 +9,7 @@ import {
   makeGitHubRepositorySearchUrl
 } from "../src/admin/github-discovery.js";
 import { makeBadgeSnippet, makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
+import { createBetaBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
 import { makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
 import { runTransformLab } from "../src/admin/transform-lab-runner.js";
@@ -40,7 +41,7 @@ import { decodeRibbonSeal, type RibbonImageData } from "../src/visual/ribbon-ima
 import { extractBranchTextWrappers, isBranchTextWrapper } from "../src/protocol/v0/text-carrier.js";
 
 void test("github drop-in module validates exact BRANCH0 records and emits local files", async () => {
-  const records = parseBranchRecords(`# comment\n${defaultBranchWrapper}\n`);
+  const records = await parseBranchRecords(`# comment\n${defaultBranchWrapper}\n`);
   const files = await makeGitHubFiles(records, "abc123", 1_789_000_000);
   const bundle = makeBundle(files);
 
@@ -56,7 +57,7 @@ void test("github drop-in module validates exact BRANCH0 records and emits local
 });
 
 void test("github drop-in archive contains repository paths", async () => {
-  const records = parseBranchRecords(defaultBranchWrapper);
+  const records = await parseBranchRecords(defaultBranchWrapper);
   const files = await makeGitHubFiles(records, "", 1_789_000_000);
   const archive = makeGitHubArchive(files);
 
@@ -76,11 +77,22 @@ void test("github drop-in archive contains repository paths", async () => {
   assert.doesNotMatch(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /schedule|verify-dropin|Verify local/);
 });
 
-void test("github drop-in module rejects non-BRANCH0 records", () => {
-  assert.throws(() => parseBranchRecords("not-a-wrapper"), /records\.br0 accepts exact BRANCH0/);
-  assert.throws(() => parseBranchRecords("BRANCH0.abc=", { mode: "demo" }), /bounded unpadded base64url/);
-  assert.throws(() => parseBranchRecords(defaultBranchWrapper, { mode: "live" }), /refuses the demo BRANCH0 fixture/);
+void test("github drop-in module rejects non-BRANCH0 records", async () => {
+  await assert.rejects(parseBranchRecords("not-a-wrapper"), /records\.br0 accepts exact BRANCH0/);
+  await assert.rejects(parseBranchRecords("BRANCH0.abc=", { mode: "demo" }), /bounded unpadded base64url/);
+  await assert.rejects(parseBranchRecords(defaultBranchWrapper, { mode: "live" }), /refuses the demo BRANCH0 fixture/);
   assert.match(makeBadgeSnippet(), /\.branch\/ribbon\.svg/);
+});
+
+void test("github drop-in live mode accepts signed bootstrap.beacon wrappers", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createBetaBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const records = await parseBranchRecords(wrapper, { mode: "live" });
+  const files = await makeGitHubFiles(records, "beta-source", now, "live");
+
+  assert.deepEqual(records, [wrapper]);
+  assert.match(files.find((file) => file.path === ".branch/manifest.json")?.content ?? "", /"mode": "live"/);
+  assert.match(files.find((file) => file.path === ".branch/README.md")?.content ?? "", /live signed bootstrap\.beacon/);
 });
 
 void test("text carrier extracts bounded BRANCH0 wrappers without normalization", () => {

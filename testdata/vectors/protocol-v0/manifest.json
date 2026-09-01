@@ -24,6 +24,21 @@
     ],
     "independent_implementation_status": "not-yet-demonstrated"
   },
+  "bootstrap_beacon": {
+    "fixture": "bootstrap-beacon-vectors.json",
+    "required_invalid_reasons": [
+      "malformed_wrapper",
+      "non_canonical_cbor",
+      "signature_invalid",
+      "unsupported_protocol",
+      "unsupported_event_type",
+      "invalid_payload_mode",
+      "recipient_tag_present",
+      "expired",
+      "created_in_future",
+      "payload_expiry_mismatch"
+    ]
+  },
   "cases": [
     {
       "name": "valid-rendezvous-offer-envelope",

@@ -1,5 +1,6 @@
 import { defaultBranchWrapper } from "./defaults.js";
 import { makeStoredZipArchive } from "./zip-archive.js";
+import { assertValidBranchTextBootstrapBeacon } from "../protocol/v0/bootstrap-beacon.js";
 import { branchTextWrapperPrefix, isBranchTextWrapper } from "../protocol/v0/text-carrier.js";
 
 const encoder = new TextEncoder();
@@ -16,7 +17,7 @@ export interface ParseBranchRecordsOptions {
   readonly mode?: GitHubDropInMode;
 }
 
-export function parseBranchRecords(source: string, options: ParseBranchRecordsOptions = {}): readonly string[] {
+export async function parseBranchRecords(source: string, options: ParseBranchRecordsOptions = {}): Promise<readonly string[]> {
   const mode = options.mode ?? "demo";
   const records = source
     .split(/\r?\n/)
@@ -33,7 +34,7 @@ export function parseBranchRecords(source: string, options: ParseBranchRecordsOp
       throw new Error("records.br0 accepts bounded unpadded base64url BRANCH0. wrappers only");
     }
     if (mode === "live") {
-      validateLiveBranchRecord(record);
+      await validateLiveBranchRecord(record);
     }
   }
   return records;
@@ -104,14 +105,11 @@ export function makeBadgeSnippet(): string {
   return "[![Blue Ribbon — Carry the Ribbon](.branch/ribbon.svg)](.branch/README.md)";
 }
 
-function validateLiveBranchRecord(record: string): void {
+async function validateLiveBranchRecord(record: string): Promise<void> {
   if (record === defaultBranchWrapper) {
     throw new Error("live GitHub drop-in refuses the demo BRANCH0 fixture");
   }
-  if (encoder.encode(record).byteLength > 512) {
-    throw new Error("live GitHub drop-in currently accepts only compact BootstrapBeacon candidates");
-  }
-  throw new Error("live GitHub drop-in requires signed bootstrap.beacon validation before export");
+  await assertValidBranchTextBootstrapBeacon(record);
 }
 
 function makeDropInReadme(mode: GitHubDropInMode): string {

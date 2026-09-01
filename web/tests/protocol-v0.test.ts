@@ -4,8 +4,15 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import {
+  createBetaBootstrapBeaconWrapper,
+  validateBranchTextBootstrapBeacon
+} from "../src/protocol/v0/bootstrap-beacon.js";
+import { cborMap, decodeDeterministicCbor, encodeDeterministicCbor, readCborMap, sameBytes, type CborEntry } from "../src/protocol/v0/cbor.js";
 import { decodeDraftEnvelopeText, protocolID, ProtocolError } from "../src/protocol/v0/envelope.js";
 import { draftProfileMultihash, profileHashAlgorithm } from "../src/protocol/v0/profile.js";
+import { decodeBase64URL, encodeBase64URL } from "../src/protocol/v0/base64url.js";
+import { branchTextWrapperPrefix } from "../src/protocol/v0/text-carrier.js";
 
 interface VectorManifest {
   readonly schema: "branch.testvectors/0";
@@ -13,6 +20,7 @@ interface VectorManifest {
   readonly status: "draft";
   readonly profile: VectorProfile;
   readonly transcripts: VectorTranscripts;
+  readonly bootstrap_beacon: BootstrapBeaconVectorsRef;
   readonly cases: readonly VectorCase[];
 }
 
@@ -34,6 +42,27 @@ interface VectorTranscripts {
   readonly fixture: string;
   readonly required_kinds: readonly TranscriptKind[];
   readonly independent_implementation_status: "not-yet-demonstrated";
+}
+
+interface BootstrapBeaconVectorsRef {
+  readonly fixture: string;
+  readonly required_invalid_reasons: readonly string[];
+}
+
+interface BootstrapBeaconVectors {
+  readonly schema: "branch.bootstrap-beacon-vectors/0";
+  readonly protocol: typeof protocolID;
+  readonly valid: {
+    readonly name: string;
+    readonly now: number;
+    readonly wrapper: string;
+    readonly reason: string;
+  };
+  readonly invalid: readonly {
+    readonly name: string;
+    readonly expect: "reject";
+    readonly reason: string;
+  }[];
 }
 
 type TranscriptKind =
@@ -83,6 +112,7 @@ void test("draft envelope vectors pass shared conformance checks", async (t) => 
     manifest.profile.development_multihash
   );
   await assertTranscriptCoverage(manifest);
+  await assertBootstrapBeaconVectorCoverage(manifest);
 
   for (const vectorCase of manifest.cases) {
     await t.test(vectorCase.name, async () => {
@@ -99,6 +129,61 @@ void test("draft envelope vectors pass shared conformance checks", async (t) => 
   }
 });
 
+void test("BRANCH0 bootstrap.beacon wrapper validates exact signed CBOR", async () => {
+  const now = 1_789_000_000;
+  const wrapper = await createBetaBootstrapBeaconWrapper({
+    now,
+    expiresAt: now + 3600,
+    sequence: 7,
+    capabilities: ["search.direct-browser/0", "visual.ribbon-seal/0"]
+  });
+  const result = await validateBranchTextBootstrapBeacon(wrapper, { now });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.reason, "accepted");
+  if (result.beacon === undefined) {
+    throw new Error("accepted beacon missing");
+  }
+  const beacon = result.beacon;
+  assert.equal(beacon.envelope.protocol, protocolID);
+  assert.equal(beacon.envelope.type, "bootstrap.beacon");
+  assert.equal(beacon.envelope.payloadMode, "public");
+  assert.equal(beacon.payload.sequence, 7);
+  assert.equal(beacon.payload.expiresAt, now + 3600);
+  assert.deepEqual(beacon.payload.searchMarkers, ["BRANCH0", protocolID, "branch-bootstrap-v0"]);
+});
+
+void test("BRANCH0 bootstrap.beacon validator rejects malformed and stale records with stable reasons", async () => {
+  const now = 1_789_000_000;
+  const valid = await createBetaBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const signedBytes = decodeBase64URL(valid.slice(branchTextWrapperPrefix.length));
+  const mutatedSignature = patchSignatureByte(valid);
+  const nonCanonical = new Uint8Array(signedBytes.byteLength + 1);
+  nonCanonical[0] = 0xb8;
+  nonCanonical[1] = 0x0a;
+  nonCanonical.set(signedBytes.slice(1), 2);
+
+  assert.equal((await validateBranchTextBootstrapBeacon("BRANCH0.invalid=", { now })).reason, "malformed_wrapper");
+  assert.equal((await validateBranchTextBootstrapBeacon(`${branchTextWrapperPrefix}${encodeBase64URL(nonCanonical)}`, { now })).reason, "non_canonical_cbor");
+  assert.equal((await validateBranchTextBootstrapBeacon(`${branchTextWrapperPrefix}${encodeBase64URL(mutatedSignature)}`, { now })).reason, "signature_invalid");
+  assert.equal((await validateBranchTextBootstrapBeacon(valid, { now: now + 7200 })).reason, "expired");
+  assert.equal((await validateBranchTextBootstrapBeacon(await createBetaBootstrapBeaconWrapper({ now: now + 3600, expiresAt: now + 7200 }), { now })).reason, "created_in_future");
+});
+
+void test("BRANCH0 bootstrap.beacon validator rejects signed wrong payload mode and payload expiry mismatch", async () => {
+  const now = 1_789_000_000;
+  const valid = await createBetaBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const wrongMode = await resignWrapperWithPatch(valid, (entries) => entries.map((entry) =>
+    entry.key === "payload_mode" ? { key: entry.key, value: "sealed" } : entry
+  ));
+  const expiryMismatch = await resignWrapperWithPatch(valid, (entries) => entries.map((entry) =>
+    entry.key === "payload" ? { key: entry.key, value: patchPayloadExpiry(entry.value, now + 7200) } : entry
+  ));
+
+  assert.equal((await validateBranchTextBootstrapBeacon(wrongMode, { now })).reason, "invalid_payload_mode");
+  assert.equal((await validateBranchTextBootstrapBeacon(expiryMismatch, { now })).reason, "payload_expiry_mismatch");
+});
+
 async function readManifest(): Promise<VectorManifest> {
   const text = await readFile(join(vectorsDir, "manifest.json"), "utf8");
   const manifest: unknown = JSON.parse(text);
@@ -108,6 +193,24 @@ async function readManifest(): Promise<VectorManifest> {
   }
 
   return manifest;
+}
+
+async function assertBootstrapBeaconVectorCoverage(manifest: VectorManifest): Promise<void> {
+  const text = await readFile(join(vectorsDir, manifest.bootstrap_beacon.fixture), "utf8");
+  const vectors: unknown = JSON.parse(text);
+
+  if (!isBootstrapBeaconVectors(vectors)) {
+    throw new Error("invalid bootstrap beacon vectors");
+  }
+
+  const valid = await validateBranchTextBootstrapBeacon(vectors.valid.wrapper, { now: vectors.valid.now });
+  assert.equal(valid.reason, vectors.valid.reason);
+  assert.equal(valid.accepted, true);
+
+  const reasons = new Set(vectors.invalid.map((testCase) => testCase.reason));
+  for (const reason of manifest.bootstrap_beacon.required_invalid_reasons) {
+    assert.equal(reasons.has(reason), true, `missing bootstrap invalid reason ${reason}`);
+  }
 }
 
 async function assertTranscriptCoverage(manifest: VectorManifest): Promise<void> {
@@ -153,6 +256,7 @@ function isManifest(value: unknown): value is VectorManifest {
     readonly status?: unknown;
     readonly profile?: unknown;
     readonly transcripts?: unknown;
+    readonly bootstrap_beacon?: unknown;
     readonly cases?: unknown;
   };
 
@@ -162,6 +266,7 @@ function isManifest(value: unknown): value is VectorManifest {
     candidate.status === "draft" &&
     isVectorProfile(candidate.profile) &&
     isVectorTranscripts(candidate.transcripts) &&
+    isBootstrapBeaconVectorsRef(candidate.bootstrap_beacon) &&
     Array.isArray(candidate.cases) &&
     candidate.cases.every(isVectorCase)
   );
@@ -203,6 +308,82 @@ function isVectorTranscripts(value: unknown): value is VectorTranscripts {
     Array.isArray(candidate.required_kinds) &&
     candidate.required_kinds.every(isTranscriptKind) &&
     candidate.independent_implementation_status === "not-yet-demonstrated"
+  );
+}
+
+function isBootstrapBeaconVectorsRef(value: unknown): value is BootstrapBeaconVectorsRef {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly fixture?: unknown;
+    readonly required_invalid_reasons?: unknown;
+  };
+
+  return (
+    typeof candidate.fixture === "string" &&
+    Array.isArray(candidate.required_invalid_reasons) &&
+    candidate.required_invalid_reasons.every((reason) => typeof reason === "string")
+  );
+}
+
+function isBootstrapBeaconVectors(value: unknown): value is BootstrapBeaconVectors {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly schema?: unknown;
+    readonly protocol?: unknown;
+    readonly valid?: unknown;
+    readonly invalid?: unknown;
+  };
+
+  return (
+    candidate.schema === "branch.bootstrap-beacon-vectors/0" &&
+    candidate.protocol === protocolID &&
+    isBootstrapBeaconValidVector(candidate.valid) &&
+    Array.isArray(candidate.invalid) &&
+    candidate.invalid.every(isBootstrapBeaconInvalidVector)
+  );
+}
+
+function isBootstrapBeaconValidVector(value: unknown): value is BootstrapBeaconVectors["valid"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly name?: unknown;
+    readonly now?: unknown;
+    readonly wrapper?: unknown;
+    readonly reason?: unknown;
+  };
+
+  return (
+    typeof candidate.name === "string" &&
+    typeof candidate.now === "number" &&
+    typeof candidate.wrapper === "string" &&
+    typeof candidate.reason === "string"
+  );
+}
+
+function isBootstrapBeaconInvalidVector(value: unknown): value is BootstrapBeaconVectors["invalid"][number] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly name?: unknown;
+    readonly expect?: unknown;
+    readonly reason?: unknown;
+  };
+
+  return (
+    typeof candidate.name === "string" &&
+    candidate.expect === "reject" &&
+    typeof candidate.reason === "string"
   );
 }
 
@@ -263,6 +444,68 @@ function isTranscriptKind(value: unknown): value is TranscriptKind {
     value === "path_migration_transcript" ||
     value === "relay_restart_transcript"
   );
+}
+
+async function resignWrapperWithPatch(
+  wrapper: string,
+  patch: (entries: readonly CborEntry[]) => readonly CborEntry[]
+): Promise<string> {
+  const existingBytes = decodeBase64URL(wrapper.slice(branchTextWrapperPrefix.length));
+  const existingMap = readCborMap(decodeDeterministicCbor(existingBytes), "signed_event");
+  const unsignedEntries = patch(existingMap.entries.filter((entry) => entry.key !== "signature"));
+  const generated = await globalThis.crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  assert("privateKey" in generated && "publicKey" in generated);
+  const publicKey = new Uint8Array(await globalThis.crypto.subtle.exportKey("raw", generated.publicKey));
+  const patchedEntries = unsignedEntries.map((entry) =>
+    entry.key === "sender"
+      ? { key: "sender", value: cborMap([{ key: "key_alg", value: "ed25519" }, { key: "public_key", value: publicKey }]) }
+      : entry
+  );
+  const unsignedBytes = encodeDeterministicCbor(cborMap(patchedEntries));
+  const signatureInput = concatBytes([new TextEncoder().encode("BRANCH signed event v0\n"), unsignedBytes]);
+  const signature = new Uint8Array(await globalThis.crypto.subtle.sign("Ed25519", generated.privateKey, toArrayBuffer(signatureInput)));
+  const signedBytes = encodeDeterministicCbor(cborMap([...patchedEntries, { key: "signature", value: signature }]));
+  assert(!sameBytes(existingBytes, signedBytes));
+  return `${branchTextWrapperPrefix}${encodeBase64URL(signedBytes)}`;
+}
+
+function patchPayloadExpiry(value: unknown, expiresAt: number): Uint8Array {
+  assert(value instanceof Uint8Array);
+  const payloadMap = readCborMap(decodeDeterministicCbor(value), "payload");
+  const entries = payloadMap.entries.map((entry) =>
+    entry.key === "expires_at" ? { key: entry.key, value: expiresAt } : entry
+  );
+  return encodeDeterministicCbor(cborMap(entries));
+}
+
+function patchSignatureByte(wrapper: string): Uint8Array {
+  const signedBytes = decodeBase64URL(wrapper.slice(branchTextWrapperPrefix.length));
+  const signedMap = readCborMap(decodeDeterministicCbor(signedBytes), "signed_event");
+  const entries = signedMap.entries.map((entry) => {
+    if (entry.key !== "signature") {
+      return entry;
+    }
+    assert(entry.value instanceof Uint8Array);
+    const signature = entry.value.slice();
+    signature[0] = (signature[0] ?? 0) ^ 0xff;
+    return { key: entry.key, value: signature };
+  });
+  return encodeDeterministicCbor(cborMap(entries));
+}
+
+function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
+  const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const output = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 function isIndependentImplementationRequirement(

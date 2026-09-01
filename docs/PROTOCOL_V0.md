@@ -401,29 +401,37 @@ BRANCH0.<base64url(deterministic_cbor(signed_event))>
 Base64url values are unpadded. Carriers may wrap this text in platform-specific
 records, but adapter extraction never changes the signed bytes.
 
+The draft-beta CBOR envelope uses a top-level deterministic map with text-string
+keys. The binary fields `event_id`, `sender.public_key`, `recipient_tag` when
+present, `payload`, and `signature` are CBOR byte strings. The string fields
+`protocol`, `type`, `sender.key_alg`, `payload_mode`, and `signature_alg` are
+CBOR text strings. `created_at` and `expires_at` are CBOR unsigned integers.
+Diagnostic JSON renders those binary fields as unpadded base64url strings only
+for human inspection and fixtures; JSON bytes are never signature input.
+
 ### Field rules
 
 - `protocol` is exactly `branch/connectivity/0`; unknown protocols are ignored
   as unsupported versions during carrier scanning and are never reinterpreted as
   v0.
-- `event_id` is a random 256-bit value encoded as unpadded base64url. It is
-  signed and provides event identity, deduplication, and replay separation.
+- `event_id` is a random 256-bit value. It is signed and provides event
+  identity, deduplication, and replay separation.
 - `type` is a controlled enum. Unknown event types are rejected or ignored with
   a stable unsupported-type reason before payload processing.
 - `sender.key_alg` is `ed25519` for this draft.
-- `sender.public_key` is the 32-byte Ed25519 public signing key encoded as
-  unpadded base64url. It is self-contained sender authentication material, not
-  a server account or carrier identity.
+- `sender.public_key` is the 32-byte Ed25519 public signing key. It is
+  self-contained sender authentication material, not a server account or carrier
+  identity.
 - `recipient_tag` is required for recipient-filtered rendezvous, route, and
   relay capability events. It is absent for public announcement events.
 - `created_at` and `expires_at` are Unix seconds represented as integers where
   `0 <= created_at < expires_at <= 9007199254740991`.
 - `payload_mode` is `sealed` for recipient-specific events. `public` is allowed
   only for explicitly public announcement types.
-- `payload` is opaque bytes to the envelope layer and is encoded as unpadded
-  base64url in diagnostic JSON. Sealed payload encryption must use a reviewed
-  construction specified separately, such as HPKE if accepted; the envelope
-  does not invent ECIES-like or ad hoc cryptography.
+- `payload` is opaque bytes to the envelope layer and is rendered as unpadded
+  base64url only in diagnostic JSON. Sealed payload encryption must use a
+  reviewed construction specified separately, such as HPKE if accepted; the
+  envelope does not invent ECIES-like or ad hoc cryptography.
 - `signature_alg` is `ed25519` for this draft unless a registry decision adds
   another algorithm before publication.
 - `signature` is the 64-byte Ed25519 signature over the domain-separated
@@ -558,6 +566,15 @@ exports, or authentication material. The payload fields are:
 | `mirror_hints` | Optional | Independent PWA mirror hints, never required for identity. |
 | `search_markers` | Required | Public marker strings used to rediscover equivalent records. |
 | `proofs` | Optional | Cross-publication hints or bundle proofs, not authority. |
+
+The draft-beta BootstrapBeacon payload uses a deterministic CBOR map with
+text-string keys. `beacon_id` and `previous_beacon_id` are 32-byte CBOR byte
+strings. `subject`, `issuer`, `protocol_versions`, `capabilities`,
+`search_markers`, and optional public hint fields are bounded text strings,
+arrays, or maps. `sequence`, `issued_at`, and `expires_at` are CBOR unsigned
+integers. The initial beta validator accepts `protocol_versions` only when it
+includes `branch/connectivity/0`, and accepts `search_markers` only when it
+includes `BRANCH0`, `branch/connectivity/0`, and `branch-bootstrap-v0`.
 
 `expires_at` in the payload must match the outer signed envelope expiry. If both
 are present and differ, the beacon is invalid. `issued_at` must not be later

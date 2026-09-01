@@ -1,0 +1,86 @@
+{
+  "schema": "branch.bootstrap-beacon-vectors/0",
+  "protocol": "branch/connectivity/0",
+  "encoding": "cbor.det.rfc8949",
+  "signature_algorithm": "ed25519",
+  "signature_domain": "BRANCH signed event v0\\n",
+  "generated_at": 1789000000,
+  "test_key": {
+    "seed_base64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "public_key_base64url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg"
+  },
+  "valid": {
+    "name": "valid-bootstrap-beacon",
+    "now": 1789000000,
+    "expires_at": 1789086400,
+    "wrapper": "BRANCH0.qmR0eXBlcGJvb3RzdHJhcC5iZWFjb25mc2VuZGVyomdrZXlfYWxnZ2VkMjU1MTlqcHVibGljX2tleVggA6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhncGF5bG9hZFkBYKlmaXNzdWVyeDNlZDI1NTE5OkE2RUh2X1BPRUw0ZGNOMFk1MHZBbVdmazFqQ2JwUTFmSGR5R1pCSlZNYmdnc3ViamVjdHgzZWQyNTUxOTpBNkVIdl9QT0VMNGRjTjBZNTB2QW1XZmsxakNicFExZkhkeUdaQkpWTWJnaHNlcXVlbmNlAWliZWFjb25faWRYIEBBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5faWlzc3VlZF9hdBpqoflAamV4cGlyZXNfYXQaaqNKwGxjYXBhYmlsaXRpZXOBd3NlYXJjaC5kaXJlY3QtYnJvd3Nlci8wbnNlYXJjaF9tYXJrZXJzg2dCUkFOQ0gwdWJyYW5jaC9jb25uZWN0aXZpdHkvMHNicmFuY2gtYm9vdHN0cmFwLXYwcXByb3RvY29sX3ZlcnNpb25zgXVicmFuY2gvY29ubmVjdGl2aXR5LzBoZXZlbnRfaWRYICAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4_aHByb3RvY29sdWJyYW5jaC9jb25uZWN0aXZpdHkvMGlzaWduYXR1cmVYQP_0cIP5-WOEB6iieSvnuUOxrQ9wZl-J5Ao5TLoyYPDs9ELk0pp8ZptJW4OYIFzglO2CvqQGGCIvYGJxt3mu8gtqY3JlYXRlZF9hdBpqoflAamV4cGlyZXNfYXQaaqNKwGxwYXlsb2FkX21vZGVmcHVibGljbXNpZ25hdHVyZV9hbGdnZWQyNTUxOQ",
+    "signed_event_base64url": "qmR0eXBlcGJvb3RzdHJhcC5iZWFjb25mc2VuZGVyomdrZXlfYWxnZ2VkMjU1MTlqcHVibGljX2tleVggA6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhncGF5bG9hZFkBYKlmaXNzdWVyeDNlZDI1NTE5OkE2RUh2X1BPRUw0ZGNOMFk1MHZBbVdmazFqQ2JwUTFmSGR5R1pCSlZNYmdnc3ViamVjdHgzZWQyNTUxOTpBNkVIdl9QT0VMNGRjTjBZNTB2QW1XZmsxakNicFExZkhkeUdaQkpWTWJnaHNlcXVlbmNlAWliZWFjb25faWRYIEBBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5faWlzc3VlZF9hdBpqoflAamV4cGlyZXNfYXQaaqNKwGxjYXBhYmlsaXRpZXOBd3NlYXJjaC5kaXJlY3QtYnJvd3Nlci8wbnNlYXJjaF9tYXJrZXJzg2dCUkFOQ0gwdWJyYW5jaC9jb25uZWN0aXZpdHkvMHNicmFuY2gtYm9vdHN0cmFwLXYwcXByb3RvY29sX3ZlcnNpb25zgXVicmFuY2gvY29ubmVjdGl2aXR5LzBoZXZlbnRfaWRYICAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4_aHByb3RvY29sdWJyYW5jaC9jb25uZWN0aXZpdHkvMGlzaWduYXR1cmVYQP_0cIP5-WOEB6iieSvnuUOxrQ9wZl-J5Ao5TLoyYPDs9ELk0pp8ZptJW4OYIFzglO2CvqQGGCIvYGJxt3mu8gtqY3JlYXRlZF9hdBpqoflAamV4cGlyZXNfYXQaaqNKwGxwYXlsb2FkX21vZGVmcHVibGljbXNpZ25hdHVyZV9hbGdnZWQyNTUxOQ",
+    "signature_input_base64url": "QlJBTkNIIHNpZ25lZCBldmVudCB2MAqpZHR5cGVwYm9vdHN0cmFwLmJlYWNvbmZzZW5kZXKiZ2tleV9hbGdnZWQyNTUxOWpwdWJsaWNfa2V5WCADoQe_884Qvh1w3RjnS8CZZ-TWMJulDV8d3IZkElUxuGdwYXlsb2FkWQFgqWZpc3N1ZXJ4M2VkMjU1MTk6QTZFSHZfUE9FTDRkY04wWTUwdkFtV2ZrMWpDYnBRMWZIZHlHWkJKVk1iZ2dzdWJqZWN0eDNlZDI1NTE5OkE2RUh2X1BPRUw0ZGNOMFk1MHZBbVdmazFqQ2JwUTFmSGR5R1pCSlZNYmdoc2VxdWVuY2UBaWJlYWNvbl9pZFggQEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9paXNzdWVkX2F0Gmqh-UBqZXhwaXJlc19hdBpqo0rAbGNhcGFiaWxpdGllc4F3c2VhcmNoLmRpcmVjdC1icm93c2VyLzBuc2VhcmNoX21hcmtlcnODZ0JSQU5DSDB1YnJhbmNoL2Nvbm5lY3Rpdml0eS8wc2JyYW5jaC1ib290c3RyYXAtdjBxcHJvdG9jb2xfdmVyc2lvbnOBdWJyYW5jaC9jb25uZWN0aXZpdHkvMGhldmVudF9pZFggICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9ocHJvdG9jb2x1YnJhbmNoL2Nvbm5lY3Rpdml0eS8wamNyZWF0ZWRfYXQaaqH5QGpleHBpcmVzX2F0GmqjSsBscGF5bG9hZF9tb2RlZnB1YmxpY21zaWduYXR1cmVfYWxnZ2VkMjU1MTk",
+    "signature_base64url": "__Rwg_n5Y4QHqKJ5K-e5Q7GtD3BmX4nkCjlMujJg8Oz0QuTSmnxmm0lbg5ggXOCU7YK-pAYYIi9gYnG3ea7yCw",
+    "expect": "accept",
+    "reason": "accepted"
+  },
+  "invalid": [
+    {
+      "name": "malformed-wrapper",
+      "construction": "literal",
+      "wrapper": "BRANCH0.invalid=",
+      "expect": "reject",
+      "reason": "malformed_wrapper"
+    },
+    {
+      "name": "non-canonical-cbor",
+      "construction": "rewrite signed-event top-level map length using additional-info 24",
+      "expect": "reject",
+      "reason": "non_canonical_cbor"
+    },
+    {
+      "name": "invalid-signature",
+      "construction": "flip one byte inside the signature byte string",
+      "expect": "reject",
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "wrong-protocol",
+      "construction": "resign with protocol branch/connectivity/999",
+      "expect": "reject",
+      "reason": "unsupported_protocol"
+    },
+    {
+      "name": "wrong-event-type",
+      "construction": "resign with type relay.announce",
+      "expect": "reject",
+      "reason": "unsupported_event_type"
+    },
+    {
+      "name": "wrong-payload-mode",
+      "construction": "resign with payload_mode sealed",
+      "expect": "reject",
+      "reason": "invalid_payload_mode"
+    },
+    {
+      "name": "recipient-tag-present",
+      "construction": "resign with recipient_tag present",
+      "expect": "reject",
+      "reason": "recipient_tag_present"
+    },
+    {
+      "name": "expired",
+      "construction": "validate valid wrapper at expires_at + 1",
+      "expect": "reject",
+      "reason": "expired"
+    },
+    {
+      "name": "future-created",
+      "construction": "resign with created_at beyond skew",
+      "expect": "reject",
+      "reason": "created_in_future"
+    },
+    {
+      "name": "payload-expiry-mismatch",
+      "construction": "resign with payload expires_at different from outer expires_at",
+      "expect": "reject",
+      "reason": "payload_expiry_mismatch"
+    }
+  ]
+}
