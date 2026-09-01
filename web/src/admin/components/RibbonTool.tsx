@@ -138,6 +138,7 @@ export function RibbonTool(): React.JSX.Element {
 
   async function onDecode(): Promise<void> {
     try {
+      setDiagnostics(createDiagnostics("decoding", "status-warn", { mode: ribbon.visualMode }));
       const image = await loadDecodeImage();
       const result = await decodeRibbonImageAutoWithWorker(image);
       setDecodedWrapper(result.wrapper);

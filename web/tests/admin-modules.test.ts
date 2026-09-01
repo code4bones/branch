@@ -15,7 +15,7 @@ import {
   type TransformImageSummary
 } from "../src/admin/transform-lab.js";
 import { boxBlur, fitInsideWithPadding, sharpen } from "../src/visual/corpus.js";
-import { computeModulePitch, computePlacement } from "../src/visual/geometry.js";
+import { computeModulePitch, computePlacement, type RibbonPlacement } from "../src/visual/geometry.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
 import { generateRibbonSymbol, symbolSizePixels } from "../src/visual/ribbon-render.js";
 import { extractStegoTintCandidates } from "../src/visual/ribbon-tint.js";
@@ -224,8 +224,32 @@ void test("auto decode candidate search is bounded and does not need UI geometry
 
   assert(candidates.length > 1);
   assert(candidates.length <= maxAutoDecodeCandidates);
-  assert.equal(candidates[0]?.maxDirectPixels, 1000 * 1500);
+  const firstCandidate = candidates[0] ?? failCandidate();
+  assert.equal(firstCandidate.carrierSize, 720);
+  assert.equal(firstCandidate.maxDirectPixels, 1);
+  assert.equal(firstCandidate.preferredVersion, 10);
   assert.equal(new Set(candidates.map((candidate) => candidate.placement)).size, 5);
+});
+
+void test("auto decode prioritizes default generated tint images", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const image = makePlacedStegoImage(
+    1000,
+    1500,
+    symbol.modules,
+    symbol.diagnostics.modulePitch,
+    quietZone,
+    "bottom-right"
+  );
+  const firstCandidate = makeAutoDecodeCandidates(image.width, image.height)[0];
+
+  assert.equal((firstCandidate ?? failCandidate()).preferredVersion, symbol.diagnostics.sourceSymbolVersion);
+  const decoded = decodeRibbonImage(image, firstCandidate ?? failCandidate());
+
+  assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
+  assert.equal(decoded.wrapper, defaultBranchWrapper);
 });
 
 void test("transform lab rgba helpers preserve bounds", () => {
@@ -263,6 +287,32 @@ function makeStegoImage(
   return { width: size, height: size, data };
 }
 
+function makePlacedStegoImage(
+  width: number,
+  height: number,
+  modules: { readonly size: number; get(x: number, y: number): unknown },
+  modulePitch: number,
+  quietZone: number,
+  placement: RibbonPlacement
+): RibbonImageData {
+  const image = makeNoCarrierImage(width, height);
+  const symbolSize = symbolSizePixels(modules.size, quietZone, modulePitch);
+  const position = computePlacement(placement, width, height, symbolSize);
+
+  for (let moduleY = 0; moduleY < modules.size; moduleY += 1) {
+    for (let moduleX = 0; moduleX < modules.size; moduleX += 1) {
+      const bit = modules.get(moduleX, moduleY) ? 1 : 0;
+      for (let y = position.y + (moduleY + quietZone) * modulePitch; y < position.y + (moduleY + quietZone + 1) * modulePitch; y += 1) {
+        for (let x = position.x + (moduleX + quietZone) * modulePitch; x < position.x + (moduleX + quietZone + 1) * modulePitch; x += 1) {
+          image.data[(y * width + x) * 4 + 2] = (image.data[(y * width + x) * 4 + 2] ?? 0) & 0xfe | bit;
+        }
+      }
+    }
+  }
+
+  return image;
+}
+
 function makeNoCarrierImage(width: number, height: number): RibbonImageData {
   const data = new Uint8ClampedArray(width * height * 4);
   for (let index = 0; index < data.length; index += 4) {
@@ -282,6 +332,10 @@ function copyToArrayBuffer(data: Uint8ClampedArray): ArrayBuffer {
 
 function failPreset(): never {
   throw new Error("missing test preset");
+}
+
+function failCandidate(): never {
+  throw new Error("missing auto decode candidate");
 }
 
 function readZipEntryPaths(archive: Uint8Array): readonly string[] {

@@ -3,10 +3,12 @@ import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/r
 import type { RibbonPlacement } from "../visual/geometry.js";
 import type { RibbonImageData } from "../visual/ribbon-image.js";
 
-export const maxAutoDecodeCandidates = 24;
+export const maxAutoDecodeCandidates = 48;
 
 const autoPlacements: readonly RibbonPlacement[] = ["bottom-right", "center", "top-left", "top-right", "bottom-left"];
 const autoQuietZones: readonly number[] = [8, 4, 12];
+const autoPreferredVersions: readonly number[] = [10, 11, 9, 12, 8, 13];
+const directDecodeMaxPixels = 1024 * 1024;
 
 export async function decodeRibbonImageAutoWithWorker(
   image: RibbonImageData,
@@ -35,16 +37,20 @@ export function makeAutoDecodeCandidates(width: number, height: number): readonl
   }
 
   const minSide = Math.min(width, height);
-  const candidates: DecodeRibbonImageOptions[] = [
-    {
+  const candidates: DecodeRibbonImageOptions[] = [];
+
+  appendFastTintCandidates(candidates, minSide);
+
+  if (width * height <= directDecodeMaxPixels) {
+    candidates.push({
       quietZone: 8,
       carrierSize: boundCarrierSize(minSide),
       placement: "bottom-right",
-      maxDirectPixels: Math.min(width * height, 4096 * 4096),
+      maxDirectPixels: width * height,
       maxVersionAttempts: 6,
       maxTintCandidates: 24
-    }
-  ];
+    });
+  }
 
   for (const carrierSize of estimateCarrierSizes(minSide)) {
     for (const quietZone of autoQuietZones) {
@@ -75,13 +81,34 @@ export function makeAutoDecodeBaseOptions(width: number, height: number): Decode
   };
 }
 
+function appendFastTintCandidates(candidates: DecodeRibbonImageOptions[], minSide: number): void {
+  for (const carrierSize of estimateCarrierSizes(minSide)) {
+    for (const quietZone of autoQuietZones) {
+      for (const placement of autoPlacements) {
+        for (const preferredVersion of autoPreferredVersions) {
+          candidates.push({
+            quietZone,
+            carrierSize,
+            placement,
+            preferredVersion,
+            maxDirectPixels: 1,
+            maxVersionAttempts: 1,
+            maxTintCandidates: 2
+          });
+        }
+      }
+    }
+  }
+}
+
 function estimateCarrierSizes(minSide: number): readonly number[] {
   return uniqueNumbers([
+    boundCarrierSize(720),
+    boundCarrierSize(Math.round(minSide * 0.72)),
+    boundCarrierSize(640),
     boundCarrierSize(minSide),
     boundCarrierSize(Math.round(minSide * 0.75)),
-    boundCarrierSize(Math.round(minSide * 0.5)),
-    boundCarrierSize(720),
-    boundCarrierSize(640)
+    boundCarrierSize(Math.round(minSide * 0.5))
   ]);
 }
 
@@ -93,7 +120,15 @@ function dedupeDecodeCandidates(candidates: readonly DecodeRibbonImageOptions[])
   const seen = new Set<string>();
   const unique: DecodeRibbonImageOptions[] = [];
   for (const candidate of candidates) {
-    const key = `${String(candidate.quietZone)}:${String(candidate.carrierSize)}:${candidate.placement}:${String(candidate.maxDirectPixels)}`;
+    const key = [
+      String(candidate.quietZone),
+      String(candidate.carrierSize),
+      candidate.placement,
+      String(candidate.maxDirectPixels),
+      String(candidate.maxVersionAttempts),
+      String(candidate.maxTintCandidates),
+      String(candidate.preferredVersion ?? "")
+    ].join(":");
     if (seen.has(key)) {
       continue;
     }

@@ -11,6 +11,7 @@ const ribbonToolPath = resolve(process.cwd(), "src/admin/components/RibbonTool.t
 const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.tsx");
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
 const defaultsPath = resolve(process.cwd(), "src/admin/defaults.ts");
+const canvasImagePath = resolve(process.cwd(), "src/visual/canvas-image.ts");
 const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
 const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
 const ribbonDecodeClientPath = resolve(process.cwd(), "src/admin/ribbon-decode-client.ts");
@@ -87,6 +88,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
 });
 
 void test("admin ribbon logic is split into typed visual modules", async () => {
+  const canvasImage = await readFile(canvasImagePath, "utf8");
   const render = await readFile(ribbonRenderPath, "utf8");
   const decode = await readFile(ribbonDecodePath, "utf8");
   const decodeClient = await readFile(ribbonDecodeClientPath, "utf8");
@@ -116,6 +118,9 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(transformLab, /branch\.transform-lab\/0/);
   assert.match(transformLabRunner, /canvas\.toBlob/);
   assert.match(transformLabRunner, /request\.decode\(request\.image, request\.decodeOptions, request\.signal\)/);
+  assert.match(canvasImage, /willReadFrequently:\s*true/);
+  assert.match(render, /willReadFrequently:\s*true/);
+  assert.match(transformLabRunner, /willReadFrequently:\s*true/);
   assert.match(tint, /drawTintQR/);
   assert.match(tint, /extractStegoTintCandidates/);
   assert.match(tint, /extractChromaTintCandidates/);

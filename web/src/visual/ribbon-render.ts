@@ -180,7 +180,7 @@ function ensureCarrierFits(symbolSize: number, outputWidth: number, outputHeight
 }
 
 function requireCanvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
-  const context = canvas.getContext("2d");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
   if (context === null) {
     throw new Error("canvas unavailable");
   }
