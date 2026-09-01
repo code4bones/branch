@@ -1,7 +1,7 @@
 {
   "schema": "branch.conformance.transcripts/0",
   "protocol": "branch/connectivity/0",
-  "profile_multihash": "uEiAsgRWhrZFSEDiQjTDP1jrQ4elBW8uK0Q_Cg1_rKK06qw",
+  "profile_multihash": "uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA",
   "cases": [
     {
       "name": "negotiate-known-v0-profile",

@@ -25,9 +25,16 @@ import { branchTextWrapperPrefix, isBranchTextWrapper } from "./text-carrier.js"
 const signatureDomain = "BRANCH signed event v0\n";
 const encoder = new TextEncoder();
 const signatureDomainBytes = encoder.encode(signatureDomain);
-const requiredSearchMarkers = ["BRANCH0", protocolID, "branch-bootstrap-v0"] as const;
 const defaultMaxFutureSkewSeconds = 300;
 const defaultLifetimeSeconds = 7 * 24 * 60 * 60;
+const maxRelayEndpoints = 8;
+const maxRelayEndpointUriBytes = 512;
+const maxRelayEndpointTransportBytes = 32;
+const maxBootstrapNameBytes = 128;
+
+export const defaultBootstrapRelayEndpointUri = "wss://branch.undoo.ru:443/relay/v0" as const;
+export const defaultBootstrapProfileMultihashes = ["uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA"] as const;
+export const defaultBootstrapRelayCapabilities = ["relay.forward.live/0", "route.relay.wss/0"] as const;
 
 export type BootstrapBeaconValidationReason =
   | "accepted"
@@ -79,20 +86,26 @@ export interface BootstrapBeaconSender {
 
 export interface BootstrapBeaconPayload {
   readonly beaconId: Uint8Array;
-  readonly subject: string;
-  readonly issuer: string;
   readonly sequence: number;
   readonly issuedAt: number;
   readonly expiresAt: number;
   readonly previousBeaconId: Uint8Array | null;
   readonly protocolVersions: readonly string[];
-  readonly capabilities: readonly string[];
-  readonly searchMarkers: readonly string[];
+  readonly profileMultihashes: readonly string[];
+  readonly relayCapabilities: readonly string[];
+  readonly relayEndpoints: readonly BootstrapRelayEndpoint[];
+}
+
+export interface BootstrapRelayEndpoint {
+  readonly transport: string;
+  readonly uri: string;
+  readonly priority: number;
 }
 
 export interface BootstrapBeaconValidationOptions {
   readonly now?: number;
   readonly maxFutureSkewSeconds?: number;
+  readonly supportedProfileMultihashes?: readonly string[];
 }
 
 export interface BootstrapBeaconValidationResult {
@@ -105,9 +118,12 @@ export interface CreateBootstrapBeaconOptions {
   readonly now?: number;
   readonly expiresAt?: number;
   readonly sequence?: number;
-  readonly subject?: string;
-  readonly capabilities?: readonly string[];
-  readonly searchMarkers?: readonly string[];
+  readonly beaconId?: Uint8Array;
+  readonly eventId?: Uint8Array;
+  readonly protocolVersions?: readonly string[];
+  readonly profileMultihashes?: readonly string[];
+  readonly relayCapabilities?: readonly string[];
+  readonly relayEndpoints?: readonly BootstrapRelayEndpoint[];
 }
 
 export async function validateBranchTextBootstrapBeacon(
@@ -147,7 +163,7 @@ export async function validateBranchTextBootstrapBeacon(
       return reject("created_in_future");
     }
 
-    const payload = readBootstrapPayload(envelope.payloadBytes);
+    const payload = readBootstrapPayload(envelope.payloadBytes, options.supportedProfileMultihashes ?? defaultBootstrapProfileMultihashes);
     if (payload.expiresAt !== envelope.expiresAt) {
       return reject("payload_expiry_mismatch");
     }
@@ -182,29 +198,33 @@ export async function assertValidBranchTextBootstrapBeacon(
   return result.beacon;
 }
 
-export async function createBetaBootstrapBeaconWrapper(options: CreateBootstrapBeaconOptions = {}): Promise<string> {
+export async function createBootstrapBeaconWrapper(options: CreateBootstrapBeaconOptions = {}): Promise<string> {
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const expiresAt = options.expiresAt ?? now + defaultLifetimeSeconds;
   const keyPair = await generateEd25519KeyPair();
   const publicKeyBytes = new Uint8Array(await globalThis.crypto.subtle.exportKey("raw", keyPair.publicKey));
-  const subject = options.subject ?? `ed25519:${encodeBase64URL(publicKeyBytes)}`;
-  const capabilities = options.capabilities ?? ["search.direct-browser/0"];
-  const searchMarkers = options.searchMarkers ?? requiredSearchMarkers;
+  const protocolVersions = normalizeOrderedTextSet(options.protocolVersions ?? [protocolID], "protocol_versions");
+  const profileMultihashes = normalizeOrderedTextSet(options.profileMultihashes ?? defaultBootstrapProfileMultihashes, "profile_multihashes");
+  const relayCapabilities = normalizeOrderedTextSet(options.relayCapabilities ?? defaultBootstrapRelayCapabilities, "relay_capabilities");
+  const relayEndpoints = normalizeRelayEndpoints(options.relayEndpoints ?? [{
+    transport: "wss",
+    uri: defaultBootstrapRelayEndpointUri,
+    priority: 0
+  }]);
   const payloadBytes = encodeBootstrapPayload({
-    beaconId: randomBytes(32),
-    subject,
-    issuer: subject,
+    beaconId: options.beaconId ?? randomBytes(32),
     sequence: options.sequence ?? 1,
     issuedAt: now,
     expiresAt,
     previousBeaconId: null,
-    protocolVersions: [protocolID],
-    capabilities,
-    searchMarkers
+    protocolVersions,
+    profileMultihashes,
+    relayCapabilities,
+    relayEndpoints
   });
   const unsignedEnvelope = {
     protocol: protocolID,
-    eventId: randomBytes(32),
+    eventId: options.eventId ?? randomBytes(32),
     type: "bootstrap.beacon",
     sender: {
       keyAlg: "ed25519",
@@ -226,19 +246,20 @@ export async function createBetaBootstrapBeaconWrapper(options: CreateBootstrapB
 export function encodeBootstrapPayload(payload: BootstrapBeaconPayload): Uint8Array {
   const entries: CborEntry[] = [
     { key: "beacon_id", value: payload.beaconId },
-    { key: "subject", value: payload.subject },
-    { key: "issuer", value: payload.issuer },
     { key: "sequence", value: payload.sequence },
     { key: "issued_at", value: payload.issuedAt },
     { key: "expires_at", value: payload.expiresAt },
     { key: "protocol_versions", value: payload.protocolVersions },
-    { key: "search_markers", value: payload.searchMarkers }
+    { key: "profile_multihashes", value: payload.profileMultihashes },
+    { key: "relay_capabilities", value: payload.relayCapabilities },
+    { key: "relay_endpoints", value: payload.relayEndpoints.map((endpoint) => cborMap([
+      { key: "transport", value: endpoint.transport },
+      { key: "uri", value: endpoint.uri },
+      { key: "priority", value: endpoint.priority }
+    ])) }
   ];
   if (payload.previousBeaconId !== null) {
     entries.push({ key: "previous_beacon_id", value: payload.previousBeaconId });
-  }
-  if (payload.capabilities.length > 0) {
-    entries.push({ key: "capabilities", value: payload.capabilities });
   }
   return encodeDeterministicCbor(cborMap(entries));
 }
@@ -296,38 +317,39 @@ function readSender(map: CborMap): BootstrapBeaconSender {
   };
 }
 
-function readBootstrapPayload(bytes: Uint8Array): BootstrapBeaconPayload {
+function readBootstrapPayload(bytes: Uint8Array, supportedProfileMultihashes: readonly string[]): BootstrapBeaconPayload {
   if (bytes.byteLength > maxCborBytes) {
     throw new Error("payload_oversized");
   }
   const payloadMap = readCborMap(decodeCborForValidation(bytes), "bootstrap_payload");
   rejectUnknownEntries(payloadMap, [
     "beacon_id",
-    "subject",
-    "issuer",
     "sequence",
     "issued_at",
     "expires_at",
     "previous_beacon_id",
     "revokes",
     "protocol_versions",
-    "capabilities",
+    "profile_multihashes",
+    "relay_capabilities",
+    "relay_endpoints",
     "rendezvous_boards",
-    "relay_announcements",
     "mirror_hints",
-    "search_markers",
     "proofs"
   ]);
-  const protocolVersions = readTextArray(getRequiredEntry(payloadMap, "protocol_versions"), "protocol_versions", 8);
-  const searchMarkers = readTextArray(getRequiredEntry(payloadMap, "search_markers"), "search_markers", 16);
-  if (!protocolVersions.includes(protocolID) || !requiredSearchMarkers.every((marker) => searchMarkers.includes(marker))) {
+  const protocolVersions = readOrderedUniqueTextArray(getRequiredEntry(payloadMap, "protocol_versions"), "protocol_versions", 8);
+  const profileMultihashes = readOrderedUniqueTextArray(getRequiredEntry(payloadMap, "profile_multihashes"), "profile_multihashes", 8);
+  const relayCapabilities = readOrderedUniqueTextArray(getRequiredEntry(payloadMap, "relay_capabilities"), "relay_capabilities", 32);
+  const relayEndpoints = readRelayEndpoints(getRequiredEntry(payloadMap, "relay_endpoints"));
+  if (!protocolVersions.includes(protocolID)) {
+    throw new Error("payload_invalid");
+  }
+  if (!hasSupportedProfile(profileMultihashes, supportedProfileMultihashes)) {
     throw new Error("payload_invalid");
   }
   validateOptionalPublicValues(payloadMap);
   return {
     beaconId: readBytes(getRequiredEntry(payloadMap, "beacon_id"), "beacon_id", 32),
-    subject: readText(getRequiredEntry(payloadMap, "subject"), "subject"),
-    issuer: readText(getRequiredEntry(payloadMap, "issuer"), "issuer"),
     sequence: readUint(getRequiredEntry(payloadMap, "sequence"), "sequence"),
     issuedAt: readTimestamp(getRequiredEntry(payloadMap, "issued_at"), "issued_at"),
     expiresAt: readTimestamp(getRequiredEntry(payloadMap, "expires_at"), "expires_at"),
@@ -335,11 +357,153 @@ function readBootstrapPayload(bytes: Uint8Array): BootstrapBeaconPayload {
       ? readBytes(getRequiredEntry(payloadMap, "previous_beacon_id"), "previous_beacon_id", 32)
       : null,
     protocolVersions,
-    capabilities: hasEntry(payloadMap, "capabilities")
-      ? readTextArray(getRequiredEntry(payloadMap, "capabilities"), "capabilities", 32)
-      : [],
-    searchMarkers
+    profileMultihashes,
+    relayCapabilities,
+    relayEndpoints
   };
+}
+
+function readOrderedUniqueTextArray(value: CborValue, key: string, maxItems: number): readonly string[] {
+  const values = readTextArray(value, key, maxItems);
+  const seen = new Set<string>();
+  let previous = "";
+  for (const item of values) {
+    if (encoder.encode(item).byteLength > maxBootstrapNameBytes) {
+      throw new Error("payload_invalid");
+    }
+    if (seen.has(item) || item < previous) {
+      throw new Error("payload_invalid");
+    }
+    seen.add(item);
+    previous = item;
+  }
+  return values;
+}
+
+function readRelayEndpoints(value: CborValue): readonly BootstrapRelayEndpoint[] {
+  if (!isCborArray(value) || value.length === 0 || value.length > maxRelayEndpoints) {
+    throw new Error("payload_invalid");
+  }
+  const seen = new Set<string>();
+  let previousPriority = -1;
+  let supportedEndpointCount = 0;
+  const endpoints = value.map((entry) => {
+    const endpointMap = readCborMap(entry, "relay_endpoint");
+    rejectUnknownEntries(endpointMap, ["transport", "uri", "priority"]);
+    const transport = readBoundedEndpointTransport(getRequiredEntry(endpointMap, "transport"));
+    const uri = readBoundedEndpointUri(getRequiredEntry(endpointMap, "uri"));
+    const priority = readUint(getRequiredEntry(endpointMap, "priority"), "priority");
+    if (priority < previousPriority) {
+      throw new Error("payload_invalid");
+    }
+    previousPriority = priority;
+    const duplicateKey = `${transport}\u0000${uri}`;
+    if (seen.has(duplicateKey)) {
+      throw new Error("payload_invalid");
+    }
+    seen.add(duplicateKey);
+    if (transport === "wss") {
+      validateWssEndpointUri(uri);
+      supportedEndpointCount += 1;
+    }
+    return { transport, uri, priority };
+  });
+  if (supportedEndpointCount === 0) {
+    throw new Error("payload_invalid");
+  }
+  return endpoints;
+}
+
+function normalizeOrderedTextSet(values: readonly string[], key: string): readonly string[] {
+  const normalized = [...values].sort();
+  const seen = new Set<string>();
+  for (const value of normalized) {
+    if (value.length === 0 || encoder.encode(value).byteLength > maxBootstrapNameBytes || seen.has(value)) {
+      throw new Error(`invalid_${key}`);
+    }
+    seen.add(value);
+  }
+  return normalized;
+}
+
+function normalizeRelayEndpoints(endpoints: readonly BootstrapRelayEndpoint[]): readonly BootstrapRelayEndpoint[] {
+  if (endpoints.length === 0 || endpoints.length > maxRelayEndpoints) {
+    throw new Error("invalid_relay_endpoints");
+  }
+  const ordered = [...endpoints]
+    .map((endpoint) => ({
+      transport: endpoint.transport,
+      uri: endpoint.uri,
+      priority: endpoint.priority
+    }))
+    .sort((left, right) => left.priority - right.priority || left.transport.localeCompare(right.transport) || left.uri.localeCompare(right.uri));
+  return readRelayEndpoints(ordered.map((endpoint) => cborMap([
+    { key: "transport", value: endpoint.transport },
+    { key: "uri", value: endpoint.uri },
+    { key: "priority", value: endpoint.priority }
+  ])));
+}
+
+function readBoundedEndpointTransport(value: CborValue): string {
+  const transport = readText(value, "transport");
+  if (encoder.encode(transport).byteLength > maxRelayEndpointTransportBytes || !/^[a-z][a-z0-9.+-]*$/.test(transport)) {
+    throw new Error("payload_invalid");
+  }
+  return transport;
+}
+
+function readBoundedEndpointUri(value: CborValue): string {
+  const uri = readText(value, "uri");
+  if (encoder.encode(uri).byteLength > maxRelayEndpointUriBytes) {
+    throw new Error("payload_invalid");
+  }
+  return uri;
+}
+
+function validateWssEndpointUri(uri: string): void {
+  const explicitPort = readExplicitPort(uri);
+  if (explicitPort === null || explicitPort < 1 || explicitPort > 65535) {
+    throw new Error("payload_invalid");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    throw new Error("payload_invalid");
+  }
+  if (
+    parsed.protocol !== "wss:" ||
+    parsed.hostname === "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new Error("payload_invalid");
+  }
+}
+
+function readExplicitPort(uri: string): number | null {
+  if (!uri.startsWith("wss://")) {
+    return null;
+  }
+  const authorityEnd = uri.slice(6).search(/[/?#]/);
+  const authority = authorityEnd === -1 ? uri.slice(6) : uri.slice(6, authorityEnd + 6);
+  if (authority.includes("@")) {
+    return null;
+  }
+  const match = authority.startsWith("[")
+    ? authority.match(/^\[[^\]]+\]:(\d+)$/)
+    : authority.match(/^[^:]+:(\d+)$/);
+  if (match === null) {
+    return null;
+  }
+  const port = Number.parseInt(match[1] ?? "", 10);
+  return Number.isSafeInteger(port) ? port : null;
+}
+
+function hasSupportedProfile(profileMultihashes: readonly string[], supportedProfileMultihashes: readonly string[]): boolean {
+  const supported = new Set(supportedProfileMultihashes);
+  return profileMultihashes.some((profileMultihash) => supported.has(profileMultihash));
 }
 
 function rejectEnvelopeUnknownEntries(map: CborMap): void {
@@ -388,7 +552,7 @@ function unsignedEnvelopeEntries(envelope: Omit<BootstrapBeaconEnvelope, "signat
 }
 
 function validateOptionalPublicValues(map: CborMap): void {
-  for (const key of ["revokes", "rendezvous_boards", "relay_announcements", "mirror_hints", "proofs"]) {
+  for (const key of ["revokes", "rendezvous_boards", "mirror_hints", "proofs"]) {
     if (hasEntry(map, key)) {
       validateBoundedPublicValue(getRequiredEntry(map, key), 0);
     }

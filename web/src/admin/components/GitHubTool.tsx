@@ -5,7 +5,7 @@ import { defaultBranchWrapper, githubBundleFilename } from "../defaults.js";
 import { discoverGitHubDropIns, githubDiscoveryConstraints } from "../github-discovery.js";
 import { makeBadgeSnippet, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
 import { useAdminStore } from "../store.js";
-import { createBetaBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
+import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
 
 export function GitHubTool(): React.JSX.Element {
   const outputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -14,6 +14,7 @@ export function GitHubTool(): React.JSX.Element {
   const github = useAdminStore((state) => state.github);
   const setGitHubMode = useAdminStore((state) => state.setGitHubMode);
   const setGitHubRecords = useAdminStore((state) => state.setGitHubRecords);
+  const setGitHubRelayEndpointUri = useAdminStore((state) => state.setGitHubRelayEndpointUri);
   const setGitHubSourceCommit = useAdminStore((state) => state.setGitHubSourceCommit);
   const setGitHubFiles = useAdminStore((state) => state.setGitHubFiles);
   const setGitHubBadgeSnippet = useAdminStore((state) => state.setGitHubBadgeSnippet);
@@ -82,13 +83,19 @@ export function GitHubTool(): React.JSX.Element {
     discoveryAbortRef.current?.abort();
   }
 
-  async function onGenerateBetaBeacon(): Promise<void> {
+  async function onGenerateRelayBeacon(): Promise<void> {
     try {
-      setGitHubStatus("generating beta bootstrap.beacon", "status-warn");
-      const wrapper = await createBetaBootstrapBeaconWrapper();
+      setGitHubStatus("generating relay bootstrap.beacon", "status-warn");
+      const wrapper = await createBootstrapBeaconWrapper({
+        relayEndpoints: [{
+          transport: "wss",
+          uri: github.relayEndpointUri.trim(),
+          priority: 0
+        }]
+      });
       setGitHubMode("live");
       setGitHubRecords(wrapper);
-      setGitHubStatus("beta bootstrap.beacon generated", "status-good");
+      setGitHubStatus("relay bootstrap.beacon generated", "status-good");
     } catch (error) {
       setGitHubStatus(errorMessage(error), "status-bad");
     }
@@ -122,6 +129,18 @@ export function GitHubTool(): React.JSX.Element {
         />
 
         <div className="control-row">
+          <label htmlFor="relay-endpoint-uri">Relay WSS endpoint</label>
+          <input
+            id="relay-endpoint-uri"
+            name="relay-endpoint-uri"
+            type="url"
+            spellCheck={false}
+            value={github.relayEndpointUri}
+            onChange={(event) => { setGitHubRelayEndpointUri(event.currentTarget.value); }}
+          />
+        </div>
+
+        <div className="control-row">
           <label htmlFor="source-commit">Source commit</label>
           <input
             id="source-commit"
@@ -137,9 +156,9 @@ export function GitHubTool(): React.JSX.Element {
         <div className="button-row">
           <button
             type="button"
-            onClick={() => { void onGenerateBetaBeacon(); }}
+            onClick={() => { void onGenerateRelayBeacon(); }}
           >
-            Generate beta beacon
+            Generate relay beacon
           </button>
           <button type="submit">Generate</button>
           <button

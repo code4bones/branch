@@ -36,8 +36,9 @@ their reasoning rather than silently replacing earlier assumptions.
 
 - What default BootstrapBeacon expiry window and republish cadence should v0
   publish for operators?
-- Is `bootstrap.beacon` always one subject per beacon, or can one subject issue
-  a bounded multi-subject bundle directly?
+- Beyond D-BRANCH-029 relay beacons, do mirror, board, or curator bootstrap
+  subjects need separate v0 payload shapes, or should they wait for a later
+  profile?
 - How do sequence numbers work when an operator rotates keys or delegates
   publication to several devices?
 - Should revocation address exact `beacon_id` values, sequence ranges, or both?

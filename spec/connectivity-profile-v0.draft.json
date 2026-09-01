@@ -41,8 +41,45 @@
     "route.direct.webrtc/0",
     "route.relay.wss/0",
     "route.migrate/0",
-    "visual.ribbon-seal/0"
+    "visual.ribbon-block/0.draft"
   ],
+  "bootstrap_beacon_payload": {
+    "relay_identity": "signed_event.sender.public_key",
+    "max_relay_endpoints": 8,
+    "mandatory_browser_transport": "wss",
+    "required_fields": [
+      "beacon_id",
+      "sequence",
+      "issued_at",
+      "expires_at",
+      "protocol_versions",
+      "profile_multihashes",
+      "relay_capabilities",
+      "relay_endpoints"
+    ],
+    "forbidden_fields": [
+      "relay_key",
+      "client_presence",
+      "user_ip",
+      "device_ip",
+      "mailbox",
+      "conversation_state",
+      "turn_password",
+      "session_secret",
+      "cookie",
+      "bearer_token"
+    ],
+    "relay_endpoint": {
+      "required_fields": ["transport", "uri", "priority"],
+      "wss_uri": {
+        "absolute": true,
+        "userinfo": false,
+        "fragment": false,
+        "explicit_port": true,
+        "recommended_port": 443
+      }
+    }
+  },
   "errors": [
     "unsupported_version",
     "unsupported_profile",

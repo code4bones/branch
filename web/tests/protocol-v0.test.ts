@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import {
-  createBetaBootstrapBeaconWrapper,
+  createBootstrapBeaconWrapper,
+  defaultBootstrapProfileMultihashes,
   validateBranchTextBootstrapBeacon
 } from "../src/protocol/v0/bootstrap-beacon.js";
 import { cborMap, decodeDeterministicCbor, encodeDeterministicCbor, readCborMap, sameBytes, type CborEntry } from "../src/protocol/v0/cbor.js";
@@ -131,11 +132,15 @@ void test("draft envelope vectors pass shared conformance checks", async (t) => 
 
 void test("BRANCH0 bootstrap.beacon wrapper validates exact signed CBOR", async () => {
   const now = 1_789_000_000;
-  const wrapper = await createBetaBootstrapBeaconWrapper({
+  const wrapper = await createBootstrapBeaconWrapper({
     now,
     expiresAt: now + 3600,
     sequence: 7,
-    capabilities: ["search.direct-browser/0", "visual.ribbon-block/0.draft"]
+    relayCapabilities: ["route.relay.wss/0", "relay.forward.live/0"],
+    relayEndpoints: [
+      { transport: "wss", uri: "wss://relay-two.example:443/relay/v0", priority: 10 },
+      { transport: "wss", uri: "wss://relay.example:443/relay/v0", priority: 0 }
+    ]
   });
   const result = await validateBranchTextBootstrapBeacon(wrapper, { now });
 
@@ -150,12 +155,18 @@ void test("BRANCH0 bootstrap.beacon wrapper validates exact signed CBOR", async 
   assert.equal(beacon.envelope.payloadMode, "public");
   assert.equal(beacon.payload.sequence, 7);
   assert.equal(beacon.payload.expiresAt, now + 3600);
-  assert.deepEqual(beacon.payload.searchMarkers, ["BRANCH0", protocolID, "branch-bootstrap-v0"]);
+  assert.deepEqual(beacon.payload.protocolVersions, [protocolID]);
+  assert.deepEqual(beacon.payload.profileMultihashes, defaultBootstrapProfileMultihashes);
+  assert.deepEqual(beacon.payload.relayCapabilities, ["relay.forward.live/0", "route.relay.wss/0"]);
+  assert.deepEqual(beacon.payload.relayEndpoints, [
+    { transport: "wss", uri: "wss://relay.example:443/relay/v0", priority: 0 },
+    { transport: "wss", uri: "wss://relay-two.example:443/relay/v0", priority: 10 }
+  ]);
 });
 
 void test("BRANCH0 bootstrap.beacon validator rejects malformed and stale records with stable reasons", async () => {
   const now = 1_789_000_000;
-  const valid = await createBetaBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const valid = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
   const signedBytes = decodeBase64URL(valid.slice(branchTextWrapperPrefix.length));
   const mutatedSignature = patchSignatureByte(valid);
   const nonCanonical = new Uint8Array(signedBytes.byteLength + 1);
@@ -167,12 +178,12 @@ void test("BRANCH0 bootstrap.beacon validator rejects malformed and stale record
   assert.equal((await validateBranchTextBootstrapBeacon(`${branchTextWrapperPrefix}${encodeBase64URL(nonCanonical)}`, { now })).reason, "non_canonical_cbor");
   assert.equal((await validateBranchTextBootstrapBeacon(`${branchTextWrapperPrefix}${encodeBase64URL(mutatedSignature)}`, { now })).reason, "signature_invalid");
   assert.equal((await validateBranchTextBootstrapBeacon(valid, { now: now + 7200 })).reason, "expired");
-  assert.equal((await validateBranchTextBootstrapBeacon(await createBetaBootstrapBeaconWrapper({ now: now + 3600, expiresAt: now + 7200 }), { now })).reason, "created_in_future");
+  assert.equal((await validateBranchTextBootstrapBeacon(await createBootstrapBeaconWrapper({ now: now + 3600, expiresAt: now + 7200 }), { now })).reason, "created_in_future");
 });
 
 void test("BRANCH0 bootstrap.beacon validator rejects signed wrong payload mode and payload expiry mismatch", async () => {
   const now = 1_789_000_000;
-  const valid = await createBetaBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const valid = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
   const wrongMode = await resignWrapperWithPatch(valid, (entries) => entries.map((entry) =>
     entry.key === "payload_mode" ? { key: entry.key, value: "sealed" } : entry
   ));
@@ -182,6 +193,55 @@ void test("BRANCH0 bootstrap.beacon validator rejects signed wrong payload mode 
 
   assert.equal((await validateBranchTextBootstrapBeacon(wrongMode, { now })).reason, "invalid_payload_mode");
   assert.equal((await validateBranchTextBootstrapBeacon(expiryMismatch, { now })).reason, "payload_expiry_mismatch");
+});
+
+void test("BRANCH0 bootstrap.beacon validator rejects invalid relay endpoint descriptors", async () => {
+  const now = 1_789_000_000;
+  const valid = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const tooManyEndpoints = Array.from({ length: 9 }, (_, index) =>
+    relayEndpointValue("wss", `wss://relay-${String(index)}.example:443/relay/v0`, index)
+  );
+
+  const cases: readonly [string, Promise<string>][] = [
+    ["missing-relay-endpoints", resignWithPayloadPatch(valid, (entries) => entries.filter((entry) => entry.key !== "relay_endpoints"))],
+    ["duplicate-relay-endpoint", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "relay_endpoints", [
+      relayEndpointValue("wss", "wss://relay.example:443/relay/v0", 0),
+      relayEndpointValue("wss", "wss://relay.example:443/relay/v0", 1)
+    ]))],
+    ["too-many-relay-endpoints", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "relay_endpoints", tooManyEndpoints))],
+    ["missing-wss-port", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "relay_endpoints", [
+      relayEndpointValue("wss", "wss://relay.example/relay/v0", 0)
+    ]))],
+    ["wss-userinfo", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "relay_endpoints", [
+      relayEndpointValue("wss", "wss://user@relay.example:443/relay/v0", 0)
+    ]))],
+    ["wss-fragment", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "relay_endpoints", [
+      relayEndpointValue("wss", "wss://relay.example:443/relay/v0#frag", 0)
+    ]))],
+    ["priority-order", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "relay_endpoints", [
+      relayEndpointValue("wss", "wss://relay-two.example:443/relay/v0", 10),
+      relayEndpointValue("wss", "wss://relay.example:443/relay/v0", 0)
+    ]))]
+  ];
+
+  for (const [name, wrapperPromise] of cases) {
+    const result = await validateBranchTextBootstrapBeacon(await wrapperPromise, { now });
+    assert.equal(result.reason, "payload_invalid", name);
+  }
+});
+
+void test("BRANCH0 bootstrap.beacon validator requires a supported profile multihash", async () => {
+  const now = 1_789_000_000;
+  const valid = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const unsupportedProfile = await resignWithPayloadPatch(valid, (entries) =>
+    replacePayloadEntry(entries, "profile_multihashes", ["uEiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"])
+  );
+  const unorderedProfiles = await resignWithPayloadPatch(valid, (entries) =>
+    replacePayloadEntry(entries, "profile_multihashes", [defaultBootstrapProfileMultihashes[0], "uEiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"])
+  );
+
+  assert.equal((await validateBranchTextBootstrapBeacon(unsupportedProfile, { now })).reason, "payload_invalid");
+  assert.equal((await validateBranchTextBootstrapBeacon(unorderedProfiles, { now })).reason, "payload_invalid");
 });
 
 async function readManifest(): Promise<VectorManifest> {
@@ -476,6 +536,32 @@ function patchPayloadExpiry(value: unknown, expiresAt: number): Uint8Array {
     entry.key === "expires_at" ? { key: entry.key, value: expiresAt } : entry
   );
   return encodeDeterministicCbor(cborMap(entries));
+}
+
+async function resignWithPayloadPatch(
+  wrapper: string,
+  patch: (entries: readonly CborEntry[]) => readonly CborEntry[]
+): Promise<string> {
+  return resignWrapperWithPatch(wrapper, (entries) => entries.map((entry) => {
+    if (entry.key !== "payload") {
+      return entry;
+    }
+    assert(entry.value instanceof Uint8Array);
+    const payloadMap = readCborMap(decodeDeterministicCbor(entry.value), "payload");
+    return { key: entry.key, value: encodeDeterministicCbor(cborMap(patch(payloadMap.entries))) };
+  }));
+}
+
+function replacePayloadEntry(entries: readonly CborEntry[], key: string, value: CborEntry["value"]): readonly CborEntry[] {
+  return entries.map((entry) => entry.key === key ? { key, value } : entry);
+}
+
+function relayEndpointValue(transport: string, uri: string, priority: number): CborEntry["value"] {
+  return cborMap([
+    { key: "transport", value: transport },
+    { key: "uri", value: uri },
+    { key: "priority", value: priority }
+  ]);
 }
 
 function patchSignatureByte(wrapper: string): Uint8Array {

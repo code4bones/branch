@@ -22,7 +22,7 @@ import {
   type TransformLabPreset
 } from "../src/admin/transform-lab.js";
 import { runTransformLab } from "../src/admin/transform-lab-runner.js";
-import { createBetaBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
+import { createBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
 import { extractBranchTextWrappers, isBranchTextWrapper } from "../src/protocol/v0/text-carrier.js";
 import { resizeNearest } from "../src/visual/corpus.js";
 import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "../src/visual/ribbon-block.js";
@@ -75,9 +75,9 @@ void test("github drop-in module rejects non-BRANCH0 records", async () => {
 
 void test("github drop-in live mode accepts signed bootstrap.beacon wrappers", async () => {
   const now = Math.floor(Date.now() / 1000);
-  const wrapper = await createBetaBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const wrapper = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
   const records = await parseBranchRecords(wrapper, { mode: "live" });
-  const files = await makeGitHubFiles(records, "beta-source", now, "live");
+  const files = await makeGitHubFiles(records, "relay-source", now, "live");
 
   assert.deepEqual(records, [wrapper]);
   assert.match(files.find((file) => file.path === ".branch/manifest.json")?.content ?? "", /"mode": "live"/);

@@ -11,7 +11,7 @@
     "kind": "draft_profile_json",
     "fixture": "../../../spec/connectivity-profile-v0.draft.json",
     "hash_algorithm": "multihash.sha2-256",
-    "development_multihash": "uEiAsgRWhrZFSEDiQjTDP1jrQ4elBW8uK0Q_Cg1_rKK06qw"
+    "development_multihash": "uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA"
   },
   "transcripts": {
     "fixture": "conformance-transcripts.json",
@@ -36,7 +36,8 @@
       "recipient_tag_present",
       "expired",
       "created_in_future",
-      "payload_expiry_mismatch"
+      "payload_expiry_mismatch",
+      "payload_invalid"
     ]
   },
   "cases": [

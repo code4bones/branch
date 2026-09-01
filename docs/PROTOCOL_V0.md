@@ -103,7 +103,7 @@ scaffold testing, not the final published deterministic CBOR profile. Its
 current development multihash is:
 
 ```text
-uEiAsgRWhrZFSEDiQjTDP1jrQ4elBW8uK0Q_Cg1_rKK06qw
+uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA
 ```
 
 The current shared development vector manifest is
@@ -551,35 +551,52 @@ exports, or authentication material. The payload fields are:
 
 | Field | Requirement | Meaning |
 | --- | --- | --- |
-| `beacon_id` | Required | Content identity for this beacon payload. |
-| `subject` | Required | Identity, relay, mirror, board set, or curator subject being advertised. |
-| `issuer` | Required | Signing identity authorized by the subject or identical to it. |
-| `sequence` | Required | Monotonic unsigned integer scoped to issuer and subject. |
+| `beacon_id` | Required | 32 random bytes stable for one relay announcement lineage. |
+| `sequence` | Required | Monotonic unsigned integer scoped to `sender` and `beacon_id`. |
 | `issued_at` | Required | Unix seconds when this beacon payload was issued. |
 | `expires_at` | Required | Unix seconds after which the beacon is stale. |
-| `previous_beacon_id` | Optional | Continuity link to the previous beacon for this issuer and subject. |
+| `previous_beacon_id` | Optional | Continuity link to the previous beacon for this sender and lineage. |
 | `revokes` | Optional | Bounded list of beacon IDs or sequence ranges revoked by this issuer. |
 | `protocol_versions` | Required | Supported connectivity protocol versions. |
-| `capabilities` | Optional | Public bounded capability names, never tokens. |
+| `profile_multihashes` | Required | Accepted connectivity profile hashes, unique and deterministic. |
+| `relay_capabilities` | Required | Public bounded relay capability names, never tokens. |
+| `relay_endpoints` | Required | One to eight route descriptors for this same relay identity. |
 | `rendezvous_boards` | Optional | Public board hints such as Nostr relay-set descriptors. |
-| `relay_announcements` | Optional | Embedded relay descriptors or content-addressed references. |
 | `mirror_hints` | Optional | Independent PWA mirror hints, never required for identity. |
-| `search_markers` | Required | Public marker strings used to rediscover equivalent records. |
 | `proofs` | Optional | Cross-publication hints or bundle proofs, not authority. |
 
-The draft-beta BootstrapBeacon payload uses a deterministic CBOR map with
-text-string keys. `beacon_id` and `previous_beacon_id` are 32-byte CBOR byte
-strings. `subject`, `issuer`, `protocol_versions`, `capabilities`,
-`search_markers`, and optional public hint fields are bounded text strings,
-arrays, or maps. `sequence`, `issued_at`, and `expires_at` are CBOR unsigned
-integers. The initial beta validator accepts `protocol_versions` only when it
-includes `branch/connectivity/0`, and accepts `search_markers` only when it
-includes `BRANCH0`, `branch/connectivity/0`, and `branch-bootstrap-v0`.
+For `branch/connectivity/0`, one `bootstrap.beacon` advertises one relay
+identity. The relay identity is the Ed25519 public key in the signed event
+`sender`; v0 payloads do not duplicate `relay_key` and do not carry delegated
+relay keys.
+
+`relay_endpoints` is an ordered deterministic CBOR array. Each descriptor is a
+map with `transport`, `uri`, and `priority`; lower priority values are tried
+first. Descriptors are unique by `(transport, uri)`. The mandatory browser v0
+transport is `wss`. A `wss` URI is absolute, bounded, contains no userinfo and
+no fragment, and carries an explicit valid port. DNS names, IPv4 literals, and
+bracketed IPv6 literals are allowed when the browser TLS stack can validate
+them; port 443 is recommended for public web deployment.
+
+`protocol_versions`, `profile_multihashes`, and `relay_capabilities` are
+bounded, unique, and deterministically ordered. Unknown optional transports or
+capabilities may be skipped, but client acceptance requires at least one
+supported profile hash and one supported endpoint.
+
+The BootstrapBeacon payload uses a deterministic CBOR map with text-string
+keys. `beacon_id` and `previous_beacon_id` are 32-byte CBOR byte strings.
+`sequence`, `issued_at`, `expires_at`, and endpoint `priority` are CBOR
+unsigned integers. Text arrays and optional public hint fields are bounded.
 
 `expires_at` in the payload must match the outer signed envelope expiry. If both
 are present and differ, the beacon is invalid. `issued_at` must not be later
 than the outer `created_at`. Relay liveness is never inferred from publication;
-clients actively probe relay endpoints before treating them as usable.
+clients actively probe relay endpoints before treating them as usable. The relay
+must prove possession of the signed event sender key during attachment.
+
+BootstrapBeacon payloads must not contain client presence, user or device IPs,
+mailbox addresses, durable route state, conversation data, TURN passwords,
+session secrets, cookies, bearer tokens, or reusable attachment credentials.
 
 ### SearchCarrier contract
 

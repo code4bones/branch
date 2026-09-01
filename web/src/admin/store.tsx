@@ -6,6 +6,7 @@ import { defaultBranchWrapper, ribbonProfileLabel } from "./defaults.js";
 import { githubDiscoveryDefaultQuery, type GitHubDiscoveryResult } from "./github-discovery.js";
 import type { GitHubDropInFile } from "./github-dropin.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
+import { defaultBootstrapRelayEndpointUri } from "../protocol/v0/bootstrap-beacon.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
 
 export type AdminTab = "ribbon" | "github";
@@ -36,6 +37,7 @@ export interface DiagnosticsState {
 export interface GitHubState {
   readonly mode: "demo" | "live";
   readonly records: string;
+  readonly relayEndpointUri: string;
   readonly sourceCommit: string;
   readonly files: readonly GitHubDropInFile[];
   readonly selectedFile: number;
@@ -88,6 +90,7 @@ export interface AdminActions {
   readonly setTransformLabResults: (results: readonly TransformLabResult[], reportJson: string) => void;
   readonly setTransformLabStatus: (status: string, statusClass: StatusClass) => void;
   readonly setGitHubRecords: (records: string) => void;
+  readonly setGitHubRelayEndpointUri: (relayEndpointUri: string) => void;
   readonly setGitHubMode: (mode: GitHubState["mode"]) => void;
   readonly setGitHubSourceCommit: (sourceCommit: string) => void;
   readonly setGitHubFiles: (files: readonly GitHubDropInFile[]) => void;
@@ -161,6 +164,7 @@ function createAdminStore(): AdminStoreApi {
     github: {
       mode: "demo",
       records: "",
+      relayEndpointUri: defaultBootstrapRelayEndpointUri,
       sourceCommit: "",
       files: [],
       selectedFile: 0,
@@ -231,6 +235,13 @@ function createAdminStore(): AdminStoreApi {
         github: {
           ...state.github,
           records
+        }
+      })); },
+    setGitHubRelayEndpointUri: (relayEndpointUri) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          relayEndpointUri
         }
       })); },
     setGitHubMode: (mode) =>

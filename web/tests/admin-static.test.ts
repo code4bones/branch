@@ -86,8 +86,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /id="github-mode"/);
   assert.match(githubTool, /Demo fixture/);
   assert.match(githubTool, /Live publishable/);
-  assert.match(githubTool, /Generate beta beacon/);
-  assert.match(githubTool, /createBetaBootstrapBeaconWrapper/);
+  assert.match(githubTool, /Generate relay beacon/);
+  assert.match(githubTool, /createBootstrapBeaconWrapper/);
+  assert.match(githubTool, /id="relay-endpoint-uri"/);
   assert.match(githubTool, /id="github-badge-snippet"/);
   assert.match(githubTool, /id="github-discovery-form"/);
   assert.match(githubTool, /id="github-discovery-query"/);
