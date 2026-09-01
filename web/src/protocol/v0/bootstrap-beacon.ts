@@ -33,7 +33,7 @@ const maxRelayEndpointTransportBytes = 32;
 const maxBootstrapNameBytes = 128;
 
 export const defaultBootstrapRelayEndpointUri = "wss://branch.undoo.ru:443/relay/v0" as const;
-export const defaultBootstrapProfileMultihashes = ["uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA"] as const;
+export const defaultBootstrapProfileMultihashes = ["uEiDT2miAcWcvbJ3mm4ihtMdng1nP8Y1VY3Gqp_xZrpzvsA"] as const;
 export const defaultBootstrapRelayCapabilities = ["relay.forward.live/0", "route.relay.wss/0"] as const;
 
 export type BootstrapBeaconValidationReason =

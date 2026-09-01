@@ -3,7 +3,8 @@ import { useRef } from "react";
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
 import { defaultBranchWrapper, githubBundleFilename } from "../defaults.js";
 import { discoverGitHubDropIns, githubDiscoveryConstraints } from "../github-discovery.js";
-import { makeBadgeSnippet, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
+import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
+import { makeRootReadmeSnippet } from "../publication-profile.js";
 import { useAdminStore } from "../store.js";
 import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
 
@@ -41,7 +42,7 @@ export function GitHubTool(): React.JSX.Element {
       const records = await parseBranchRecords(recordsInput, { mode: github.mode });
       const files = await makeGitHubFiles(records, sourceCommit.trim(), Math.floor(Date.now() / 1000), github.mode);
       setGitHubFiles(files);
-      setGitHubBadgeSnippet(makeBadgeSnippet());
+      setGitHubBadgeSnippet(makeRootReadmeSnippet());
       setGitHubStatus(github.mode === "demo" ? "demo fixture generated" : "live bundle generated", "status-good");
     } catch (error) {
       setGitHubFiles([]);
@@ -172,7 +173,7 @@ export function GitHubTool(): React.JSX.Element {
         </div>
         <p className={github.statusClass}>{github.status}</p>
 
-        <label htmlFor="github-badge-snippet">README badge</label>
+        <label htmlFor="github-badge-snippet">Root README snippet</label>
         <input
           id="github-badge-snippet"
           ref={badgeRef}
@@ -186,7 +187,7 @@ export function GitHubTool(): React.JSX.Element {
             disabled={github.badgeSnippet === ""}
             onClick={() => { void copyTextFromFallback(github.badgeSnippet, badgeRef.current); }}
           >
-            Copy badge
+            Copy snippet
           </button>
         </div>
       </form>

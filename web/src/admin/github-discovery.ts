@@ -1,6 +1,8 @@
 import { extractBranchTextWrappers } from "../protocol/v0/text-carrier.js";
+import { githubLegacyMarkerQuery, githubPrimaryLocatorQuery } from "./publication-profile.js";
 
-export const githubDiscoveryDefaultQuery = "BRANCH0 branch/connectivity/0 branch-bootstrap-v0 in:readme";
+export const githubDiscoveryDefaultQuery = githubPrimaryLocatorQuery;
+export const githubDiscoveryFallbackQuery = githubLegacyMarkerQuery;
 export const githubRepositorySearchEndpoint = "https://api.github.com/search/repositories";
 export const githubApiVersion = "2022-11-28";
 export const maxGitHubDiscoveryQueryBytes = 256;
@@ -142,7 +144,7 @@ export function makeGitHubRepositorySearchUrl(request: GitHubDiscoveryRequest): 
 }
 
 export const githubDiscoveryConstraints = [
-  "Uses GitHub repository search with public marker terms; search order and snippets are carrier evidence only.",
+  "Uses branchbootstrapv0 as the primary public locator; legacy marker queries are bounded transition fallbacks.",
   "Reads .branch/records.br0 from the repository default branch through the GitHub contents API.",
   "Unauthenticated requests are IP rate limited; 403/429 and x-ratelimit headers are surfaced to the operator.",
   "Search may be incomplete, delayed, paginated, fork-filtered, or missing recently pushed records.",

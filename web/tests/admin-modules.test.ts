@@ -9,6 +9,12 @@ import {
   makeGitHubRepositorySearchUrl
 } from "../src/admin/github-discovery.js";
 import { makeBadgeSnippet, makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
+import {
+  branchBootstrapLocator,
+  githubRepositoryDescription,
+  githubRepositoryTopics,
+  makeRootReadmeSnippet
+} from "../src/admin/publication-profile.js";
 import { makeAutoDecodeBaseOptions, makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
 import {
@@ -39,6 +45,10 @@ void test("github drop-in module validates exact BRANCH0 records and emits local
   assert.equal(files[0]?.path, ".branch/records.br0");
   assert.match(bundle, /Blue Ribbon Autonomous Network for Carrier Hopping/);
   assert.match(bundle, /branch.repository-dropin\/0/);
+  assert.match(bundle, /branchbootstrapv0/);
+  assert.match(bundle, /"locator": "branchbootstrapv0"/);
+  assert.match(bundle, /"root_readme_snippet": "\[!\[Blue Ribbon/);
+  assert.match(bundle, /"github_repository_description": "B\.R\.A\.N\.C\.H\. bootstrap carrier branchbootstrapv0 carry-the-ribbon"/);
   assert.match(bundle, /"mode": "demo"/);
   assert.match(bundle, /"record_count": 1/);
   assert.match(bundle, /"records_sha256": "[a-f0-9]{64}"/);
@@ -60,9 +70,12 @@ void test("github drop-in archive contains repository paths", async () => {
   ]);
   assert.equal(readZipFileText(archive, ".branch/records.br0"), `${defaultBranchWrapper}\n`);
   assert.match(readZipFileText(archive, ".branch/manifest.json"), /branch\.repository-dropin\/0/);
+  assert.match(readZipFileText(archive, ".branch/manifest.json"), /branchbootstrapv0/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /demo fixture/);
+  assert.match(readZipFileText(archive, ".branch/README.md"), /Search locator: branchbootstrapv0/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /\[!\[Blue Ribbon/);
   assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /drop-in lint/);
+  assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /branchbootstrapv0/);
   assert.doesNotMatch(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /schedule|verify-dropin|contents: write/);
 });
 
@@ -71,6 +84,16 @@ void test("github drop-in module rejects non-BRANCH0 records", async () => {
   await assert.rejects(parseBranchRecords("BRANCH0.abc=", { mode: "demo" }), /bounded unpadded base64url/);
   await assert.rejects(parseBranchRecords(defaultBranchWrapper, { mode: "live" }), /refuses the demo BRANCH0 fixture/);
   assert.match(makeBadgeSnippet(), /\.branch\/ribbon\.svg/);
+});
+
+void test("github publication profile exposes canonical locator metadata", () => {
+  const rootSnippet = makeRootReadmeSnippet();
+
+  assert.equal(branchBootstrapLocator, "branchbootstrapv0");
+  assert.match(githubDiscoveryDefaultQuery, /^branchbootstrapv0 in:readme$/);
+  assert.match(rootSnippet, /branchbootstrapv0 BRANCH0 branch\/connectivity\/0 branch-bootstrap-v0 carry-the-ribbon/);
+  assert.equal(githubRepositoryDescription, "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon");
+  assert.deepEqual(githubRepositoryTopics, ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"]);
 });
 
 void test("github drop-in live mode accepts signed bootstrap.beacon wrappers", async () => {
@@ -136,7 +159,7 @@ void test("github discovery searches repositories and reads default-branch drop-
 
 void test("github discovery surfaces API rate limits and bounded query construction", async () => {
   const url = makeGitHubRepositorySearchUrl({
-    query: "BRANCH0 branch/connectivity/0",
+    query: githubDiscoveryDefaultQuery,
     includeForks: true,
     perPage: 99,
     page: 99
@@ -150,6 +173,7 @@ void test("github discovery surfaces API rate limits and bounded query construct
     page: 1
   }, fetcher);
 
+  assert.match(url, /branchbootstrapv0/);
   assert.match(url, /fork%3Atrue/);
   assert.match(url, /per_page=10/);
   assert.match(url, /page=10/);

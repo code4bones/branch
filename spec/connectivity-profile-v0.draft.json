@@ -140,5 +140,26 @@
     "deterministic CBOR profile artifact",
     "canonical signed envelope vectors",
     "two client implementations and two relay implementations running the same manifest"
-  ]
+  ],
+  "search_carrier_publication": {
+    "canonical_locator": "branchbootstrapv0",
+    "legacy_markers": ["BRANCH0", "branch/connectivity/0", "branch-bootstrap-v0"],
+    "campaign_marker": "carry-the-ribbon",
+    "locator_authority": "none; signed BootstrapBeacon bytes remain authoritative",
+    "github": {
+      "repository_name_required": false,
+      "manifest_fields": [
+        "locator",
+        "markers",
+        "records_path",
+        "badge_path",
+        "root_readme_snippet",
+        "github_repository_description",
+        "github_repository_topics"
+      ],
+      "topics": ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"],
+      "primary_query": "branchbootstrapv0 in:readme",
+      "fallback_query": "BRANCH0 branch/connectivity/0 branch-bootstrap-v0 in:readme"
+    }
+  }
 }

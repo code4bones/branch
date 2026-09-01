@@ -11,7 +11,7 @@
     "kind": "draft_profile_json",
     "fixture": "../../../spec/connectivity-profile-v0.draft.json",
     "hash_algorithm": "multihash.sha2-256",
-    "development_multihash": "uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA"
+    "development_multihash": "uEiDT2miAcWcvbJ3mm4ihtMdng1nP8Y1VY3Gqp_xZrpzvsA"
   },
   "transcripts": {
     "fixture": "conformance-transcripts.json",

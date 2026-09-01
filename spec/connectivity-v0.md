@@ -56,7 +56,7 @@ deterministic CBOR profile artifact and accepted vector manifest. The current
 development multihash is:
 
 ```text
-uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA
+uEiDT2miAcWcvbJ3mm4ihtMdng1nP8Y1VY3Gqp_xZrpzvsA
 ```
 
 The current shared vector manifest is

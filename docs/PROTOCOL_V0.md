@@ -103,7 +103,7 @@ scaffold testing, not the final published deterministic CBOR profile. Its
 current development multihash is:
 
 ```text
-uEiAc9MOi0n5jNFpcW0o-inVFR0lTTu6SkNO0CMfGokp3WA
+uEiDT2miAcWcvbJ3mm4ihtMdng1nP8Y1VY3Gqp_xZrpzvsA
 ```
 
 The current shared development vector manifest is
@@ -629,11 +629,18 @@ signature, expiry, sequence, revocation, deduplication, and payload schema.
 
 The baseline query grammar uses public markers only:
 
+- `branchbootstrapv0`;
 - `BRANCH0`;
 - `branch/connectivity/0`;
 - `branch-bootstrap-v0`;
 - optional public subject or capability terms chosen by the user or local
   policy.
+
+`branchbootstrapv0` is the canonical punctuation-free cross-index locator for
+v0 publication metadata. It is searched first by carrier adapters and may be
+combined with legacy marker fallbacks during the v0 transition. The locator is
+not a signed payload field, relay identity, trust assertion, secret, or protocol
+version.
 
 No query may require a specific project repository, organization, domain, raw
 URL, official account, relay, or board. Direct URLs and known repositories are
@@ -892,9 +899,19 @@ adapters. It may contain:
 ```json
 {
   "schema": "branch.repository-dropin/0",
-  "markers": ["BRANCH0", "branch/connectivity/0", "branch-bootstrap-v0"],
+  "locator": "branchbootstrapv0",
+  "markers": [
+    "branchbootstrapv0",
+    "BRANCH0",
+    "branch/connectivity/0",
+    "branch-bootstrap-v0",
+    "carry-the-ribbon"
+  ],
   "records_path": ".branch/records.br0",
   "badge_path": ".branch/ribbon.svg",
+  "root_readme_snippet": "optional generated text containing branchbootstrapv0 and protocol markers",
+  "github_repository_description": "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon",
+  "github_repository_topics": ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"],
   "generated_at": 0,
   "source_commit": "optional-vcs-commit",
   "tool": "optional-generator"
@@ -969,10 +986,11 @@ When signing keys are used in automation, they are delegated publication keys
 scoped to the advertised subject and record family, not portable user identity
 keys or relay capability tokens.
 
-Equivalent non-GitHub integrations use the same contract: a visible local badge,
-searchable marker text, `.branch/records.br0`, `.branch/manifest.json`, signature
-verification before publication, minimal write scope, manual and scheduled
-refresh, recursion avoidance, and no central image or mandatory project service.
+Equivalent non-GitHub integrations use the same contract: `branchbootstrapv0`,
+a visible local badge, searchable marker text, `.branch/records.br0`,
+`.branch/manifest.json`, signature verification before publication, minimal
+write scope, manual and scheduled refresh, recursion avoidance, and no central
+image or mandatory project service.
 GitLab CI, Forgejo/Gitea actions, SourceHut builds, Buildkite, cron jobs, or a
 plain local script can all satisfy the profile when they preserve these
 semantics.

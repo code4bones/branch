@@ -1,4 +1,11 @@
 import { defaultBranchWrapper } from "./defaults.js";
+import {
+  branchBootstrapLocator,
+  branchPublicationMarkers,
+  githubRepositoryDescription,
+  githubRepositoryTopics,
+  makeRootReadmeSnippet
+} from "./publication-profile.js";
 import { makeStoredZipArchive } from "./zip-archive.js";
 import { assertValidBranchTextBootstrapBeacon } from "../protocol/v0/bootstrap-beacon.js";
 import { branchTextWrapperPrefix, isBranchTextWrapper } from "../protocol/v0/text-carrier.js";
@@ -50,9 +57,13 @@ export async function makeGitHubFiles(
   const manifest = {
     schema: "branch.repository-dropin/0",
     mode,
-    markers: ["BRANCH0", "branch/connectivity/0", "branch-bootstrap-v0", "carry-the-ribbon"],
+    locator: branchBootstrapLocator,
+    markers: branchPublicationMarkers(),
     records_path: ".branch/records.br0",
     badge_path: ".branch/ribbon.svg",
+    root_readme_snippet: makeRootReadmeSnippet().trimEnd(),
+    github_repository_description: githubRepositoryDescription,
+    github_repository_topics: githubRepositoryTopics,
     generated_at: generatedAt,
     source_commit: sourceCommit || undefined,
     record_count: records.length,
@@ -129,14 +140,27 @@ The Blue Ribbon is alive again.
 From symbol to protocol.
 The ribbon no longer merely hangs on the Web. It becomes a route through it.
 
-Search markers: BRANCH0 branch/connectivity/0 branch-bootstrap-v0 carry-the-ribbon
+Search locator: ${branchBootstrapLocator}
+Search markers: ${branchPublicationMarkers().join(" ")}
 
 ${modeNote}
 
-Optional root README badge:
+Optional root README snippet:
 
 \`\`\`md
-${makeBadgeSnippet()}
+${makeRootReadmeSnippet().trimEnd()}
+\`\`\`
+
+Suggested GitHub repository description:
+
+\`\`\`text
+${githubRepositoryDescription}
+\`\`\`
+
+Suggested GitHub topics:
+
+\`\`\`text
+${githubRepositoryTopics.join(", ")}
 \`\`\`
 
 The signed records are stored in \`.branch/records.br0\`. Repository ownership,
@@ -153,7 +177,7 @@ function makeRibbonSvg(): string {
   <path d="M54 17c15 0 28 11 32 26l-16 8c-1-10-8-18-16-18-9 0-16 8-16 18 0 8 5 15 12 17l-12 12c-11-6-18-17-18-30 0-18 15-33 34-33Z" fill="#64a8ff"/>
   <path d="M83 43c6 3 10 10 10 18 0 13-11 24-24 24H48l16-16h5c5 0 9-4 9-9 0-4-2-7-5-8l10-9Z" fill="#57d2c6"/>
   <text x="112" y="38" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="22" font-weight="700">Carry the Ribbon</text>
-  <text x="112" y="64" fill="#9eaaba" font-family="Inter,Arial,sans-serif" font-size="14">BRANCH0 branch/connectivity/0</text>
+  <text x="112" y="64" fill="#9eaaba" font-family="Inter,Arial,sans-serif" font-size="14">branchbootstrapv0 BRANCH0</text>
 </svg>
 `;
 }
@@ -193,6 +217,7 @@ jobs:
           test -f .branch/manifest.json
           grep -Eq '^BRANCH0\\.' .branch/records.br0
           grep -q 'branch.repository-dropin/0' .branch/manifest.json
+          grep -q 'branchbootstrapv0' .branch/manifest.json
           grep -q 'branch-bootstrap-v0' .branch/manifest.json
 `;
 }
