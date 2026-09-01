@@ -17,9 +17,14 @@ export function GitHubTool(): React.JSX.Element {
 
   function onGenerate(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const recordsInput = readFormString(formData, "github-records");
+    const sourceCommit = readFormString(formData, "source-commit");
+    setGitHubRecords(recordsInput);
+    setGitHubSourceCommit(sourceCommit);
     try {
-      const records = parseBranchRecords(github.records);
-      const files = makeGitHubFiles(records, github.sourceCommit.trim(), Math.floor(Date.now() / 1000));
+      const records = parseBranchRecords(recordsInput);
+      const files = makeGitHubFiles(records, sourceCommit.trim(), Math.floor(Date.now() / 1000));
       setGitHubFiles(files);
       setGitHubStatus("generated", "status-good");
     } catch (error) {
@@ -112,4 +117,9 @@ export function GitHubTool(): React.JSX.Element {
       </section>
     </section>
   );
+}
+
+function readFormString(formData: FormData, name: string): string {
+  const value = formData.get(name);
+  return typeof value === "string" ? value : "";
 }

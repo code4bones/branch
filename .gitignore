@@ -1,6 +1,9 @@
 # Local agent/session artifacts
 .resume
 .resume*
+.mcp-xchange/
+.mcpsession.json
+.tellymcp/
 
 # Local environment and secrets
 .env
