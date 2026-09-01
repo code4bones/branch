@@ -17,6 +17,13 @@ export default tseslint.config(
     }
   },
   {
-    ignores: ["dist/", "dist-test/", "node_modules/", "eslint.config.mjs", "scripts/*.mjs"]
+    ignores: [
+      "dist/",
+      "dist-test/",
+      "node_modules/",
+      "eslint.config.mjs",
+      "public/**/*.js",
+      "scripts/*.mjs"
+    ]
   }
 );

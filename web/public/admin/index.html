@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="B.R.A.N.C.H. admin carrier tools"
+    >
+    <title>B.R.A.N.C.H. Admin</title>
+    <link rel="stylesheet" href="/assets/app.css?v=20260831-dark">
+    <link rel="stylesheet" href="/admin/admin.css?v=20260901-admin">
+    <script src="/vendor/qrcode-browser.js?v=20260901-admin" defer></script>
+    <script src="/admin/admin.js?v=20260901-admin" defer></script>
+  </head>
+  <body>
+    <main class="admin-shell" aria-labelledby="admin-title">
+      <header class="admin-header">
+        <div>
+          <p class="kicker">Blue Ribbon Autonomous Network for Carrier Hopping</p>
+          <h1 id="admin-title">Admin</h1>
+        </div>
+        <nav class="admin-nav" aria-label="Admin navigation">
+          <a href="/">Status</a>
+          <a href="/admin/" aria-current="page">Admin</a>
+        </nav>
+      </header>
+
+      <section class="admin-tabs" aria-label="Admin tools">
+        <button class="tab is-active" type="button" data-tab="ribbon">Ribbon Image</button>
+        <button class="tab" type="button" data-tab="github">GitHub</button>
+      </section>
+
+      <section class="tool-grid is-active" data-panel="ribbon" aria-label="Ribbon Image generator">
+        <form class="panel control-panel" id="ribbon-form">
+          <label for="branch-wrapper">BRANCH0 wrapper</label>
+          <textarea
+            id="branch-wrapper"
+            name="branch-wrapper"
+            spellcheck="false"
+            rows="9"
+            placeholder="BRANCH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ></textarea>
+
+          <div class="control-row">
+            <label for="module-pitch">Module pitch</label>
+            <input id="module-pitch" name="module-pitch" type="number" min="4" max="24" step="1" value="16">
+          </div>
+
+          <div class="control-row">
+            <label for="quiet-zone">Quiet zone</label>
+            <input id="quiet-zone" name="quiet-zone" type="number" min="4" max="12" step="1" value="8">
+          </div>
+
+          <div class="button-row">
+            <button type="submit">Generate</button>
+            <button type="button" id="download-ribbon" disabled>Download PNG</button>
+          </div>
+        </form>
+
+        <section class="panel preview-panel" aria-label="Ribbon Image preview">
+          <canvas id="ribbon-canvas" width="640" height="640"></canvas>
+          <dl class="diagnostics" id="ribbon-diagnostics">
+            <div>
+              <dt>Profile</dt>
+              <dd>ribbon-seal/0</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>idle</dd>
+            </div>
+          </dl>
+        </section>
+      </section>
+
+      <section class="tool-grid" data-panel="github" aria-label="GitHub carrier generator">
+        <form class="panel control-panel" id="github-form">
+          <label for="github-records">BRANCH0 records</label>
+          <textarea
+            id="github-records"
+            name="github-records"
+            spellcheck="false"
+            rows="9"
+            placeholder="BRANCH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ></textarea>
+
+          <div class="control-row">
+            <label for="source-commit">Source commit</label>
+            <input id="source-commit" name="source-commit" type="text" spellcheck="false" placeholder="optional-vcs-commit">
+          </div>
+
+          <div class="button-row">
+            <button type="submit">Generate</button>
+            <button type="button" id="download-bundle" disabled>Download bundle</button>
+          </div>
+        </form>
+
+        <section class="panel output-panel" aria-label="Generated GitHub files">
+          <div class="file-tabs" id="file-tabs" role="tablist" aria-label="Generated files"></div>
+          <textarea id="file-output" spellcheck="false" readonly rows="18"></textarea>
+          <div class="button-row">
+            <button type="button" id="download-file" disabled>Download file</button>
+            <button type="button" id="copy-file" disabled>Copy</button>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
