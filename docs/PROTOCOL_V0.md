@@ -1041,6 +1041,55 @@ luminance modulation or another transform-resistant mark to help B.R.A.N.C.H.
 clients find candidate artwork, but it is not a standalone authority. A
 watermark that cannot recover exact signed bytes is a discovery hint only.
 
+#### Draft pixel locator
+
+`ribbon-locator/0.draft` is a non-authoritative pixel-level locator for hidden
+Ribbon Image profiles. It is not written before the image file bytes, stored in
+EXIF, or placed in PNG/JPEG metadata. It is drawn into pixels near the image
+origin so ordinary file rewriting does not intentionally strip it as metadata.
+
+The current draft locator encodes the ASCII pixel magic `BRLOC0`, a locator
+version byte, a visual-profile hint, bounded geometry hints, and a CRC32C over
+the locator header:
+
+```text
+magic                 = "BRLOC0"       ; 6 ASCII bytes encoded in pixels
+locator_version       = uint8          ; current draft value 0
+visual_profile_hint   = uint8          ; 1 ribbon-seal/0, 2 ribbon-tint/0
+placement_hint        = uint8          ; bounded placement enum
+quiet_zone_hint       = uint8
+module_pitch_hint     = uint8
+qr_version_hint       = uint8
+module_count_hint     = uint8
+symbol_size_hint      = uint16 big endian
+source_width_hint     = uint16 big endian
+source_height_hint    = uint16 big endian
+crc32c_locator        = uint32 big endian CRC32C(bytes before this field)
+```
+
+The locator is encoded as a small fixed grid of pixel cells. Each bit is carried
+by repeated pixels inside its cell using blue-channel parity plus a low-amplitude
+chroma/luminance bias. The draft implementation writes one locator band near
+the top-left origin and keeps the payload symbol inside the existing placement
+margin so the locator and payload do not overwrite each other.
+
+Receivers may use a valid locator only as a fast bounded search hint. If the
+current image dimensions differ from `source_width_hint` and
+`source_height_hint`, receivers may scale the module-pitch and symbol-size hints
+within local bounds before attempting payload recovery. A locator with bad
+magic, bad CRC, unknown version, unsupported profile hint, impossible geometry,
+unsafe scaling, or a payload region outside image bounds is ignored. A valid
+locator does not prove authenticity, freshness, profile conformance, payload
+integrity, or platform compatibility. Success still requires exact visual frame
+recovery followed by the normal `BRANCH0.` signed envelope validation path. If
+locator decode fails or locator-guided payload recovery fails, receivers fall
+back to the ordinary bounded heuristic scan.
+
+The current locator is a draft measurement aid. It does not reinterpret
+`ribbon-seal/0`, and future accepted visual profiles must publish their locator
+layout, redundancy, transform limits, and corpus results before claiming
+conformance.
+
 #### Payload capacity and size policy
 
 The visual beacon must be compact enough to fit comfortably inside high-error

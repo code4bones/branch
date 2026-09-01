@@ -14,9 +14,16 @@ import {
   transformLabPresets,
   type TransformImageSummary
 } from "../src/admin/transform-lab.js";
-import { boxBlur, fitInsideWithPadding, sharpen } from "../src/visual/corpus.js";
+import { boxBlur, fitInsideWithPadding, resizeNearest, sharpen } from "../src/visual/corpus.js";
 import { computeModulePitch, computePlacement, type RibbonPlacement } from "../src/visual/geometry.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
+import {
+  embedRibbonLocator,
+  makeRibbonLocatorHint,
+  readRibbonLocator,
+  ribbonLocatorProfile,
+  ribbonTintProfile
+} from "../src/visual/ribbon-locator.js";
 import { generateRibbonSymbol, symbolSizePixels } from "../src/visual/ribbon-render.js";
 import { extractStegoTintCandidates } from "../src/visual/ribbon-tint.js";
 import { decodeRibbonSeal, type RibbonImageData } from "../src/visual/ribbon-image.js";
@@ -252,6 +259,115 @@ void test("auto decode prioritizes default generated tint images", () => {
   assert.equal(decoded.wrapper, defaultBranchWrapper);
 });
 
+void test("ribbon locator embeds pixel magic and accelerates hidden tint decode", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const placement = "bottom-right";
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const source = makePlacedStegoImage(
+    1000,
+    1500,
+    symbol.modules,
+    symbol.diagnostics.modulePitch,
+    quietZone,
+    placement
+  );
+  const hint = makeRibbonLocatorHint({
+    visualProfile: ribbonTintProfile,
+    quietZone,
+    modulePitch: symbol.diagnostics.modulePitch,
+    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
+    moduleCount: symbol.diagnostics.moduleCount,
+    placement,
+    outputWidth: source.width,
+    outputHeight: source.height
+  });
+  const image = embedRibbonLocator(source, hint);
+  const locator = readRibbonLocator(image) ?? failLocator();
+
+  assert.equal(locator.profile, ribbonLocatorProfile);
+  assert.equal(locator.visualProfile, ribbonTintProfile);
+  assert.deepEqual(locator.payloadRegion, hint.payloadRegion);
+
+  const decoded = decodeRibbonImage(image, {
+    quietZone: 4,
+    carrierSize: 320,
+    placement: "top-left",
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2
+  });
+
+  assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)} locator`);
+  assert.equal(decoded.wrapper, defaultBranchWrapper);
+  assert.deepEqual(decoded.foundRegion, hint.payloadRegion);
+});
+
+void test("ribbon locator remains non-authoritative without signed payload recovery", () => {
+  const image = makeNoCarrierImage(1000, 1500);
+  const located = embedRibbonLocator(image, {
+    profile: ribbonLocatorProfile,
+    visualProfile: ribbonTintProfile,
+    quietZone: 8,
+    modulePitch: 9,
+    sourceModulePitch: 9,
+    sourceSymbolVersion: 10,
+    moduleCount: 57,
+    placement: "bottom-right",
+    symbolSize: 657,
+    sourceSymbolSize: 657,
+    sourceWidth: 1000,
+    sourceHeight: 1500,
+    payloadRegion: { x: 303, y: 803, size: 657 }
+  });
+  const locator = readRibbonLocator(located);
+  const decoded = decodeRibbonImage(located, {
+    quietZone: 8,
+    carrierSize: 720,
+    placement: "bottom-right",
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2
+  });
+
+  assert.equal(locator?.profile, ribbonLocatorProfile);
+  assert.equal(decoded.wrapper, "");
+  assert.notEqual(decoded.status, "beacon_accepted");
+});
+
+void test("ribbon locator pixel magic survives nearest resize as a geometry hint", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const placement = "bottom-right";
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const source = makePlacedStegoImage(
+    1000,
+    1500,
+    symbol.modules,
+    symbol.diagnostics.modulePitch,
+    quietZone,
+    placement
+  );
+  const image = embedRibbonLocator(source, makeRibbonLocatorHint({
+    visualProfile: ribbonTintProfile,
+    quietZone,
+    modulePitch: symbol.diagnostics.modulePitch,
+    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
+    moduleCount: symbol.diagnostics.moduleCount,
+    placement,
+    outputWidth: source.width,
+    outputHeight: source.height
+  }));
+  const resized = resizeNearest(image, 750, 1125);
+  const locator = readRibbonLocator(resized) ?? failLocator();
+
+  assert.equal(locator.sourceWidth, 1000);
+  assert.equal(locator.sourceHeight, 1500);
+  assert.equal(locator.sourceModulePitch, symbol.diagnostics.modulePitch);
+  assert.equal(locator.modulePitch, 7);
+  assert.equal(locator.placement, placement);
+});
+
 void test("transform lab rgba helpers preserve bounds", () => {
   const image = makeNoCarrierImage(12, 10);
 
@@ -336,6 +452,10 @@ function failPreset(): never {
 
 function failCandidate(): never {
   throw new Error("missing auto decode candidate");
+}
+
+function failLocator(): never {
+  throw new Error("missing ribbon locator");
 }
 
 function readZipEntryPaths(archive: Uint8Array): readonly string[] {

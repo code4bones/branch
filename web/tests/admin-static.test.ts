@@ -14,6 +14,7 @@ const defaultsPath = resolve(process.cwd(), "src/admin/defaults.ts");
 const canvasImagePath = resolve(process.cwd(), "src/visual/canvas-image.ts");
 const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
 const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
+const ribbonLocatorPath = resolve(process.cwd(), "src/visual/ribbon-locator.ts");
 const ribbonDecodeClientPath = resolve(process.cwd(), "src/admin/ribbon-decode-client.ts");
 const ribbonDecodeWorkerPath = resolve(process.cwd(), "src/admin/ribbon-decode-worker.ts");
 const ribbonAutoDecodePath = resolve(process.cwd(), "src/admin/ribbon-auto-decode.ts");
@@ -91,6 +92,7 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   const canvasImage = await readFile(canvasImagePath, "utf8");
   const render = await readFile(ribbonRenderPath, "utf8");
   const decode = await readFile(ribbonDecodePath, "utf8");
+  const locator = await readFile(ribbonLocatorPath, "utf8");
   const decodeClient = await readFile(ribbonDecodeClientPath, "utf8");
   const decodeWorker = await readFile(ribbonDecodeWorkerPath, "utf8");
   const autoDecode = await readFile(ribbonAutoDecodePath, "utf8");
@@ -102,8 +104,12 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(render, /encodeRibbonFrame/);
   assert.match(render, /drawCoverImage/);
   assert.match(render, /renderRibbonImage/);
+  assert.match(render, /drawRibbonLocator/);
   assert.match(decode, /decodeRibbonImage/);
   assert.match(decode, /decodeRibbonFrame/);
+  assert.match(decode, /readRibbonLocator/);
+  assert.match(locator, /ribbon-locator\/0\.draft/);
+  assert.match(locator, /BRLOC0/);
   assert.match(decode, /extractStegoTintCandidates/);
   assert.match(decodeClient, /new Worker/);
   assert.match(decodeClient, /postMessage\(request, \[request\.image\.data\]\)/);
@@ -124,7 +130,7 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(tint, /drawTintQR/);
   assert.match(tint, /extractStegoTintCandidates/);
   assert.match(tint, /extractChromaTintCandidates/);
-  assert.doesNotMatch(`${render}\n${decode}\n${decodeClient}\n${decodeWorker}\n${autoDecode}\n${transformLab}\n${transformLabRunner}\n${tint}`, /window\.BranchQRCode|window\.jsQR|fetch\s*\(|XMLHttpRequest|WebSocket/);
+  assert.doesNotMatch(`${render}\n${decode}\n${locator}\n${decodeClient}\n${decodeWorker}\n${autoDecode}\n${transformLab}\n${transformLabRunner}\n${tint}`, /window\.BranchQRCode|window\.jsQR|fetch\s*\(|XMLHttpRequest|WebSocket/);
 });
 
 void test("admin github generator stays offline and produces local drop-in paths", async () => {

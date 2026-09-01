@@ -7,6 +7,12 @@ import {
   ribbonSealProfile,
   type RibbonSealDiagnostics
 } from "./ribbon-image.js";
+import {
+  drawRibbonLocator,
+  makeRibbonLocatorHint,
+  ribbonTintProfile,
+  type RibbonLocatorVisualProfile
+} from "./ribbon-locator.js";
 import { drawTintQR } from "./ribbon-tint.js";
 import type { LoadedBrowserImage } from "./canvas-image.js";
 
@@ -74,6 +80,7 @@ export function renderRibbonImage(
       ensureCarrierFits(symbolSize, options.outputWidth, options.outputHeight);
       const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
       drawQR(context, symbol.modules, placement.x, placement.y, symbol.diagnostics.modulePitch, symbol.diagnostics.quietZone);
+      drawLocator(context, symbol, options, "ribbon-seal/0");
       return;
     }
     drawQR(context, symbol.modules, 0, 0, symbol.diagnostics.modulePitch, symbol.diagnostics.quietZone);
@@ -97,6 +104,7 @@ export function renderRibbonImage(
     symbol.diagnostics.quietZone,
     options.tintStrength
   );
+  drawLocator(context, symbol, options, ribbonTintProfile);
 }
 
 export function drawIdleCanvas(canvas: HTMLCanvasElement): void {
@@ -177,6 +185,29 @@ function ensureCarrierFits(symbolSize: number, outputWidth: number, outputHeight
   if (symbolSize > outputWidth || symbolSize > outputHeight) {
     throw new Error("carrier size too large for output");
   }
+}
+
+function drawLocator(
+  context: CanvasRenderingContext2D,
+  symbol: GeneratedRibbonSymbol,
+  options: RenderRibbonOptions,
+  visualProfile: RibbonLocatorVisualProfile
+): void {
+  drawRibbonLocator(
+    context,
+    options.outputWidth,
+    options.outputHeight,
+    makeRibbonLocatorHint({
+      visualProfile,
+      quietZone: symbol.diagnostics.quietZone,
+      modulePitch: symbol.diagnostics.modulePitch,
+      sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
+      moduleCount: symbol.diagnostics.moduleCount,
+      placement: options.placement,
+      outputWidth: options.outputWidth,
+      outputHeight: options.outputHeight
+    })
+  );
 }
 
 function requireCanvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {

@@ -6,6 +6,7 @@ import {
   type RibbonDecodeResult,
   type RibbonImageData
 } from "./ribbon-image.js";
+import { readRibbonLocator, type RibbonLocatorHint, type RibbonLocatorRegion } from "./ribbon-locator.js";
 import { extractChromaTintCandidates, extractStegoTintCandidates } from "./ribbon-tint.js";
 
 type JSQRDecoder = (
@@ -31,6 +32,8 @@ export interface DecodeRibbonImageOptions {
 export interface DecodedRibbonWrapper {
   readonly status: string;
   readonly wrapper: string;
+  readonly locator?: RibbonLocatorHint;
+  readonly foundRegion?: RibbonLocatorRegion;
 }
 
 interface VersionAttempt {
@@ -52,10 +55,22 @@ export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonI
     return { status: statusLabel(validationStatus), wrapper: "" };
   }
 
+  const locator = readRibbonLocator(image);
+  if (locator !== null) {
+    const located = decodeWithLocatedHint(image, locator);
+    if (located.wrapper !== "") {
+      return located;
+    }
+  }
+
   const attempts = selectVersionAttempts(image, options);
   const placedDirect = decodePlacedQRCode(image, options, attempts);
   if (placedDirect.status === "beacon_accepted") {
-    return { status: "seal decoded", wrapper: decodePayload(placedDirect.frame.payload) };
+    return {
+      status: "seal decoded",
+      wrapper: decodePayload(placedDirect.frame.payload),
+      ...(placedDirect.region === undefined ? {} : { foundRegion: placedDirect.region })
+    };
   }
 
   const direct = image.width * image.height <= (options.maxDirectPixels ?? defaultMaxDirectPixels)
@@ -71,6 +86,42 @@ export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonI
   }
 
   return { status: tinted.status || statusLabel(direct.status), wrapper: "" };
+}
+
+function decodeWithLocatedHint(image: RibbonImageData, locator: RibbonLocatorHint): DecodedRibbonWrapper {
+  const options: DecodeRibbonImageOptions = {
+    quietZone: locator.quietZone,
+    carrierSize: locator.symbolSize,
+    placement: locator.placement,
+    preferredVersion: locator.sourceSymbolVersion,
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: locator.visualProfile === "ribbon-tint/0" ? 8 : 2
+  };
+  const attempts = selectVersionAttempts(image, options);
+  if (locator.visualProfile === "ribbon-tint/0") {
+    const tinted = decodeTintImage(image, options, attempts);
+    if (tinted.wrapper !== "") {
+      return {
+        ...tinted,
+        status: `${tinted.status} locator`,
+        locator,
+        foundRegion: locator.payloadRegion
+      };
+    }
+  }
+
+  const placedDirect = decodePlacedQRCode(image, options, attempts);
+  if (placedDirect.status === "beacon_accepted") {
+    return {
+      status: "seal decoded locator",
+      wrapper: decodePayload(placedDirect.frame.payload),
+      locator,
+      foundRegion: locator.payloadRegion
+    };
+  }
+
+  return { status: "locator hint rejected", wrapper: "", locator };
 }
 
 function decodeTintImage(
@@ -93,7 +144,11 @@ function decodeTintImage(
       decodedCandidates += 1;
       const decoded = decodeQRCodeData(candidate.data, candidate.width, candidate.height);
       if (decoded.status === "beacon_accepted") {
-        return { status: `tint decoded v${String(version)}`, wrapper: decodePayload(decoded.frame.payload) };
+        return {
+          status: `tint decoded v${String(version)}`,
+          wrapper: decodePayload(decoded.frame.payload),
+          foundRegion: { ...placement, size: symbolSize }
+        };
       }
     }
   }
@@ -104,13 +159,13 @@ function decodePlacedQRCode(
   image: RibbonImageData,
   options: DecodeRibbonImageOptions,
   attempts: readonly VersionAttempt[]
-): RibbonDecodeResult {
+): RibbonDecodeResult & { readonly region?: RibbonLocatorRegion } {
   for (const { symbolSize } of attempts) {
     const placement = computePlacement(options.placement, image.width, image.height, symbolSize);
     const candidate = cropSquare(image, placement.x, placement.y, symbolSize);
     const decoded = decodeQRCodeData(candidate.data, candidate.width, candidate.height);
     if (decoded.status === "beacon_accepted") {
-      return decoded;
+      return { ...decoded, region: { ...placement, size: symbolSize } };
     }
   }
   return { status: "no_carrier_detected" };
