@@ -55,6 +55,7 @@ type Handler struct {
 	provider            SnapshotProvider
 	diagnosticsProvider DiagnosticsSnapshotProvider
 	metricsProvider     MetricsProvider
+	bootstrapProvider   BootstrapBeaconProvider
 }
 
 // HandlerOption configures optional protected admin surfaces.
@@ -71,6 +72,14 @@ func WithDiagnosticsProvider(provider DiagnosticsSnapshotProvider) HandlerOption
 func WithMetricsProvider(provider MetricsProvider) HandlerOption {
 	return func(handler *Handler) {
 		handler.metricsProvider = provider
+	}
+}
+
+// WithBootstrapBeaconProvider attaches the protected relay-owned bootstrap
+// beacon signing surface.
+func WithBootstrapBeaconProvider(provider BootstrapBeaconProvider) HandlerOption {
+	return func(handler *Handler) {
+		handler.bootstrapProvider = provider
 	}
 }
 
@@ -110,6 +119,19 @@ func (handler *Handler) Metrics() Response {
 		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 	}
 	return jsonResponse(StatusOK, handler.metricsProvider.MetricsSnapshot())
+}
+
+// BootstrapBeacon returns a relay-owned signed BootstrapBeacon wrapper for
+// operator publication into an external carrier.
+func (handler *Handler) BootstrapBeacon(request BootstrapBeaconRequest) Response {
+	if handler.bootstrapProvider == nil {
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	response, err := handler.bootstrapProvider.BootstrapBeacon(request)
+	if err != nil {
+		return jsonResponse(400, map[string]string{"error": err.Error()})
+	}
+	return jsonResponse(StatusOK, response)
 }
 
 func sanitizeSnapshot(snapshot StatusSnapshot) StatusSnapshot {

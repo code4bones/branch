@@ -8,6 +8,7 @@ import { test } from "node:test";
 
 import { runCarrierHoppingPoC } from "../src/connectivity/carrier-hopping-poc.js";
 import { runDiscoveredCarrierHopPoC } from "../src/discovery/carrier-hop-client.js";
+import { createGitLabSearchCarrier, gitLabDiscoveryDefaultQuery } from "../src/discovery/gitlab.js";
 import type { BrowserRelaySocket, BrowserRelaySocketFactory, RelayRouteMaterial } from "../src/connectivity/same-relay.js";
 import type { BeaconObservation, SearchCarrier } from "../src/discovery/client.js";
 import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
@@ -23,8 +24,8 @@ void test("carrier-hopping PoC runner works against two local branch-node relay 
     await Promise.all([relayA.stop(), relayB.stop()]);
   });
 
-  const routeA = makeRoute("local relay A", "wss://relay-a.local/relay/v0", relayA.publicKey);
-  const routeB = makeRoute("local relay B", "wss://relay-b.local/relay/v0", relayB.publicKey);
+  const routeA = makeRoute("wss://relay-a.local:443/relay/v0", relayA.publicKey);
+  const routeB = makeRoute("wss://relay-b.local:443/relay/v0", relayB.publicKey);
   const socketFactory = mappedSocketFactory(new Map([
     [routeA.endpointUri, `ws://${relayA.publicAddr}/relay/v0`],
     [routeB.endpointUri, `ws://${relayB.publicAddr}/relay/v0`]
@@ -53,8 +54,8 @@ void test("discovered carrier-hop runner works against two local branch-node rel
     await Promise.all([relayA.stop(), relayB.stop()]);
   });
 
-  const routeA = makeRoute("local relay A", "wss://relay-a.local/relay/v0", relayA.publicKey);
-  const routeB = makeRoute("local relay B", "wss://relay-b.local/relay/v0", relayB.publicKey);
+  const routeA = makeRoute("wss://relay-a.local:443/relay/v0", relayA.publicKey);
+  const routeB = makeRoute("wss://relay-b.local:443/relay/v0", relayB.publicKey);
   let searchCount = 0;
   const carrier: SearchCarrier = {
     id: "local-fixture",
@@ -89,7 +90,61 @@ void test("discovered carrier-hop runner works against two local branch-node rel
   assert.equal(searchCount, 1);
   assert.equal(report.discovery.acceptedCount, 2);
   assert.equal(report.routeSnapshot.length, 2);
-  assert.deepEqual(report.routeSnapshot.map((route) => route.source), [undefined, undefined]);
+  const firstGenericRoute = report.routeSnapshot[0];
+  const secondGenericRoute = report.routeSnapshot[1];
+  assert(firstGenericRoute !== undefined);
+  assert(secondGenericRoute !== undefined);
+  assert(!("source" in firstGenericRoute));
+  assert(!("source" in secondGenericRoute));
+  assert.equal(report.transport.status, "ok", JSON.stringify(report, null, 2));
+  assert.equal(report.transport.migrated, true);
+  assert.equal(report.transport.pendingCount, 0);
+  assert.equal(report.transport.unavailableCount, 1);
+  assert(report.transport.events.some((event) => event.includes("carrier.disabled delivery continued")));
+  assert(report.transport.events.some((event) => event.includes("route.migration.completed")));
+
+  await Promise.all([waitForEmptyRelay(relayA), waitForEmptyRelay(relayB)]);
+});
+
+void test("GitLab-discovered carrier-hop runner uses relay-owned branch-node beacons", async (t) => {
+  const relayA = await startBranchNode("gitlab-a");
+  const relayB = await startBranchNode("gitlab-b");
+  t.after(async () => {
+    await Promise.all([relayA.stop(), relayB.stop()]);
+  });
+
+  const routeA = makeRoute("wss://relay-a.local:443/relay/v0", relayA.publicKey);
+  const routeB = makeRoute("wss://relay-b.local:443/relay/v0", relayB.publicKey);
+  const [wrapperA, wrapperB] = await Promise.all([
+    fetchRelayOwnedWrapper(relayA, routeA.endpointUri),
+    fetchRelayOwnedWrapper(relayB, routeB.endpointUri)
+  ]);
+  const fetcher = makeGitLabFixtureFetcher(new Map([
+    ["alice/carrier-a", wrapperA],
+    ["bob/carrier-b", wrapperB],
+    ["mallory/poison", corruptWrapper(wrapperA)]
+  ]));
+
+  const report = await runDiscoveredCarrierHopPoC({
+    carrier: createGitLabSearchCarrier(fetcher),
+    primaryQuery: gitLabDiscoveryDefaultQuery,
+    fallbackQuery: null,
+    includeFallback: false,
+    includeForks: false,
+    socketFactory: mappedSocketFactory(new Map([
+      [routeA.endpointUri, `ws://${relayA.publicAddr}/relay/v0`],
+      [routeB.endpointUri, `ws://${relayB.publicAddr}/relay/v0`]
+    ])),
+    stepTimeoutMs: 5_000
+  });
+
+  assert.equal(report.discovery.acceptedCount, 2);
+  assert.equal(report.discovery.rejectedCount, 1);
+  assert.equal(report.routeSnapshot.length, 2);
+  assert.deepEqual(report.routeSnapshot.map((route) => route.relayPublicKey), [relayA.publicKey, relayB.publicKey]);
+  const firstGitLabRoute = report.routeSnapshot[0];
+  assert(firstGitLabRoute !== undefined);
+  assert(!("source" in firstGitLabRoute));
   assert.equal(report.transport.status, "ok", JSON.stringify(report, null, 2));
   assert.equal(report.transport.migrated, true);
   assert.equal(report.transport.pendingCount, 0);
@@ -176,13 +231,91 @@ async function startBranchNode(label: string): Promise<StartedBranchNode> {
   }
 }
 
-function makeRoute(source: string, endpointUri: string, relayPublicKey: string): RelayRouteMaterial {
+function makeRoute(endpointUri: string, relayPublicKey: string): RelayRouteMaterial {
   return {
     endpointUri,
     relayPublicKey,
-    profileMultihash: developmentProfileMultihash,
-    source
+    profileMultihash: developmentProfileMultihash
   };
+}
+
+async function fetchRelayOwnedWrapper(node: StartedBranchNode, endpointUri: string): Promise<string> {
+  const url = new URL(`${node.adminURL}/bootstrap/beacon`);
+  url.searchParams.set("endpoint", endpointUri);
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${adminToken}` }
+  });
+  if (!response.ok) {
+    throw new Error(`bootstrap beacon failed ${String(response.status)}\n${node.output()}`);
+  }
+  const decoded: unknown = await response.json();
+  if (!isRelayBootstrapResponse(decoded)) {
+    throw new Error("bootstrap beacon response rejected");
+  }
+  assert.equal(decoded.relay_public_key, node.publicKey);
+  assert.equal(decoded.relay_endpoints[0]?.uri, endpointUri);
+  return decoded.wrapper;
+}
+
+function makeGitLabFixtureFetcher(records: ReadonlyMap<string, string>): (input: string, init?: RequestInit) => Promise<Response> {
+  return (input, init) => {
+    if (init?.credentials !== undefined) {
+      assert.equal(init.credentials, "omit");
+    }
+    const url = new URL(input);
+    if (url.origin === "https://gitlab.com" && url.pathname === "/api/v4/projects") {
+      return Promise.resolve(jsonResponse([...records.keys()].map((repository, index) => ({
+        id: index + 1,
+        path_with_namespace: repository,
+        name_with_namespace: repository.replace("/", " / "),
+        web_url: `https://gitlab.com/${repository}`,
+        default_branch: "main"
+      }))));
+    }
+    const repository = decodeGitLabRepositoryPath(url.pathname);
+    const wrapper = records.get(repository);
+    if (wrapper === undefined) {
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    }
+    return Promise.resolve(new Response(`${wrapper}\n`, {
+      status: 200,
+      headers: { "content-type": "text/plain" }
+    }));
+  };
+}
+
+function decodeGitLabRepositoryPath(pathname: string): string {
+  const match = pathname.match(/^\/api\/v4\/projects\/([^/]+)\/repository\/files\//);
+  if (match === null || match[1] === undefined) {
+    throw new Error(`unexpected GitLab fixture URL ${pathname}`);
+  }
+  return decodeURIComponent(match[1]);
+}
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+}
+
+function corruptWrapper(wrapper: string): string {
+  const replacement = wrapper.endsWith("A") ? "B" : "A";
+  return `${wrapper.slice(0, -1)}${replacement}`;
+}
+
+interface RelayBootstrapResponse {
+  readonly wrapper: string;
+  readonly relay_public_key: string;
+  readonly relay_endpoints: readonly { readonly uri: string }[];
+}
+
+function isRelayBootstrapResponse(value: unknown): value is RelayBootstrapResponse {
+  return isRecord(value) &&
+    typeof value["wrapper"] === "string" &&
+    value["wrapper"].startsWith("BRANCH0.") &&
+    typeof value["relay_public_key"] === "string" &&
+    Array.isArray(value["relay_endpoints"]);
 }
 
 function mappedSocketFactory(urls: ReadonlyMap<string, string>): BrowserRelaySocketFactory {

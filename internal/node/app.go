@@ -85,7 +85,10 @@ func New(config Config) (*App, error) {
 	}
 	statusProvider := admin.NewRelayStatusProvider(baseStatus, hub)
 	adminMux := admin.NewHTTPHandler(
-		admin.NewHandler(statusProvider),
+		admin.NewHandler(
+			statusProvider,
+			admin.WithBootstrapBeaconProvider(newBootstrapBeaconProvider(nodeIdentity)),
+		),
 		admin.AuthorizerFunc(func(request *http.Request) bool {
 			return config.AdminToken != "" && request.Header.Get("authorization") == "Bearer "+config.AdminToken
 		}),

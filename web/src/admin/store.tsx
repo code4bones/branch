@@ -42,6 +42,8 @@ export interface GitHubState {
   readonly mode: "demo" | "live";
   readonly records: string;
   readonly relayEndpointUri: string;
+  readonly relayAdminBaseUrl: string;
+  readonly relayAdminToken: string;
   readonly sourceCommit: string;
   readonly files: readonly GitHubDropInFile[];
   readonly selectedFile: number;
@@ -63,6 +65,8 @@ export interface GitLabState {
   readonly mode: "demo" | "live";
   readonly records: string;
   readonly relayEndpointUri: string;
+  readonly relayAdminBaseUrl: string;
+  readonly relayAdminToken: string;
   readonly sourceCommit: string;
   readonly files: readonly GitLabDropInFile[];
   readonly selectedFile: number;
@@ -157,6 +161,8 @@ export interface AdminActions {
   readonly setTransformLabStatus: (status: string, statusClass: StatusClass) => void;
   readonly setGitHubRecords: (records: string) => void;
   readonly setGitHubRelayEndpointUri: (relayEndpointUri: string) => void;
+  readonly setGitHubRelayAdminBaseUrl: (relayAdminBaseUrl: string) => void;
+  readonly setGitHubRelayAdminToken: (relayAdminToken: string) => void;
   readonly setGitHubMode: (mode: GitHubState["mode"]) => void;
   readonly setGitHubSourceCommit: (sourceCommit: string) => void;
   readonly setGitHubFiles: (files: readonly GitHubDropInFile[]) => void;
@@ -173,6 +179,8 @@ export interface AdminActions {
   readonly setGitHubDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
   readonly setGitLabRecords: (records: string) => void;
   readonly setGitLabRelayEndpointUri: (relayEndpointUri: string) => void;
+  readonly setGitLabRelayAdminBaseUrl: (relayAdminBaseUrl: string) => void;
+  readonly setGitLabRelayAdminToken: (relayAdminToken: string) => void;
   readonly setGitLabMode: (mode: GitLabState["mode"]) => void;
   readonly setGitLabSourceCommit: (sourceCommit: string) => void;
   readonly setGitLabFiles: (files: readonly GitLabDropInFile[]) => void;
@@ -258,6 +266,8 @@ function createAdminStore(): AdminStoreApi {
       mode: "demo",
       records: "",
       relayEndpointUri: defaultBootstrapRelayEndpointUri,
+      relayAdminBaseUrl: "/node-admin",
+      relayAdminToken: "",
       sourceCommit: "",
       files: [],
       selectedFile: 0,
@@ -278,6 +288,8 @@ function createAdminStore(): AdminStoreApi {
       mode: "demo",
       records: "",
       relayEndpointUri: defaultBootstrapRelayEndpointUri,
+      relayAdminBaseUrl: "/node-admin",
+      relayAdminToken: "",
       sourceCommit: "",
       files: [],
       selectedFile: 0,
@@ -377,6 +389,20 @@ function createAdminStore(): AdminStoreApi {
         github: {
           ...state.github,
           relayEndpointUri
+        }
+      })); },
+    setGitHubRelayAdminBaseUrl: (relayAdminBaseUrl) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          relayAdminBaseUrl
+        }
+      })); },
+    setGitHubRelayAdminToken: (relayAdminToken) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          relayAdminToken
         }
       })); },
     setGitHubMode: (mode) =>
@@ -492,6 +518,20 @@ function createAdminStore(): AdminStoreApi {
         gitlab: {
           ...state.gitlab,
           relayEndpointUri
+        }
+      })); },
+    setGitLabRelayAdminBaseUrl: (relayAdminBaseUrl) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          relayAdminBaseUrl
+        }
+      })); },
+    setGitLabRelayAdminToken: (relayAdminToken) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          relayAdminToken
         }
       })); },
     setGitLabMode: (mode) =>

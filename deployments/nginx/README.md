@@ -48,5 +48,10 @@ The previous `/var/www/branch` artifact root remains useful for production-like
 copy deployments, but it is intentionally not used by this local development
 config.
 
+The `/node-admin/` location proxies to the protected local `branch-node` admin
+listener on `127.0.0.1:8081`. It exists so the open developer admin front can
+request relay-owned BootstrapBeacon wrappers through same-origin browser fetches
+while the branch-node admin token still gates the protected endpoint.
+
 This serves the local web shell only. It does not add a relay database, external
 monitoring stack, protocol authority, or durable delivery path.

@@ -11,9 +11,9 @@ import {
 } from "../../discovery/gitlab.js";
 import { makeGitLabArchive, makeGitLabFiles, parseGitLabRecords } from "../gitlab-dropin.js";
 import { gitLabProjectDescription, gitLabProjectTopics, makeRootReadmeSnippet } from "../publication-profile.js";
+import { fetchRelayBootstrapBeacon } from "../relay-bootstrap.js";
 import { useAdminStore } from "../store.js";
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
-import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
 
 export function GitLabTool(): React.JSX.Element {
   const outputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -27,6 +27,8 @@ export function GitLabTool(): React.JSX.Element {
   const setGitLabMode = useAdminStore((state) => state.setGitLabMode);
   const setGitLabRecords = useAdminStore((state) => state.setGitLabRecords);
   const setGitLabRelayEndpointUri = useAdminStore((state) => state.setGitLabRelayEndpointUri);
+  const setGitLabRelayAdminBaseUrl = useAdminStore((state) => state.setGitLabRelayAdminBaseUrl);
+  const setGitLabRelayAdminToken = useAdminStore((state) => state.setGitLabRelayAdminToken);
   const setGitLabSourceCommit = useAdminStore((state) => state.setGitLabSourceCommit);
   const setGitLabFiles = useAdminStore((state) => state.setGitLabFiles);
   const setGitLabBadgeSnippet = useAdminStore((state) => state.setGitLabBadgeSnippet);
@@ -101,17 +103,15 @@ export function GitLabTool(): React.JSX.Element {
 
   async function onGenerateRelayBeacon(): Promise<void> {
     try {
-      setGitLabStatus("generating relay bootstrap.beacon", "status-warn");
-      const wrapper = await createBootstrapBeaconWrapper({
-        relayEndpoints: [{
-          transport: "wss",
-          uri: gitlab.relayEndpointUri.trim(),
-          priority: 0
-        }]
+      setGitLabStatus("fetching relay-owned bootstrap.beacon", "status-warn");
+      const beacon = await fetchRelayBootstrapBeacon({
+        adminBaseUrl: gitlab.relayAdminBaseUrl,
+        adminToken: gitlab.relayAdminToken,
+        endpointUri: gitlab.relayEndpointUri
       });
       setGitLabMode("live");
-      setGitLabRecords(wrapper);
-      setGitLabStatus("relay bootstrap.beacon generated", "status-good");
+      setGitLabRecords(beacon.wrapper);
+      setGitLabStatus(`relay bootstrap.beacon fetched ${shortId(beacon.relay_public_key)}`, "status-good");
     } catch (error) {
       setGitLabStatus(errorMessage(error), "status-bad");
     }
@@ -184,6 +184,30 @@ export function GitLabTool(): React.JSX.Element {
             </div>
 
             <div className="control-row">
+              <label htmlFor="gitlab-relay-admin-url">Relay admin URL</label>
+              <input
+                id="gitlab-relay-admin-url"
+                name="gitlab-relay-admin-url"
+                type="text"
+                spellCheck={false}
+                value={gitlab.relayAdminBaseUrl}
+                onChange={(event) => { setGitLabRelayAdminBaseUrl(event.currentTarget.value); }}
+              />
+            </div>
+
+            <div className="control-row">
+              <label htmlFor="gitlab-relay-admin-token">Relay admin token</label>
+              <input
+                autoComplete="off"
+                id="gitlab-relay-admin-token"
+                name="gitlab-relay-admin-token"
+                type="password"
+                value={gitlab.relayAdminToken}
+                onChange={(event) => { setGitLabRelayAdminToken(event.currentTarget.value); }}
+              />
+            </div>
+
+            <div className="control-row">
               <label htmlFor="gitlab-source-commit">Source commit</label>
               <input
                 id="gitlab-source-commit"
@@ -198,7 +222,7 @@ export function GitLabTool(): React.JSX.Element {
 
             <div className="button-row">
               <button type="button" onClick={() => { void onGenerateRelayBeacon(); }}>
-                Generate relay beacon
+                Fetch relay beacon
               </button>
               <button type="submit">Generate</button>
               <button
@@ -421,6 +445,10 @@ function readBoundedInteger(value: string, min: number, max: number, fallback: n
     return fallback;
   }
   return Math.max(min, Math.min(max, parsed));
+}
+
+function shortId(value: string): string {
+  return value.length <= 14 ? value : `${value.slice(0, 14)}...`;
 }
 
 function errorMessage(error: unknown): string {

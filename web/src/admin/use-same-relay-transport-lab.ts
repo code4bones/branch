@@ -85,7 +85,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
       transportStatus: "attaching two local clients",
       transportStatusClass: "status-warn",
       relayEndpointUri: route.endpointUri,
-      relaySource: route.source ?? "",
+      relaySource: route.endpointUri,
       relayAckCount: 0,
       peerReceiptCount: 0,
       pendingCount: 0,

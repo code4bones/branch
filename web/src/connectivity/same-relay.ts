@@ -13,7 +13,6 @@ export interface RelayRouteMaterial {
   readonly endpointUri: string;
   readonly relayPublicKey: string;
   readonly profileMultihash: string;
-  readonly source?: string;
 }
 
 export interface SameRelayIdentity {

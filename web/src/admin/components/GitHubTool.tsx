@@ -12,9 +12,9 @@ import {
 } from "../../discovery/github.js";
 import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
 import { githubRepositoryTopics, makeRootReadmeSnippet } from "../publication-profile.js";
+import { fetchRelayBootstrapBeacon } from "../relay-bootstrap.js";
 import { useAdminStore } from "../store.js";
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
-import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
 
 export function GitHubTool(): React.JSX.Element {
   const outputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -27,6 +27,8 @@ export function GitHubTool(): React.JSX.Element {
   const setGitHubMode = useAdminStore((state) => state.setGitHubMode);
   const setGitHubRecords = useAdminStore((state) => state.setGitHubRecords);
   const setGitHubRelayEndpointUri = useAdminStore((state) => state.setGitHubRelayEndpointUri);
+  const setGitHubRelayAdminBaseUrl = useAdminStore((state) => state.setGitHubRelayAdminBaseUrl);
+  const setGitHubRelayAdminToken = useAdminStore((state) => state.setGitHubRelayAdminToken);
   const setGitHubSourceCommit = useAdminStore((state) => state.setGitHubSourceCommit);
   const setGitHubFiles = useAdminStore((state) => state.setGitHubFiles);
   const setGitHubBadgeSnippet = useAdminStore((state) => state.setGitHubBadgeSnippet);
@@ -108,17 +110,15 @@ export function GitHubTool(): React.JSX.Element {
 
   async function onGenerateRelayBeacon(): Promise<void> {
     try {
-      setGitHubStatus("generating relay bootstrap.beacon", "status-warn");
-      const wrapper = await createBootstrapBeaconWrapper({
-        relayEndpoints: [{
-          transport: "wss",
-          uri: github.relayEndpointUri.trim(),
-          priority: 0
-        }]
+      setGitHubStatus("fetching relay-owned bootstrap.beacon", "status-warn");
+      const beacon = await fetchRelayBootstrapBeacon({
+        adminBaseUrl: github.relayAdminBaseUrl,
+        adminToken: github.relayAdminToken,
+        endpointUri: github.relayEndpointUri
       });
       setGitHubMode("live");
-      setGitHubRecords(wrapper);
-      setGitHubStatus("relay bootstrap.beacon generated", "status-good");
+      setGitHubRecords(beacon.wrapper);
+      setGitHubStatus(`relay bootstrap.beacon fetched ${shortId(beacon.relay_public_key)}`, "status-good");
     } catch (error) {
       setGitHubStatus(errorMessage(error), "status-bad");
     }
@@ -191,6 +191,30 @@ export function GitHubTool(): React.JSX.Element {
             </div>
 
             <div className="control-row">
+              <label htmlFor="github-relay-admin-url">Relay admin URL</label>
+              <input
+                id="github-relay-admin-url"
+                name="github-relay-admin-url"
+                type="text"
+                spellCheck={false}
+                value={github.relayAdminBaseUrl}
+                onChange={(event) => { setGitHubRelayAdminBaseUrl(event.currentTarget.value); }}
+              />
+            </div>
+
+            <div className="control-row">
+              <label htmlFor="github-relay-admin-token">Relay admin token</label>
+              <input
+                autoComplete="off"
+                id="github-relay-admin-token"
+                name="github-relay-admin-token"
+                type="password"
+                value={github.relayAdminToken}
+                onChange={(event) => { setGitHubRelayAdminToken(event.currentTarget.value); }}
+              />
+            </div>
+
+            <div className="control-row">
               <label htmlFor="source-commit">Source commit</label>
               <input
                 id="source-commit"
@@ -208,7 +232,7 @@ export function GitHubTool(): React.JSX.Element {
                 type="button"
                 onClick={() => { void onGenerateRelayBeacon(); }}
               >
-                Generate relay beacon
+                Fetch relay beacon
               </button>
               <button type="submit">Generate</button>
               <button
@@ -439,6 +463,10 @@ function readBoundedInteger(value: string, min: number, max: number, fallback: n
     return fallback;
   }
   return Math.max(min, Math.min(max, parsed));
+}
+
+function shortId(value: string): string {
+  return value.length <= 14 ? value : `${value.slice(0, 14)}...`;
 }
 
 function errorMessage(error: unknown): string {

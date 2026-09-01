@@ -101,7 +101,7 @@ export function ClientTool(): React.JSX.Element {
         <div className="client-route">
           <span>Route</span>
           <strong>{transport.route?.endpointUri ?? "-"}</strong>
-          <small>{transport.route?.source ?? "no accepted relay route"}</small>
+          <small>{client.relaySource === "" ? "no accepted relay route" : client.relaySource}</small>
         </div>
       </section>
 

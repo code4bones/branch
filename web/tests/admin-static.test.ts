@@ -129,9 +129,11 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /id="github-mode"/);
   assert.match(githubTool, /Demo fixture/);
   assert.match(githubTool, /Live publishable/);
-  assert.match(githubTool, /Generate relay beacon/);
-  assert.match(githubTool, /createBootstrapBeaconWrapper/);
+  assert.match(githubTool, /Fetch relay beacon/);
+  assert.match(githubTool, /fetchRelayBootstrapBeacon/);
   assert.match(githubTool, /id="relay-endpoint-uri"/);
+  assert.match(githubTool, /id="github-relay-admin-url"/);
+  assert.match(githubTool, /id="github-relay-admin-token"/);
   assert.match(githubTool, /id="github-badge-snippet"/);
   assert.match(githubTool, /README badge snippet/);
   assert.match(githubTool, /id="github-topics"/);
@@ -157,6 +159,10 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(gitLabTool, /id="gitlab-panel-check"/);
   assert.match(gitLabTool, /GitLab project description/);
   assert.match(gitLabTool, /GitLab topics/);
+  assert.match(gitLabTool, /Fetch relay beacon/);
+  assert.match(gitLabTool, /fetchRelayBootstrapBeacon/);
+  assert.match(gitLabTool, /id="gitlab-relay-admin-url"/);
+  assert.match(gitLabTool, /id="gitlab-relay-admin-token"/);
   assert.match(gitLabTool, /createGitLabSearchCarrier/);
   assert.match(gitLabTool, /gitLabDiscoveryConstraints/);
   assert.match(gitLabTool, /downloadBytes\(makeGitLabArchive/);
@@ -353,6 +359,8 @@ void test("nginx csp permits local cover image object urls", async () => {
 
   assert.match(source, /img-src 'self' data: blob:/);
   assert.match(source, /connect-src 'self' https:\/\/api\.github\.com https:\/\/gitlab\.com/);
+  assert.match(source, /location \/node-admin\//);
+  assert.match(source, /proxy_pass http:\/\/127\.0\.0\.1:8081\//);
   assert.match(source, /worker-src 'self'/);
   assert.doesNotMatch(source, /raw\.githubusercontent\.com|\*/);
 });

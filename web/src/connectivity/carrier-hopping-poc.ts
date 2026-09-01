@@ -364,7 +364,7 @@ function boundedTimeout(value: number): number {
 }
 
 function routeLabel(route: RelayRouteMaterial): string {
-  return route.source === undefined ? route.endpointUri : `${route.source} ${route.endpointUri}`;
+  return route.endpointUri;
 }
 
 function shortId(value: string): string {

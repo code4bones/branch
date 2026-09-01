@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/code4bones/branch/internal/observability"
+	protocol "github.com/code4bones/branch/protocol/v0"
 )
 
 type staticProvider struct {
@@ -31,6 +32,17 @@ type staticMetricsProvider struct {
 
 func (provider staticMetricsProvider) MetricsSnapshot() []observability.MetricSeries {
 	return provider.snapshot
+}
+
+type staticBootstrapProvider struct {
+	response BootstrapBeaconResponse
+	err      error
+	request  BootstrapBeaconRequest
+}
+
+func (provider *staticBootstrapProvider) BootstrapBeacon(request BootstrapBeaconRequest) (BootstrapBeaconResponse, error) {
+	provider.request = request
+	return provider.response, provider.err
 }
 
 func TestReadinessDoesNotExposePeerOrTopologyFields(t *testing.T) {
@@ -152,5 +164,47 @@ func TestMetricsReturnsInternalJSON(t *testing.T) {
 	}
 	if !strings.Contains(string(response.Body), `"value":2`) {
 		t.Fatalf("unexpected metrics body: %s", response.Body)
+	}
+}
+
+func TestBootstrapBeaconReturnsProtectedRelayOwnedWrapper(t *testing.T) {
+	provider := &staticBootstrapProvider{response: BootstrapBeaconResponse{
+		Wrapper:          "BRANCH0.example",
+		RelayPublicKey:   "relay-key",
+		Protocol:         protocol.ProtocolID,
+		ProfileMultihash: protocol.DevelopmentProfileMultihash,
+		ExpiresAt:        1_789_000_000,
+		RelayEndpoints: []protocol.BootstrapRelayEndpoint{{
+			Transport: "wss",
+			URI:       "wss://branch.undoo.ru:443/relay/v0",
+			Priority:  0,
+		}},
+	}}
+	handler := NewHandler(staticProvider{}, WithBootstrapBeaconProvider(provider))
+
+	response := handler.BootstrapBeacon(BootstrapBeaconRequest{RelayEndpoints: []protocol.BootstrapRelayEndpoint{{
+		Transport: "wss",
+		URI:       "wss://branch.undoo.ru:443/relay/v0",
+		Priority:  0,
+	}}})
+
+	if response.StatusCode != StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	if !strings.Contains(string(response.Body), "BRANCH0.example") {
+		t.Fatalf("missing wrapper: %s", response.Body)
+	}
+	if provider.request.RelayEndpoints[0].URI != "wss://branch.undoo.ru:443/relay/v0" {
+		t.Fatalf("provider request = %+v", provider.request)
+	}
+}
+
+func TestBootstrapBeaconUnavailableWithoutProvider(t *testing.T) {
+	handler := NewHandler(staticProvider{})
+
+	response := handler.BootstrapBeacon(BootstrapBeaconRequest{})
+
+	if response.StatusCode != StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", response.StatusCode, StatusServiceUnavailable)
 	}
 }

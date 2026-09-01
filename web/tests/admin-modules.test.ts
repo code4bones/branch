@@ -27,6 +27,7 @@ import {
   ribbonImagePublicationSearchQuery,
   ribbonImagePublicationTitle
 } from "../src/admin/publication-profile.js";
+import { fetchRelayBootstrapBeacon, makeRelayBootstrapBeaconUrl } from "../src/admin/relay-bootstrap.js";
 import { makeAutoDecodeBaseOptions, makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
 import {
@@ -172,6 +173,45 @@ void test("gitlab drop-in module emits local .branch files without root README o
       content: "stages: []\n"
     }]);
   }, /must not contain root README\.md or \.gitlab-ci\.yml/);
+});
+
+void test("relay bootstrap adapter fetches protected same-origin beacon endpoint", async () => {
+  const fetched: string[] = [];
+  const inits: RequestInit[] = [];
+  const response = {
+    wrapper: defaultBranchWrapper,
+    relay_public_key: "relay-key",
+    protocol: "branch/connectivity/0",
+    profile_multihash: "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw",
+    expires_at: 1_789_000_000,
+    relay_endpoints: [{
+      transport: "wss",
+      uri: "wss://branch.undoo.ru:443/relay/v0",
+      priority: 0
+    }]
+  };
+  const fetcher = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    fetched.push(fetchInputText(input));
+    if (init !== undefined) {
+      inits.push(init);
+    }
+    return Promise.resolve(jsonResponse(response));
+  };
+
+  const beacon = await fetchRelayBootstrapBeacon({
+    adminBaseUrl: "/node-admin",
+    adminToken: "operator-token",
+    endpointUri: "wss://branch.undoo.ru:443/relay/v0",
+    fetcher
+  });
+
+  assert.equal(makeRelayBootstrapBeaconUrl("/node-admin/", "wss://branch.undoo.ru:443/relay/v0"), "/node-admin/bootstrap/beacon?endpoint=wss%3A%2F%2Fbranch.undoo.ru%3A443%2Frelay%2Fv0");
+  assert.equal(fetched[0], "/node-admin/bootstrap/beacon?endpoint=wss%3A%2F%2Fbranch.undoo.ru%3A443%2Frelay%2Fv0");
+  const init = inits[0];
+  assert(init !== undefined);
+  assert.equal(init.credentials, "omit");
+  assert.equal(new Headers(init.headers).get("authorization"), "Bearer operator-token");
+  assert.equal(beacon.wrapper, defaultBranchWrapper);
 });
 
 void test("gitlab discovery searches public projects and reads bounded drop-in records", async () => {
@@ -613,6 +653,16 @@ function failPreset(): never {
 
 function failGitHubDiscoveryResult(): never {
   throw new Error("missing GitHub discovery result");
+}
+
+function fetchInputText(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  return input.url;
 }
 
 function failGitLabDiscoveryResult(): never {

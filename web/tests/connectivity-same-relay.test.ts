@@ -176,8 +176,7 @@ void test("carrier-hopping PoC keeps delivery after carrier access stops with on
   const routes = [{
     endpointUri: "wss://relay-a.test:443/relay/v0",
     relayPublicKey: relay.publicKey,
-    profileMultihash: developmentProfileMultihash,
-    source: "gitlab/alice/carrier-a"
+    profileMultihash: developmentProfileMultihash
   }];
   const report = await runCarrierHoppingPoC({
     routes,
@@ -199,14 +198,12 @@ void test("carrier-hopping PoC migrates client-owned pending envelope to a secon
     {
       endpointUri: "wss://relay-a.test:443/relay/v0",
       relayPublicKey: relayA.publicKey,
-      profileMultihash: developmentProfileMultihash,
-      source: "gitlab/alice/carrier-a"
+      profileMultihash: developmentProfileMultihash
     },
     {
       endpointUri: "wss://relay-b.test:443/relay/v0",
       relayPublicKey: relayB.publicKey,
-      profileMultihash: developmentProfileMultihash,
-      source: "gitlab/bob/carrier-b"
+      profileMultihash: developmentProfileMultihash
     }
   ];
 
@@ -274,7 +271,12 @@ void test("discovered carrier-hop runner snapshots generic observations before t
   assert.equal(searchCount, 1);
   assert.equal(report.discovery.acceptedCount, 2);
   assert.equal(report.routeSnapshot.length, 2);
-  assert.deepEqual(report.routeSnapshot.map((route) => route.source), [undefined, undefined]);
+  const firstRoute = report.routeSnapshot[0];
+  const secondRoute = report.routeSnapshot[1];
+  assert(firstRoute !== undefined);
+  assert(secondRoute !== undefined);
+  assert(!("source" in firstRoute));
+  assert(!("source" in secondRoute));
   assert.equal(report.transport.status, "ok");
   assert.equal(report.transport.migrated, true);
   assert.equal(report.transport.unavailableCount, 1);

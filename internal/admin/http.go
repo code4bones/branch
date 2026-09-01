@@ -56,6 +56,13 @@ func (handler *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		writeResponse(response, handler.handler.Diagnostics())
 	case "/metrics":
 		writeResponse(response, handler.handler.Metrics())
+	case "/bootstrap/beacon":
+		bootstrapRequest, err := ParseBootstrapBeaconRequest(request.URL.Query())
+		if err != nil {
+			writeResponse(response, jsonResponse(http.StatusBadRequest, map[string]string{"error": err.Error()}))
+			return
+		}
+		writeResponse(response, handler.handler.BootstrapBeacon(bootstrapRequest))
 	default:
 		http.NotFound(response, request)
 	}
