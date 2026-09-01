@@ -14,6 +14,12 @@ import {
   githubDiscoveryFallbackQuery,
   mergeGitHubDiscoveryReports
 } from "../src/discovery/github.js";
+import {
+  createGitLabSearchCarrier,
+  gitLabDiscoveryDefaultQuery,
+  gitLabReportsFromCarrierReports,
+  mergeGitLabDiscoveryReports
+} from "../src/discovery/gitlab.js";
 import { createBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
 
 void test("client discovery runs GitHub canonical locator then legacy fallback", async () => {
@@ -82,6 +88,50 @@ void test("client discovery keeps poisoned GitHub wrappers as rejected observati
   assert(firstObservation !== undefined);
   assert.equal(firstObservation.validation, "rejected");
   assert.equal(firstObservation.reason, "expired");
+});
+
+void test("client discovery runs GitLab project locator without credentials", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const fetched: string[] = [];
+  const fetchInits: RequestInit[] = [];
+  const fetcher = (input: string, init?: RequestInit): Promise<Response> => {
+    fetched.push(input);
+    if (init !== undefined) {
+      fetchInits.push(init);
+    }
+    if (input.startsWith("https://gitlab.com/api/v4/projects?")) {
+      return Promise.resolve(jsonResponse([{
+        id: 6,
+        path_with_namespace: "alice/carrier",
+        name_with_namespace: "Alice / Carrier",
+        web_url: "https://gitlab.com/alice/carrier",
+        default_branch: "main"
+      }]));
+    }
+    return Promise.resolve(new Response(`${wrapper}\n`, {
+      status: 200,
+      headers: { "content-type": "text/plain" }
+    }));
+  };
+
+  const discovery = await discoverClientBootstrapBeacons({
+    carrier: createGitLabSearchCarrier(fetcher),
+    primaryQuery: gitLabDiscoveryDefaultQuery,
+    fallbackQuery: null,
+    includeFallback: false,
+    perPage: 5,
+    page: 1
+  });
+  const report = mergeGitLabDiscoveryReports(gitLabReportsFromCarrierReports(discovery.carrierReports));
+
+  assert.equal(discovery.status, "ok");
+  assert.equal(discovery.acceptedCount, 1);
+  assert.equal(discovery.observations[0]?.evidence.carrier, "gitlab");
+  assert.equal(report.results[0]?.repository, "alice/carrier");
+  assert.match(fetched[0] ?? "", /topic%5B%5D=branchbootstrapv0/);
+  assert(fetchInits.every((init) => init.credentials === "omit"));
+  assert(fetched.every((input) => !input.includes("PRIVATE-TOKEN") && !input.includes("oauth")));
 });
 
 void test("client discovery returns bounded abort and error reports", async () => {

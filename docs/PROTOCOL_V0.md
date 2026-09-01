@@ -745,13 +745,13 @@ The initial independent SearchCarrier profiles are:
 | Profile | Baseline use | Notes |
 | --- | --- | --- |
 | GitHub public repository/search surfaces | Search repository metadata, topics, README text, and committed `.branch` payloads where the chosen surface exposes them. | Unauthenticated public search may be limited by surface and rate limit; credentialed code/API search is optional and uses the operator's own account. |
+| GitLab public project metadata surfaces | Search public project metadata using `branchbootstrapv0`, then read committed `.branch` payloads from candidate public projects. | The GitLab `/search` API is not the unauthenticated baseline; global code search and credentials are optional experiments only. |
 | npm package registry search | Search package metadata for marker terms and package pages that carry beacon wrappers. | Publication requires a package owner account; bootstrap reading must not require a B.R.A.N.C.H. credential. |
 | crates.io package search | Search crate metadata using unauthenticated registry search and package pages carrying beacon wrappers. | Publication requires a crate owner account; the adapter treats package ownership as carrier metadata. |
 
-GitLab search is a candidate credentialed profile, but current GitLab Search API
-documentation requires authentication for API calls. Such a profile can be
-useful through user-supplied credentials or a user-chosen proxy, but it is not a
-baseline browser-native bootstrap dependency.
+GitLab's Search API is a credentialed candidate profile, not the baseline blank
+client path. The baseline GitLab repository profile uses unauthenticated public
+project listing and repository-file reads where the instance allows them.
 
 Multiple frontends, mirrors, or API wrappers over the same underlying platform
 count as one failure domain. A discovery result set should include valid beacons
@@ -955,7 +955,8 @@ name, describe the independent Blue Ribbon tribute, and avoid implying
 affiliation with or endorsement by the Electronic Frontier Foundation.
 
 Search markers are public text, not authority. A participating GitHub
-repository should carry exactly one required repository topic:
+repository, or GitLab project using the public project metadata profile, should
+carry exactly one required repository/project topic:
 
 - `branchbootstrapv0`.
 
@@ -967,9 +968,10 @@ descriptions may also include the legacy protocol and campaign markers:
 - `branch-bootstrap-v0`;
 - `carry-the-ribbon`.
 
-Additional repository topics such as `carry-the-ribbon` or `branch-protocol`
-are not part of the GitHub publication profile. Multiple topic names on the
-same repository do not create additional failure domains.
+Additional repository/project topics such as `carry-the-ribbon` or
+`branch-protocol` are not part of the GitHub or GitLab publication profile.
+Multiple topic names on the same repository or project do not create additional
+failure domains.
 
 The `.branch` directory is a local carrier payload. The baseline layout is:
 
@@ -1007,6 +1009,8 @@ adapters. It may contain:
   "root_readme_snippet": "optional generated badge markdown for the repository README",
   "github_repository_description": "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon",
   "github_repository_topics": ["branchbootstrapv0"],
+  "gitlab_project_description": "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon",
+  "gitlab_project_topics": ["branchbootstrapv0"],
   "generated_at": 0,
   "source_commit": "optional-vcs-commit",
   "tool": "optional-generator"
@@ -1018,6 +1022,11 @@ authorizes a mirror, proves relay liveness, or changes failure-domain counting.
 Its paths are local repository hints only. For the GitHub publication profile,
 `branchbootstrapv0` is carried as repository topic metadata and searched with
 `topic:branchbootstrapv0`; README marker search is a bounded legacy fallback.
+For the GitLab public project profile, `branchbootstrapv0` is carried as one
+project topic and project description marker; the adapter searches public
+project metadata first and reads `.branch/records.br0` from each public
+candidate. It must not require a username, token, OAuth flow, authenticated
+cookies, GitLab Pages, CI status, or global code search.
 SearchCarrier implementations may use unsigned metadata to find candidate bytes
 more efficiently, then must validate the signed records exactly as if they had
 been found in README text.

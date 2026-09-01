@@ -9,11 +9,15 @@ const adminMainPath = resolve(process.cwd(), "src/admin/main.tsx");
 const adminStorePath = resolve(process.cwd(), "src/admin/store.tsx");
 const ribbonToolPath = resolve(process.cwd(), "src/admin/components/RibbonTool.tsx");
 const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.tsx");
+const gitLabToolPath = resolve(process.cwd(), "src/admin/components/GitLabTool.tsx");
 const clientToolPath = resolve(process.cwd(), "src/admin/components/ClientTool.tsx");
 const githubDiscoveryPath = resolve(process.cwd(), "src/admin/github-discovery.ts");
+const gitLabDiscoveryPath = resolve(process.cwd(), "src/admin/gitlab-discovery.ts");
 const discoveryGitHubPath = resolve(process.cwd(), "src/discovery/github.ts");
+const discoveryGitLabPath = resolve(process.cwd(), "src/discovery/gitlab.ts");
 const discoveryClientPath = resolve(process.cwd(), "src/discovery/client.ts");
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
+const gitLabDropInPath = resolve(process.cwd(), "src/admin/gitlab-dropin.ts");
 const publicationProfilePath = resolve(process.cwd(), "src/discovery/publication-profile.ts");
 const defaultsPath = resolve(process.cwd(), "src/admin/defaults.ts");
 const canvasImagePath = resolve(process.cwd(), "src/visual/canvas-image.ts");
@@ -46,6 +50,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const store = await readFile(adminStorePath, "utf8");
   const ribbonTool = await readFile(ribbonToolPath, "utf8");
   const githubTool = await readFile(githubToolPath, "utf8");
+  const gitLabTool = await readFile(gitLabToolPath, "utf8");
   const clientTool = await readFile(clientToolPath, "utf8");
   const publicationProfile = await readFile(publicationProfilePath, "utf8");
   const defaults = await readFile(defaultsPath, "utf8");
@@ -54,23 +59,29 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(app, /Blue Ribbon Autonomous Network for Carrier Hopping/);
   assert.match(app, /AdminStoreProvider/);
   assert.match(app, /ClientTool/);
+  assert.match(app, /GitLabTool/);
   assert.match(app, /useEffect/);
   assert.match(app, /window\.location\.hash === "#client"/);
   assert.match(app, /window\.history\.replaceState\(null, "", "\/admin\/#client"\)/);
   assert.match(app, /data-tab="client"/);
+  assert.match(app, /data-tab="gitlab"/);
   assert.match(app, /href="\/admin\/#client"/);
   assert.match(store, /zustand\/vanilla/);
   assert.match(store, /defaultBranchWrapper/);
   assert.match(store, /githubDiscoveryDefaultQuery/);
   assert.match(store, /export type RibbonTab = "encode" \| "decode"/);
   assert.match(store, /export type GitHubTab = "generate" \| "check"/);
+  assert.match(store, /export type GitLabTab = "generate" \| "check"/);
   assert.match(store, /ribbonTab: "encode"/);
   assert.match(store, /githubTab: "generate"/);
+  assert.match(store, /gitLabTab: "generate"/);
+  assert.match(store, /gitlab:/);
   assert.match(store, /client:/);
   assert.match(store, /setClientDiscoveryResults/);
   assert.match(store, /setClientDiscoveryStatus/);
   assert.match(store, /setRibbonTab/);
   assert.match(store, /setGitHubTab/);
+  assert.match(store, /setGitLabTab/);
   assert.match(store, /transformLab/);
   assert.match(store, /progress: null/);
   assert.match(store, /setTransformLabProgress/);
@@ -135,11 +146,21 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /formatUnixSeconds/);
   assert.match(githubTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
+  assert.match(gitLabTool, /id="gitlab-form"/);
+  assert.match(gitLabTool, /id="gitlab-tab-generate"/);
+  assert.match(gitLabTool, /id="gitlab-tab-check"/);
+  assert.match(gitLabTool, /id="gitlab-panel-generate"/);
+  assert.match(gitLabTool, /id="gitlab-panel-check"/);
+  assert.match(gitLabTool, /GitLab project description/);
+  assert.match(gitLabTool, /GitLab topics/);
+  assert.match(gitLabTool, /createGitLabSearchCarrier/);
+  assert.match(gitLabTool, /gitLabDiscoveryConstraints/);
+  assert.match(gitLabTool, /downloadBytes\(makeGitLabArchive/);
   assert.match(clientTool, /useEffect/);
   assert.match(clientTool, /data-panel="client"/);
   assert.match(clientTool, /id="client-discovery-query"/);
   assert.match(clientTool, /discoverClientBootstrapBeacons/);
-  assert.match(clientTool, /createGitHubSearchCarrier/);
+  assert.match(clientTool, /createGitLabSearchCarrier/);
   assert.match(clientTool, /fallbackQuery: null/);
   assert.match(clientTool, /perPage: 5/);
   assert.match(clientTool, /page: 1/);
@@ -151,12 +172,14 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(publicationProfile, /githubPrimaryLocatorQuery/);
   assert.match(publicationProfile, /topic:\$\{branchBootstrapLocator\}/);
   assert.match(publicationProfile, /githubRepositoryTopics/);
+  assert.match(publicationProfile, /gitLabProjectTopics/);
   assert.match(publicationProfile, /ribbonImagePublicationTitle = "Carry the Ribbon"/);
   assert.match(publicationProfile, /ribbonImagePublicationDescription =\s*\n\s*"branchbootstrapv0/);
   assert.match(publicationProfile, /ribbonImagePublicationSearchQuery = branchBootstrapLocator/);
   assert.match(defaults, /branch-github-dropin\.zip/);
+  assert.match(defaults, /branch-gitlab-dropin\.zip/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}`, /\bfetch\s*\(/);
-  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}\n${clientTool}`, /XMLHttpRequest|localStorage|indexedDB/);
+  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}\n${gitLabTool}\n${clientTool}`, /XMLHttpRequest|localStorage|indexedDB/);
 });
 
 void test("admin ribbon logic is split into typed visual modules", async () => {
@@ -253,6 +276,33 @@ void test("admin github discovery uses bounded public GitHub API reads", async (
   assert.doesNotMatch(`${source}\n${client}`, /GITHUB_TOKEN|Authorization|raw\.githubusercontent\.com|contents: write|localStorage|indexedDB|WebSocket/);
 });
 
+void test("admin gitlab discovery uses bounded public GitLab project reads", async () => {
+  const facade = await readFile(gitLabDiscoveryPath, "utf8");
+  const source = await readFile(discoveryGitLabPath, "utf8");
+  const client = await readFile(discoveryClientPath, "utf8");
+  const dropin = await readFile(gitLabDropInPath, "utf8");
+
+  assert.match(facade, /export \* from "\.\.\/discovery\/gitlab\.js"/);
+  assert.match(source, /https:\/\/gitlab\.com\/api\/v4\/projects/);
+  assert.match(source, /gitLabPrimaryLocatorQuery/);
+  assert.match(source, /createGitLabSearchCarrier/);
+  assert.match(source, /visibility/);
+  assert.match(source, /public/);
+  assert.match(source, /topic\[\]/);
+  assert.match(source, /credentials: "omit"/);
+  assert.match(source, /\.branch\/records\.br0/);
+  assert.match(source, /repository\/files/);
+  assert.match(source, /ref=HEAD|default branch/);
+  assert.match(source, /ratelimit-remaining/);
+  assert.match(source, /403/);
+  assert.match(source, /429/);
+  assert.match(source, /extractBranchTextWrappers/);
+  assert.match(client, /SearchCarrier/);
+  assert.match(dropin, /makeGitLabArchive/);
+  assert.match(dropin, /gitlab_project_topics/);
+  assert.doesNotMatch(`${source}\n${dropin}\n${client}`, /PRIVATE-TOKEN|Authorization|OAuth|GITHUB_TOKEN|contents: write|localStorage|indexedDB|WebSocket|\/search\?/);
+});
+
 void test("admin css remains dark and bounded", async () => {
   const source = await readFile(adminCssPath, "utf8");
 
@@ -278,7 +328,7 @@ void test("nginx csp permits local cover image object urls", async () => {
   const source = await readFile(nginxConfigPath, "utf8");
 
   assert.match(source, /img-src 'self' data: blob:/);
-  assert.match(source, /connect-src 'self' https:\/\/api\.github\.com/);
+  assert.match(source, /connect-src 'self' https:\/\/api\.github\.com https:\/\/gitlab\.com/);
   assert.match(source, /worker-src 'self'/);
   assert.doesNotMatch(source, /raw\.githubusercontent\.com|\*/);
 });

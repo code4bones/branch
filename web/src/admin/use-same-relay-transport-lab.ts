@@ -6,7 +6,6 @@ import {
   type RelayRouteMaterial,
   type SameRelayTransportEvent
 } from "../connectivity/same-relay.js";
-import type { GitHubDiscoveryResult, GitHubValidatedRecord } from "../discovery/github.js";
 import { useAdminStore, type ClientTransportStatePatch } from "./store.js";
 
 export interface SameRelayTransportLab {
@@ -20,6 +19,18 @@ export interface SameRelayTransportLab {
 
 interface MutableCurrent<T> {
   current: T;
+}
+
+interface ValidatedRelayRecord {
+  readonly validation: "accepted" | "rejected";
+  readonly relayEndpoint: string | null;
+  readonly senderPublicKey: string | null;
+  readonly profileMultihash: string | null;
+}
+
+interface RepositoryDiscoveryRouteResult {
+  readonly repository: string;
+  readonly records: readonly ValidatedRelayRecord[];
 }
 
 export function useSameRelayTransportLab(): SameRelayTransportLab {
@@ -197,7 +208,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
   };
 }
 
-export function routeFromDiscoveryResults(results: readonly GitHubDiscoveryResult[]): RelayRouteMaterial | null {
+export function routeFromDiscoveryResults(results: readonly RepositoryDiscoveryRouteResult[]): RelayRouteMaterial | null {
   for (const result of results) {
     const record = firstAcceptedRecord(result.records);
     if (record === null || record.relayEndpoint === null || record.senderPublicKey === null || record.profileMultihash === null) {
@@ -217,7 +228,7 @@ export function routeFromDiscoveryResults(results: readonly GitHubDiscoveryResul
   return null;
 }
 
-function firstAcceptedRecord(records: readonly GitHubValidatedRecord[]): GitHubValidatedRecord | null {
+function firstAcceptedRecord(records: readonly ValidatedRelayRecord[]): ValidatedRelayRecord | null {
   return records.find((record) => record.validation === "accepted") ?? null;
 }
 

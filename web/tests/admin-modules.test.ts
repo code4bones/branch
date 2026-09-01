@@ -10,7 +10,16 @@ import {
 } from "../src/admin/github-discovery.js";
 import { makeBadgeSnippet, makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
 import {
+  discoverGitLabDropIns,
+  gitLabDiscoveryConstraints,
+  gitLabDiscoveryDefaultQuery,
+  makeGitLabProjectsUrl
+} from "../src/admin/gitlab-discovery.js";
+import { makeGitLabArchive, makeGitLabBundle, makeGitLabFiles, parseGitLabRecords } from "../src/admin/gitlab-dropin.js";
+import {
   branchBootstrapLocator,
+  gitLabProjectDescription,
+  gitLabProjectTopics,
   githubRepositoryDescription,
   githubRepositoryTopics,
   makeRootReadmeSnippet,
@@ -133,6 +142,134 @@ void test("github drop-in live mode accepts signed bootstrap.beacon wrappers", a
   assert.deepEqual(records, [wrapper]);
   assert.match(files.find((file) => file.path === ".branch/manifest.json")?.content ?? "", /"mode": "live"/);
   assert.match(files.find((file) => file.path === ".branch/README.md")?.content ?? "", /live signed bootstrap\.beacon/);
+});
+
+void test("gitlab drop-in module emits local .branch files without root README or CI overwrite", async () => {
+  const records = await parseGitLabRecords(`# comment\n${defaultBranchWrapper}\n`);
+  const files = await makeGitLabFiles(records, "abc123", 1_789_000_000);
+  const archive = makeGitLabArchive(files);
+  const bundle = makeGitLabBundle(files);
+
+  assert.deepEqual(records, [defaultBranchWrapper]);
+  assert.deepEqual(readZipEntryPaths(archive), [
+    ".branch/records.br0",
+    ".branch/manifest.json",
+    ".branch/README.md",
+    ".branch/ribbon.svg"
+  ]);
+  assert(!readZipEntryPaths(archive).some((path) => path === "README.md" || path === "/README.md" || path === ".gitlab-ci.yml"));
+  assert(readZipEntryPaths(archive).every((path) => path.startsWith(".branch/")));
+  assert.equal(readZipFileText(archive, ".branch/records.br0"), `${defaultBranchWrapper}\n`);
+  assert.match(bundle, /branch\.repository-dropin\/0/);
+  assert.match(bundle, /"carrier": "gitlab"/);
+  assert.match(bundle, /"gitlab_project_description": "B\.R\.A\.N\.C\.H\. bootstrap carrier branchbootstrapv0 carry-the-ribbon"/);
+  assert.deepEqual(gitLabProjectTopics, ["branchbootstrapv0"]);
+  assert.equal(gitLabProjectDescription, "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon");
+  assert.throws(() => {
+    makeGitLabArchive([{
+      path: ".gitlab-ci.yml",
+      type: "text/yaml",
+      content: "stages: []\n"
+    }]);
+  }, /must not contain root README\.md or \.gitlab-ci\.yml/);
+});
+
+void test("gitlab discovery searches public projects and reads bounded drop-in records", async () => {
+  const fetched: string[] = [];
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const fetchInits: RequestInit[] = [];
+  const fetcher = (input: string, init?: RequestInit): Promise<Response> => {
+    fetched.push(input);
+    if (init !== undefined) {
+      fetchInits.push(init);
+    }
+    if (input.startsWith("https://gitlab.com/api/v4/projects?")) {
+      return Promise.resolve(jsonResponse([{
+        id: 42,
+        path_with_namespace: "alice/carrier",
+        name_with_namespace: "Alice / Carrier",
+        web_url: "https://gitlab.com/alice/carrier",
+        default_branch: "main",
+        topics: ["branchbootstrapv0"]
+      }], {
+        "ratelimit-remaining": "499",
+        "x-total": "1"
+      }));
+    }
+    return Promise.resolve(new Response(`${wrapper}\n`, {
+      status: 200,
+      headers: { "content-type": "text/plain" }
+    }));
+  };
+  const report = await discoverGitLabDropIns({
+    query: gitLabDiscoveryDefaultQuery,
+    perPage: 5,
+    page: 1
+  }, fetcher);
+  const firstResult = report.results[0] ?? failGitLabDiscoveryResult();
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.rateLimitRemaining, "499");
+  assert.equal(firstResult.repository, "alice/carrier");
+  assert.equal(firstResult.wrapperCount, 1);
+  assert.equal(firstResult.acceptedCount, 1);
+  assert.equal(firstResult.records[0]?.validation, "accepted");
+  assert.equal(firstResult.records[0].relayEndpoint, "wss wss://branch.undoo.ru:443/relay/v0");
+  assert.equal(firstResult.records[0].expiresAt, now + 3600);
+  assert.match(fetched[0] ?? "", /api\/v4\/projects\?/);
+  assert.match(fetched[0] ?? "", /topic%5B%5D=branchbootstrapv0/);
+  assert.match(fetched[0] ?? "", /visibility=public/);
+  assert.match(fetched[1] ?? "", /projects\/alice%2Fcarrier\/repository\/files\/\.branch%2Frecords\.br0\/raw\?ref=main/);
+  assert(fetchInits.every((init) => init.credentials === "omit"));
+  assert(gitLabDiscoveryConstraints.some((constraint) => constraint.includes("public Projects API")));
+});
+
+void test("gitlab discovery surfaces rate limits and rejected bootstrap records", async () => {
+  const url = makeGitLabProjectsUrl({
+    query: gitLabDiscoveryDefaultQuery,
+    perPage: 99,
+    page: 99
+  });
+  const stale = await createBootstrapBeaconWrapper({ now: 1_700_000_000, expiresAt: 1_700_000_001 });
+  const fetcher = (input: string): Promise<Response> => {
+    if (input.startsWith("https://gitlab.com/api/v4/projects?")) {
+      return Promise.resolve(jsonResponse([{
+        id: 7,
+        path_with_namespace: "alice/stale-carrier",
+        name_with_namespace: "Alice / Stale Carrier",
+        web_url: "https://gitlab.com/alice/stale-carrier",
+        default_branch: null
+      }]));
+    }
+    return Promise.resolve(new Response(`${stale}\nBRANCH0.not-valid=\n`, {
+      status: 200,
+      headers: { "content-type": "text/plain" }
+    }));
+  };
+  const report = await discoverGitLabDropIns({
+    query: gitLabDiscoveryDefaultQuery,
+    perPage: 5,
+    page: 1
+  }, fetcher);
+  const limited = await discoverGitLabDropIns({
+    query: gitLabDiscoveryDefaultQuery,
+    perPage: 5,
+    page: 1
+  }, () => Promise.resolve(jsonResponse({ message: "limited" }, { "ratelimit-remaining": "0" }, 429)));
+
+  assert.match(url, /per_page=10/);
+  assert.match(url, /page=10/);
+  assert.equal(report.status, "empty");
+  const firstResult = report.results[0];
+  assert(firstResult !== undefined);
+  const firstRecord = firstResult.records[0];
+  assert(firstRecord !== undefined);
+  assert.equal(firstRecord.validation, "rejected");
+  assert.equal(firstRecord.reason, "expired");
+  assert.match(firstResult.recordsUrl, /ref=HEAD/);
+  assert.equal(limited.status, "rate_limited");
+  assert.equal(limited.rateLimitRemaining, "0");
 });
 
 void test("text carrier extracts bounded BRANCH0 wrappers without normalization", () => {
@@ -476,6 +613,10 @@ function failPreset(): never {
 
 function failGitHubDiscoveryResult(): never {
   throw new Error("missing GitHub discovery result");
+}
+
+function failGitLabDiscoveryResult(): never {
+  throw new Error("missing GitLab discovery result");
 }
 
 function readZipEntryPaths(archive: Uint8Array): readonly string[] {

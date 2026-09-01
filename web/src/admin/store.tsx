@@ -5,13 +5,16 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { defaultBranchWrapper, ribbonProfileLabel } from "./defaults.js";
 import { githubDiscoveryDefaultQuery, type GitHubDiscoveryResult } from "./github-discovery.js";
 import type { GitHubDropInFile } from "./github-dropin.js";
+import { gitLabDiscoveryDefaultQuery, type GitLabDiscoveryResult } from "./gitlab-discovery.js";
+import type { GitLabDropInFile } from "./gitlab-dropin.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import { defaultBootstrapRelayEndpointUri } from "../protocol/v0/bootstrap-beacon.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
 
-export type AdminTab = "ribbon" | "github" | "client";
+export type AdminTab = "ribbon" | "github" | "gitlab" | "client";
 export type RibbonTab = "encode" | "decode";
 export type GitHubTab = "generate" | "check";
+export type GitLabTab = "generate" | "check";
 export type StatusClass = "status-good" | "status-warn" | "status-bad";
 
 export interface RibbonFormState {
@@ -56,12 +59,31 @@ export interface GitHubState {
   readonly discoveryStatusClass: StatusClass;
 }
 
+export interface GitLabState {
+  readonly mode: "demo" | "live";
+  readonly records: string;
+  readonly relayEndpointUri: string;
+  readonly sourceCommit: string;
+  readonly files: readonly GitLabDropInFile[];
+  readonly selectedFile: number;
+  readonly badgeSnippet: string;
+  readonly discoveryQuery: string;
+  readonly discoveryPerPage: string;
+  readonly discoveryPage: string;
+  readonly discoveryRunning: boolean;
+  readonly discoveryResults: readonly GitLabDiscoveryResult[];
+  readonly status: string;
+  readonly statusClass: StatusClass;
+  readonly discoveryStatus: string;
+  readonly discoveryStatusClass: StatusClass;
+}
+
 export interface ClientState {
   readonly discoveryRunning: boolean;
   readonly discoveryStatus: string;
   readonly discoveryStatusClass: StatusClass;
   readonly discoveryQuery: string;
-  readonly discoveryResults: readonly GitHubDiscoveryResult[];
+  readonly discoveryResults: readonly GitLabDiscoveryResult[];
   readonly rateLimitRemaining: string | null;
   readonly incompleteResults: boolean;
   readonly transportStatus: string;
@@ -106,6 +128,7 @@ export interface AdminState {
   readonly activeTab: AdminTab;
   readonly ribbonTab: RibbonTab;
   readonly githubTab: GitHubTab;
+  readonly gitLabTab: GitLabTab;
   readonly ribbon: RibbonFormState;
   readonly cover: LoadedCoverState | null;
   readonly ribbonPngUrl: string;
@@ -113,6 +136,7 @@ export interface AdminState {
   readonly diagnostics: DiagnosticsState;
   readonly transformLab: TransformLabState;
   readonly github: GitHubState;
+  readonly gitlab: GitLabState;
   readonly client: ClientState;
 }
 
@@ -120,6 +144,7 @@ export interface AdminActions {
   readonly setActiveTab: (tab: AdminTab) => void;
   readonly setRibbonTab: (tab: RibbonTab) => void;
   readonly setGitHubTab: (tab: GitHubTab) => void;
+  readonly setGitLabTab: (tab: GitLabTab) => void;
   readonly setRibbonField: <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
   readonly setCover: (cover: LoadedCoverState | null) => void;
   readonly setRibbonPngUrl: (url: string) => void;
@@ -146,9 +171,23 @@ export interface AdminActions {
   readonly setGitHubDiscoveryRunning: (running: boolean) => void;
   readonly setGitHubDiscoveryResults: (results: readonly GitHubDiscoveryResult[]) => void;
   readonly setGitHubDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
+  readonly setGitLabRecords: (records: string) => void;
+  readonly setGitLabRelayEndpointUri: (relayEndpointUri: string) => void;
+  readonly setGitLabMode: (mode: GitLabState["mode"]) => void;
+  readonly setGitLabSourceCommit: (sourceCommit: string) => void;
+  readonly setGitLabFiles: (files: readonly GitLabDropInFile[]) => void;
+  readonly setGitLabBadgeSnippet: (badgeSnippet: string) => void;
+  readonly setSelectedGitLabFile: (index: number) => void;
+  readonly setGitLabStatus: (status: string, statusClass: StatusClass) => void;
+  readonly setGitLabDiscoveryQuery: (query: string) => void;
+  readonly setGitLabDiscoveryPerPage: (perPage: string) => void;
+  readonly setGitLabDiscoveryPage: (page: string) => void;
+  readonly setGitLabDiscoveryRunning: (running: boolean) => void;
+  readonly setGitLabDiscoveryResults: (results: readonly GitLabDiscoveryResult[]) => void;
+  readonly setGitLabDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
   readonly setClientDiscoveryRunning: (running: boolean) => void;
   readonly setClientDiscoveryResults: (
-    results: readonly GitHubDiscoveryResult[],
+    results: readonly GitLabDiscoveryResult[],
     rateLimitRemaining: string | null,
     incompleteResults: boolean
   ) => void;
@@ -196,6 +235,7 @@ function createAdminStore(): AdminStoreApi {
     activeTab: "ribbon",
     ribbonTab: "encode",
     githubTab: "generate",
+    gitLabTab: "generate",
     ribbon: {
       wrapper: defaultBranchWrapper,
       outputWidth: "1000",
@@ -234,11 +274,29 @@ function createAdminStore(): AdminStoreApi {
       discoveryStatus: "idle",
       discoveryStatusClass: "status-warn"
     },
+    gitlab: {
+      mode: "demo",
+      records: "",
+      relayEndpointUri: defaultBootstrapRelayEndpointUri,
+      sourceCommit: "",
+      files: [],
+      selectedFile: 0,
+      badgeSnippet: "",
+      discoveryQuery: gitLabDiscoveryDefaultQuery,
+      discoveryPerPage: "5",
+      discoveryPage: "1",
+      discoveryRunning: false,
+      discoveryResults: [],
+      status: "idle",
+      statusClass: "status-warn",
+      discoveryStatus: "idle",
+      discoveryStatusClass: "status-warn"
+    },
     client: {
       discoveryRunning: false,
       discoveryStatus: "idle",
       discoveryStatusClass: "status-warn",
-      discoveryQuery: githubDiscoveryDefaultQuery,
+      discoveryQuery: gitLabDiscoveryDefaultQuery,
       discoveryResults: [],
       rateLimitRemaining: null,
       incompleteResults: false,
@@ -258,6 +316,7 @@ function createAdminStore(): AdminStoreApi {
     setActiveTab: (tab) => { set({ activeTab: tab }); },
     setRibbonTab: (tab) => { set({ ribbonTab: tab }); },
     setGitHubTab: (tab) => { set({ githubTab: tab }); },
+    setGitLabTab: (tab) => { set({ gitLabTab: tab }); },
     setRibbonField: (field, value) =>
       { set((state) => ({
         ribbon: {
@@ -417,6 +476,107 @@ function createAdminStore(): AdminStoreApi {
       { set((state) => ({
         github: {
           ...state.github,
+          discoveryStatus,
+          discoveryStatusClass
+        }
+      })); },
+    setGitLabRecords: (records) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          records
+        }
+      })); },
+    setGitLabRelayEndpointUri: (relayEndpointUri) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          relayEndpointUri
+        }
+      })); },
+    setGitLabMode: (mode) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          mode
+        }
+      })); },
+    setGitLabSourceCommit: (sourceCommit) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          sourceCommit
+        }
+      })); },
+    setGitLabFiles: (files) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          files,
+          selectedFile: 0
+        }
+      })); },
+    setGitLabBadgeSnippet: (badgeSnippet) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          badgeSnippet
+        }
+      })); },
+    setSelectedGitLabFile: (index) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          selectedFile: index
+        }
+      })); },
+    setGitLabStatus: (status, statusClass) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          status,
+          statusClass
+        }
+      })); },
+    setGitLabDiscoveryQuery: (discoveryQuery) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          discoveryQuery
+        }
+      })); },
+    setGitLabDiscoveryPerPage: (discoveryPerPage) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          discoveryPerPage
+        }
+      })); },
+    setGitLabDiscoveryPage: (discoveryPage) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          discoveryPage
+        }
+      })); },
+    setGitLabDiscoveryRunning: (discoveryRunning) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          discoveryRunning
+        }
+      })); },
+    setGitLabDiscoveryResults: (discoveryResults) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
+          discoveryResults
+        }
+      })); },
+    setGitLabDiscoveryStatus: (discoveryStatus, discoveryStatusClass) =>
+      { set((state) => ({
+        gitlab: {
+          ...state.gitlab,
           discoveryStatus,
           discoveryStatusClass
         }

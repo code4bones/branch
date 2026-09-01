@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef } from "react";
 
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
 import {
-  createGitHubSearchCarrier,
-  gitHubReportsFromCarrierReports,
-  mergeGitHubDiscoveryReports,
-  type GitHubValidatedRecord
-} from "../../discovery/github.js";
+  createGitLabSearchCarrier,
+  gitLabReportsFromCarrierReports,
+  mergeGitLabDiscoveryReports,
+  type GitLabValidatedRecord
+} from "../../discovery/gitlab.js";
 import { useAdminStore } from "../store.js";
 import { useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
 
@@ -24,10 +24,10 @@ export function ClientTool(): React.JSX.Element {
     abortRef.current = controller;
     setClientDiscoveryRunning(true);
     setClientDiscoveryResults([], null, false);
-    setClientDiscoveryStatus("searching GitHub topic locator", "status-warn");
+    setClientDiscoveryStatus("searching GitLab project locator", "status-warn");
     try {
       const discovery = await discoverClientBootstrapBeacons({
-        carrier: createGitHubSearchCarrier(),
+        carrier: createGitLabSearchCarrier(),
         primaryQuery: client.discoveryQuery,
         fallbackQuery: null,
         includeFallback: false,
@@ -36,7 +36,7 @@ export function ClientTool(): React.JSX.Element {
         page: 1,
         signal: controller.signal
       });
-      const report = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
+      const report = mergeGitLabDiscoveryReports(gitLabReportsFromCarrierReports(discovery.carrierReports));
       if (abortRef.current !== controller) {
         return;
       }
@@ -70,7 +70,7 @@ export function ClientTool(): React.JSX.Element {
 
   return (
     <section className="tool-grid is-active client-tool" data-panel="client" aria-label="Client discovery">
-      <section className="panel control-panel client-summary" aria-label="Client discovery controls">
+      <section className="panel control-panel client-summary" aria-label="Client GitLab discovery controls">
         <div className="control-row">
           <label htmlFor="client-discovery-query">Locator</label>
           <input id="client-discovery-query" readOnly type="text" value={client.discoveryQuery} />
@@ -105,11 +105,11 @@ export function ClientTool(): React.JSX.Element {
         </div>
       </section>
 
-      <section className="panel output-panel github-discovery-results client-discovery-results" aria-label="Client discovery results">
+      <section className="panel output-panel github-discovery-results client-discovery-results" aria-label="Client GitLab discovery results">
         <table>
           <thead>
             <tr>
-              <th>Repository</th>
+              <th>Project</th>
               <th>Branch</th>
               <th>Records</th>
               <th>Validation</th>
@@ -211,7 +211,7 @@ function sumResults(results: readonly { readonly acceptedCount: number; readonly
 }
 
 function firstAcceptedValue<K extends "relayEndpoint" | "expiresAt" | "profileMultihash">(
-  records: readonly GitHubValidatedRecord[],
+  records: readonly GitLabValidatedRecord[],
   key: K
 ): K extends "expiresAt" ? number | null : string | null {
   const accepted = records.find((record) => record.validation === "accepted");
