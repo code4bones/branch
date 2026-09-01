@@ -1,4 +1,5 @@
 export type RibbonPlacement = "center" | "bottom-right" | "bottom-left" | "top-right" | "top-left";
+export const fixedRibbonPlacement: RibbonPlacement = "top-left";
 
 export interface Point {
   readonly x: number;

@@ -6,7 +6,6 @@ import { defaultBranchWrapper, ribbonProfileLabel } from "./defaults.js";
 import type { GitHubDropInFile } from "./github-dropin.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
-import type { RibbonPlacement } from "../visual/geometry.js";
 import type { RibbonVisualMode } from "../visual/ribbon-render.js";
 
 export type AdminTab = "ribbon" | "github";
@@ -21,7 +20,6 @@ export interface RibbonFormState {
   readonly tintStrength: string;
   readonly outputWidth: string;
   readonly outputHeight: string;
-  readonly placement: RibbonPlacement;
 }
 
 export interface LoadedCoverState {
@@ -142,8 +140,7 @@ function createAdminStore(): AdminStoreApi {
       carrierSize: "720",
       tintStrength: "0",
       outputWidth: "1000",
-      outputHeight: "1500",
-      placement: "bottom-right"
+      outputHeight: "1500"
     },
     cover: null,
     ribbonPngUrl: "",

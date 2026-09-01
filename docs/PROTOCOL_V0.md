@@ -1126,6 +1126,13 @@ chroma/luminance bias. The draft implementation writes one locator band near
 the top-left origin and keeps the payload symbol inside the existing placement
 margin so the locator and payload do not overwrite each other.
 
+The browser-local generator writes new UI-generated `ribbon-seal/0` and
+`ribbon-tint/0` payload symbols at the fixed top-left placement. Placement is
+not a secrecy mechanism in an open protocol, and avoiding corner variants keeps
+heuristic decode bounded and predictable. The draft locator retains a
+`placement_hint` field only so older experimental images can be decoded while
+the profile remains draft.
+
 Receivers may use a valid locator only as a fast bounded search hint. If the
 current image dimensions differ from `source_width_hint` and
 `source_height_hint`, receivers may scale the module-pitch and symbol-size hints

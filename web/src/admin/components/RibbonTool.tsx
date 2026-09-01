@@ -28,7 +28,7 @@ import {
   loadLocalImage,
   type LoadedBrowserImage
 } from "../../visual/canvas-image.js";
-import { clamp } from "../../visual/geometry.js";
+import { clamp, fixedRibbonPlacement } from "../../visual/geometry.js";
 import { ribbonBlockProfile } from "../../visual/ribbon-block.js";
 import {
   drawCoverPreview,
@@ -127,7 +127,7 @@ export function RibbonTool(): React.JSX.Element {
         carrierSize,
         visualMode: ribbon.visualMode,
         tintStrength: readBoundedInteger(ribbon.tintStrength, 0, 24, "tint strength"),
-        placement: ribbon.placement,
+        placement: fixedRibbonPlacement,
         coverImage: cover?.image ?? null
       });
       setDiagnostics(diagnosticsFromSymbol(symbol, ribbon.visualMode, canvas, "generated", "status-good"));
@@ -625,7 +625,6 @@ function RibbonGeometryControls(
 ): React.JSX.Element {
   const quietZoneId = controlId(idPrefix, "quiet-zone");
   const carrierSizeId = controlId(idPrefix, "carrier-size");
-  const placementId = controlId(idPrefix, "carrier-placement");
 
   return (
     <>
@@ -652,17 +651,6 @@ function RibbonGeometryControls(
           </div>
         </>
       ) : null}
-
-      <div className="control-row">
-        <label htmlFor={placementId}>Placement</label>
-        <select id={placementId} name={placementId} value={ribbon.placement} onChange={(event) => { setRibbonField("placement", readPlacement(event.currentTarget.value)); }}>
-          <option value="center">Center</option>
-          <option value="bottom-right">Bottom right</option>
-          <option value="bottom-left">Bottom left</option>
-          <option value="top-right">Top right</option>
-          <option value="top-left">Top left</option>
-        </select>
-      </div>
     </>
   );
 }
@@ -766,11 +754,4 @@ function readBoundedInteger(value: string, min: number, max: number, name: strin
 function readOptionalInteger(value: string, fallback: number): number {
   const number = Number(value);
   return Number.isInteger(number) ? number : fallback;
-}
-
-function readPlacement(value: string) {
-  if (value === "center" || value === "bottom-right" || value === "bottom-left" || value === "top-right" || value === "top-left") {
-    return value;
-  }
-  return "bottom-right";
 }

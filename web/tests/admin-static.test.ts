@@ -84,9 +84,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /min="0"/);
   assert.match(ribbonTool, /max="24"/);
   assert.match(ribbonTool, /step="1"/);
-  assert.match(ribbonTool, /controlId\(idPrefix, "carrier-placement"\)/);
   assert.match(ribbonTool, /idPrefix=""/);
   assert.doesNotMatch(ribbonTool, /idPrefix="decode"/);
+  assert.doesNotMatch(ribbonTool, /carrier-placement|readPlacement/);
   assert.match(ribbonTool, /id="decode-image"/);
   assert.match(ribbonTool, /id="decoded-wrapper"/);
   assert.match(ribbonTool, /className="tool-grid is-active ribbon-tool"/);

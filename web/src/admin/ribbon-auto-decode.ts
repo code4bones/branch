@@ -1,11 +1,10 @@
 import { decodeRibbonImageWithWorker } from "./ribbon-decode-client.js";
 import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/ribbon-decode.js";
-import type { RibbonPlacement } from "../visual/geometry.js";
+import { fixedRibbonPlacement } from "../visual/geometry.js";
 import type { RibbonImageData } from "../visual/ribbon-image.js";
 
 export const maxAutoDecodeCandidates = 48;
 
-const autoPlacements: readonly RibbonPlacement[] = ["bottom-right", "center", "top-left", "top-right", "bottom-left"];
 const autoQuietZones: readonly number[] = [8, 4, 12];
 const autoPreferredVersions: readonly number[] = [10, 11, 9, 12, 8, 13];
 const directDecodeMaxPixels = 1024 * 1024;
@@ -47,7 +46,7 @@ export function makeAutoDecodeCandidates(width: number, height: number): readonl
     candidates.push({
       quietZone: 8,
       carrierSize: boundCarrierSize(minSide),
-      placement: "bottom-right",
+      placement: fixedRibbonPlacement,
       maxDirectPixels: width * height,
       maxVersionAttempts: 6,
       maxTintCandidates: 24
@@ -56,16 +55,14 @@ export function makeAutoDecodeCandidates(width: number, height: number): readonl
 
   for (const carrierSize of estimateCarrierSizes(minSide)) {
     for (const quietZone of autoQuietZones) {
-      for (const placement of autoPlacements) {
-        candidates.push({
-          quietZone,
-          carrierSize,
-          placement,
-          maxDirectPixels: 1,
-          maxVersionAttempts: 4,
-          maxTintCandidates: 16
-        });
-      }
+      candidates.push({
+        quietZone,
+        carrierSize,
+        placement: fixedRibbonPlacement,
+        maxDirectPixels: 1,
+        maxVersionAttempts: 4,
+        maxTintCandidates: 16
+      });
     }
   }
 
@@ -76,7 +73,7 @@ export function makeAutoDecodeBaseOptions(width: number, height: number): Decode
   return {
     quietZone: 8,
     carrierSize: boundCarrierSize(Math.min(width, height)),
-    placement: "bottom-right",
+    placement: fixedRibbonPlacement,
     maxDirectPixels: Math.min(width * height, 4096 * 4096),
     maxVersionAttempts: 6,
     maxTintCandidates: 24
@@ -86,18 +83,16 @@ export function makeAutoDecodeBaseOptions(width: number, height: number): Decode
 function appendFastTintCandidates(candidates: DecodeRibbonImageOptions[], minSide: number): void {
   for (const carrierSize of estimateCarrierSizes(minSide)) {
     for (const quietZone of autoQuietZones) {
-      for (const placement of autoPlacements) {
-        for (const preferredVersion of autoPreferredVersions) {
-          candidates.push({
-            quietZone,
-            carrierSize,
-            placement,
-            preferredVersion,
-            maxDirectPixels: 1,
-            maxVersionAttempts: 1,
-            maxTintCandidates: 2
-          });
-        }
+      for (const preferredVersion of autoPreferredVersions) {
+        candidates.push({
+          quietZone,
+          carrierSize,
+          placement: fixedRibbonPlacement,
+          preferredVersion,
+          maxDirectPixels: 1,
+          maxVersionAttempts: 1,
+          maxTintCandidates: 2
+        });
       }
     }
   }

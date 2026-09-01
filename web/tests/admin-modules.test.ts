@@ -17,7 +17,7 @@ import {
   type TransformLabPreset
 } from "../src/admin/transform-lab.js";
 import { fitInsideWithPadding, resizeNearest } from "../src/visual/corpus.js";
-import { computeModulePitch, computePlacement, type RibbonPlacement } from "../src/visual/geometry.js";
+import { computeModulePitch, computePlacement, fixedRibbonPlacement, type RibbonPlacement } from "../src/visual/geometry.js";
 import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "../src/visual/ribbon-block.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
 import {
@@ -66,7 +66,7 @@ void test("github drop-in module rejects non-BRANCH0 records", () => {
 
 void test("visual geometry preserves bounded placement and pitch", () => {
   assert.equal(computeModulePitch(57, 8, 720), 9);
-  assert.deepEqual(computePlacement("bottom-right", 1000, 1500, 657), { x: 303, y: 803 });
+  assert.deepEqual(computePlacement(fixedRibbonPlacement, 1000, 1500, 657), { x: 40, y: 40 });
 });
 
 void test("tint stego extractor reconstructs generated wrapper from PNG LSB modules", () => {
@@ -90,7 +90,7 @@ void test("large undecodable ribbon image uses bounded decode work", () => {
   const decoded = decodeRibbonImage(image, {
     quietZone: 8,
     carrierSize: 720,
-    placement: "bottom-right",
+    placement: fixedRibbonPlacement,
     maxDirectPixels: 1,
     maxVersionAttempts: 2,
     maxTintCandidates: 8
@@ -190,7 +190,7 @@ void test("transform lab runner reports visible per-case progress", async () => 
     decodeOptions: {
       quietZone: 8,
       carrierSize: 320,
-      placement: "bottom-right"
+      placement: fixedRibbonPlacement
     },
     decode: () => Promise.resolve({ status: "seal decoded", wrapper: defaultBranchWrapper }),
     onProgress: (step) => {
@@ -305,7 +305,8 @@ void test("auto decode candidate search is bounded and does not need UI geometry
   assert.equal(firstCandidate.carrierSize, 720);
   assert.equal(firstCandidate.maxDirectPixels, 1);
   assert.equal(firstCandidate.preferredVersion, 10);
-  assert.equal(new Set(candidates.map((candidate) => candidate.placement)).size, 5);
+  assert.equal(firstCandidate.placement, fixedRibbonPlacement);
+  assert.deepEqual(new Set(candidates.map((candidate) => candidate.placement)), new Set([fixedRibbonPlacement]));
 });
 
 void test("auto decode prioritizes default generated tint images", () => {
@@ -318,7 +319,7 @@ void test("auto decode prioritizes default generated tint images", () => {
     symbol.modules,
     symbol.diagnostics.modulePitch,
     quietZone,
-    "bottom-right"
+    fixedRibbonPlacement
   );
   const firstCandidate = makeAutoDecodeCandidates(image.width, image.height)[0];
 
@@ -327,13 +328,13 @@ void test("auto decode prioritizes default generated tint images", () => {
 
   assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
   assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, { x: 303, y: 803, size: 657 });
+  assert.deepEqual(decoded.foundRegion, { x: 40, y: 40, size: 657 });
 });
 
 void test("ribbon locator embeds pixel magic and accelerates hidden tint decode", () => {
   const quietZone = 8;
   const carrierSize = 720;
-  const placement = "bottom-right";
+  const placement = fixedRibbonPlacement;
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makePlacedStegoImage(
     1000,
@@ -377,7 +378,7 @@ void test("ribbon locator embeds pixel magic and accelerates hidden tint decode"
 void test("ribbon block profile carries exact signed frame bytes through locator decode", () => {
   const quietZone = 8;
   const carrierSize = 720;
-  const placement = "bottom-right";
+  const placement = fixedRibbonPlacement;
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makeNoCarrierImage(1000, 1500);
   const region = {
@@ -419,7 +420,7 @@ void test("ribbon block profile carries exact signed frame bytes through locator
 void test("ribbon block profile survives nearest resize with locator-scaled region", () => {
   const quietZone = 8;
   const carrierSize = 720;
-  const placement = "bottom-right";
+  const placement = fixedRibbonPlacement;
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makeNoCarrierImage(1000, 1500);
   const sourceRegion = {
@@ -458,7 +459,7 @@ void test("ribbon block profile survives nearest resize with locator-scaled regi
 void test("ribbon block profile has bounded default heuristic when locator is stripped", () => {
   const quietZone = 8;
   const carrierSize = 720;
-  const placement = "bottom-right";
+  const placement = fixedRibbonPlacement;
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makeNoCarrierImage(1000, 1500);
   const sourceRegion = {
@@ -487,7 +488,7 @@ void test("ribbon block profile has bounded default heuristic when locator is st
 void test("ribbon watermark profile carries exact signed frame bytes without locator", () => {
   const quietZone = 8;
   const carrierSize = 720;
-  const placement = "bottom-right";
+  const placement = fixedRibbonPlacement;
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makeNoCarrierImage(1000, 1500);
   const region = {
@@ -567,7 +568,7 @@ void test("ribbon locator remains non-authoritative without signed payload recov
 void test("ribbon locator pixel magic survives nearest resize as a geometry hint", () => {
   const quietZone = 8;
   const carrierSize = 720;
-  const placement = "bottom-right";
+  const placement = fixedRibbonPlacement;
   const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
   const source = makePlacedStegoImage(
     1000,

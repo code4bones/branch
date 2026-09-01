@@ -241,13 +241,10 @@ function makeDefaultBlockRegions(image: RibbonImageData, options: DecodeRibbonIm
     scaledSize - 2,
     scaledSize + 2
   ]).filter((size) => size >= 128 && size <= image.width && size <= image.height);
-  const placements = uniquePlacements([options.placement, "bottom-right"]);
   const regions: RibbonLocatorRegion[] = [];
   regions.push(makeFullImageBlockRegion(image));
-  for (const placement of placements) {
-    for (const size of sizes) {
-      regions.push({ ...computePlacement(placement, image.width, image.height, size), size });
-    }
+  for (const size of sizes) {
+    regions.push({ ...computePlacement(options.placement, image.width, image.height, size), size });
   }
   return dedupeRegions(regions);
 }
@@ -276,19 +273,6 @@ function decodeBlockRegion(image: RibbonImageData, region: RibbonLocatorRegion):
     wrapper: decodePayload(decoded.frame.payload),
     foundRegion: region
   };
-}
-
-function uniquePlacements(placements: readonly RibbonPlacement[]): readonly RibbonPlacement[] {
-  const seen = new Set<RibbonPlacement>();
-  const unique: RibbonPlacement[] = [];
-  for (const placement of placements) {
-    if (seen.has(placement)) {
-      continue;
-    }
-    seen.add(placement);
-    unique.push(placement);
-  }
-  return unique;
 }
 
 function uniqueNumbers(values: readonly number[]): readonly number[] {
