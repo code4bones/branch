@@ -1,5 +1,14 @@
 export function downloadText(text: string, filename: string, type: string): void {
   const blob = new Blob([text], { type });
+  downloadBlob(blob, filename);
+}
+
+export function downloadBytes(bytes: Uint8Array<ArrayBuffer>, filename: string, type: string): void {
+  const blob = new Blob([bytes], { type });
+  downloadBlob(blob, filename);
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   downloadURL(url, filename);
   window.setTimeout(() => { URL.revokeObjectURL(url); }, 2000);

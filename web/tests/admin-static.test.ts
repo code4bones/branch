@@ -10,6 +10,7 @@ const adminStorePath = resolve(process.cwd(), "src/admin/store.tsx");
 const ribbonToolPath = resolve(process.cwd(), "src/admin/components/RibbonTool.tsx");
 const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.tsx");
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
+const defaultsPath = resolve(process.cwd(), "src/admin/defaults.ts");
 const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
 const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
 const ribbonDecodeClientPath = resolve(process.cwd(), "src/admin/ribbon-decode-client.ts");
@@ -36,6 +37,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const store = await readFile(adminStorePath, "utf8");
   const ribbonTool = await readFile(ribbonToolPath, "utf8");
   const githubTool = await readFile(githubToolPath, "utf8");
+  const defaults = await readFile(defaultsPath, "utf8");
 
   assert.match(main, /createRoot/);
   assert.match(app, /Blue Ribbon Autonomous Network for Carrier Hopping/);
@@ -56,6 +58,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /id="github-form"/);
   assert.match(githubTool, /className="tool-grid is-active"/);
+  assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
+  assert.match(defaults, /branch-github-dropin\.zip/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}`, /\bfetch\s*\(/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}`, /XMLHttpRequest|localStorage|indexedDB/);
 });
@@ -88,6 +92,7 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
 void test("admin github generator stays offline and produces local drop-in paths", async () => {
   const source = await readFile(githubDropInPath, "utf8");
 
+  assert.match(source, /makeGitHubArchive/);
   assert.match(source, /\.branch\/records\.br0/);
   assert.match(source, /\.branch\/manifest\.json/);
   assert.match(source, /\.branch\/ribbon\.svg/);

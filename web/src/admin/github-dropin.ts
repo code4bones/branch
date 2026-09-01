@@ -1,4 +1,5 @@
 import { defaultBranchWrapper } from "./defaults.js";
+import { makeStoredZipArchive } from "./zip-archive.js";
 
 const branchPrefix = "BRANCH0.";
 const maxRecordBytes = 64 * 1024;
@@ -71,6 +72,10 @@ export function makeGitHubFiles(records: readonly string[], sourceCommit: string
 
 export function makeBundle(files: readonly GitHubDropInFile[]): string {
   return files.map((file) => `===== ${file.path} =====\n${file.content}`).join("\n\n");
+}
+
+export function makeGitHubArchive(files: readonly GitHubDropInFile[]): Uint8Array<ArrayBuffer> {
+  return makeStoredZipArchive(files);
 }
 
 function makeDropInReadme(): string {

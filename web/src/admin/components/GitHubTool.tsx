@@ -1,8 +1,8 @@
 import { useRef } from "react";
 
-import { copyTextFromFallback, downloadText } from "../browser-files.js";
+import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
 import { defaultBranchWrapper, githubBundleFilename } from "../defaults.js";
-import { makeBundle, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
+import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
 import { useAdminStore } from "../store.js";
 
 export function GitHubTool(): React.JSX.Element {
@@ -66,7 +66,7 @@ export function GitHubTool(): React.JSX.Element {
             type="button"
             id="download-bundle"
             disabled={github.files.length === 0}
-            onClick={() => { downloadText(makeBundle(github.files), githubBundleFilename, "text/plain"); }}
+            onClick={() => { downloadBytes(makeGitHubArchive(github.files), githubBundleFilename, "application/zip"); }}
           >
             Download bundle
           </button>
