@@ -4,6 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const adminHtmlPath = resolve(process.cwd(), "public/admin/index.html");
+const adminAppPath = resolve(process.cwd(), "src/admin/App.tsx");
+const adminMainPath = resolve(process.cwd(), "src/admin/main.tsx");
 const adminJsPath = resolve(process.cwd(), "public/admin/admin.js");
 const adminCssPath = resolve(process.cwd(), "public/admin/admin.css");
 const buildScriptPath = resolve(process.cwd(), "scripts/build-static.mjs");
@@ -13,17 +15,37 @@ void test("admin surface is static and open", async () => {
   const html = await readFile(adminHtmlPath, "utf8");
 
   assert.match(html, /\/admin\/admin\.js/);
+  assert.match(html, /\/admin\/admin-app\.js/);
   assert.match(html, /\/vendor\/qrcode-browser\.js/);
   assert.match(html, /\/vendor\/jsqr\.js/);
-  assert.match(html, />BRANCH0\.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA<\/textarea>/);
-  assert.match(html, /id="cover-image"/);
-  assert.match(html, /id="visual-mode"/);
-  assert.match(html, /id="tint-strength"/);
-  assert.match(html, /type="range" min="0" max="24" step="1" value="0"/);
-  assert.match(html, /id="carrier-placement"/);
-  assert.match(html, /id="decode-image"/);
-  assert.match(html, /id="decoded-wrapper"/);
+  assert.match(html, /id="admin-root"/);
   assert.doesNotMatch(html, /login|password|token/i);
+});
+
+void test("admin surface is scaffolded by React TypeScript source", async () => {
+  const app = await readFile(adminAppPath, "utf8");
+  const main = await readFile(adminMainPath, "utf8");
+
+  assert.match(main, /createRoot/);
+  assert.match(main, /flushSync/);
+  assert.match(main, /branch:admin-mounted/);
+  assert.match(app, /Blue Ribbon Autonomous Network for Carrier Hopping/);
+  assert.match(app, /defaultBranchWrapper/);
+  assert.match(app, /BRANCH0\.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/);
+  assert.match(app, /id="cover-image"/);
+  assert.match(app, /id="visual-mode"/);
+  assert.match(app, /id="tint-strength"/);
+  assert.match(app, /type="range"/);
+  assert.match(app, /min="0"/);
+  assert.match(app, /max="24"/);
+  assert.match(app, /step="1"/);
+  assert.match(app, /defaultValue="0"/);
+  assert.match(app, /id="carrier-placement"/);
+  assert.match(app, /id="decode-image"/);
+  assert.match(app, /id="decoded-wrapper"/);
+  assert.match(app, /id="github-form"/);
+  assert.doesNotMatch(app, /\bfetch\s*\(/);
+  assert.doesNotMatch(app, /XMLHttpRequest|localStorage|indexedDB/);
 });
 
 void test("admin ribbon generator mirrors ribbon-seal frame constants", async () => {
@@ -85,6 +107,9 @@ void test("static build bundles qrcode from local dependency", async () => {
   assert.match(source, /qrcode-browser\.js/);
   assert.match(source, /node_modules\/jsqr\/dist\/jsQR\.js/);
   assert.match(source, /vendor\/jsqr\.js/);
+  assert.match(source, /src\/admin\/main\.tsx/);
+  assert.match(source, /admin-app\.js/);
+  assert.match(source, /esbuild/);
   assert.match(source, /createRequire/);
 });
 

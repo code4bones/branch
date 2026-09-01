@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = resolve(root, "public");
@@ -20,6 +21,21 @@ await cp(
   resolve(root, "node_modules/jsqr/dist/jsQR.js"),
   resolve(target, "vendor/jsqr.js")
 );
+await bundleReactAdmin();
+
+async function bundleReactAdmin() {
+  await build({
+    entryPoints: [resolve(root, "src/admin/main.tsx")],
+    outfile: resolve(target, "admin/admin-app.js"),
+    bundle: true,
+    format: "iife",
+    target: ["es2022"],
+    platform: "browser",
+    sourcemap: false,
+    minify: true,
+    legalComments: "none"
+  });
+}
 
 async function bundleCommonJS(entryPath, outputPath, globalName) {
   const modules = [];
