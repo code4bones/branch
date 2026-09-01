@@ -40,7 +40,7 @@ func DefaultConfig() Config {
 	return Config{
 		MaxSessions:         1024,
 		MaxQueueDepth:       32,
-		MaxFrameBytes:       64 * 1024,
+		MaxFrameBytes:       49_152,
 		MaxFramesPerSession: 1 << 20,
 		MaxBytesPerSession:  1 << 30,
 		PresenceTTL:         30 * time.Second,
