@@ -1,4 +1,5 @@
 export const profileHashAlgorithm = "multihash.sha2-256" as const;
+export const developmentProfileMultihash = "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw" as const;
 
 export async function draftProfileMultihash(profile: Uint8Array): Promise<string> {
   const input = profile.buffer.slice(

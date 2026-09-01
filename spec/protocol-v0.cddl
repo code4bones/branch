@@ -64,10 +64,162 @@ branch-draft-profile = {
   events: [* event-type],
   payload_modes: [* payload-mode],
   capabilities: [* text],
+  bootstrap_beacon_payload: {* text => any},
   errors: [* text],
+  relay_attachment: {* text => any},
   session_frame_contract: {* text => any},
   path_migration_states: [* text],
   relay_boundary: {* text => any},
   required_vector_kinds: [* text],
   publication_blockers: [* text],
+  search_carrier_publication: {* text => any},
 }
+
+branch-relay-attachment-frame =
+  relay-hello /
+  relay-challenge /
+  relay-auth /
+  relay-ready /
+  relay-presence /
+  relay-heartbeat /
+  relay-lookup /
+  relay-rendezvous /
+  relay-envelope /
+  relay-ack /
+  relay-error
+
+relay-hello = {
+  type: "HELLO",
+  client_nonce: b64url-32,
+  client_time: draft-timestamp,
+  requested_role: "relay.forward.live/0",
+  max_frame_bytes: 1..49152,
+  offers: [1*8 version-offer],
+}
+
+relay-challenge = {
+  type: "CHALLENGE",
+  client_nonce: b64url-32,
+  relay_nonce: b64url-32,
+  relay_public_key: b64url-32,
+  selected: version-offer,
+  transcript_hash: b64url-32,
+  relay_proof: b64url-64,
+}
+
+relay-auth = {
+  type: "AUTH",
+  client_public_key: b64url-32,
+  client_nonce: b64url-32,
+  relay_nonce: b64url-32,
+  transcript_hash: b64url-32,
+  client_proof: b64url-64,
+}
+
+relay-ready = {
+  type: "READY",
+  session_id: b64url-32,
+  route_id: b64url-16,
+  presence_ttl_seconds: 1..300,
+  heartbeat_interval_seconds: 1..60,
+  accepted_limits: accepted-limits,
+}
+
+relay-presence = {
+  type: "PRESENCE",
+  session_id: b64url-32,
+  route_id: b64url-16,
+  peer_id: b64url-32,
+  sequence: draft-timestamp,
+  ttl_seconds: 1..300,
+  sent_at: draft-timestamp,
+}
+
+relay-heartbeat = {
+  type: "HEARTBEAT",
+  session_id: b64url-32,
+  sequence: draft-timestamp,
+  sent_at: draft-timestamp,
+}
+
+relay-lookup = {
+  type: "LOOKUP",
+  session_id: b64url-32,
+  peer_id: b64url-32,
+  sequence: draft-timestamp,
+}
+
+relay-rendezvous = {
+  type: "RENDEZVOUS",
+  session_id: b64url-32,
+  route_id: b64url-16,
+  peer_id: b64url-32,
+  sequence: draft-timestamp,
+}
+
+relay-envelope = {
+  type: "ENVELOPE",
+  session_id: b64url-32,
+  route_id: b64url-16,
+  path_epoch: draft-timestamp,
+  stream_id: draft-timestamp,
+  delivery_id: b64url-16,
+  ciphertext: b64url-text,
+  ack_requested: bool,
+}
+
+relay-ack = {
+  type: "ACK",
+  session_id: b64url-32,
+  delivery_id: b64url-16,
+  ack_type: "relay.accepted" / "relay.forwarded" / "peer.received",
+  durable: false,
+}
+
+relay-error = {
+  type: "ERROR",
+  code: protocol-error-code,
+  retryable: bool,
+  detail: text .size (1..256),
+}
+
+version-offer = {
+  wire_version: 0,
+  protocol: "branch/connectivity/0",
+  profile_multihash: non-empty-text,
+  capabilities: [* text],
+  required_capabilities: [* text],
+  extensions: [* text],
+  required_extensions: [* text],
+}
+
+accepted-limits = {
+  max_frame_bytes: 1..49152,
+  max_queue_depth: 1..1024,
+  max_frames_per_session: 1..9007199254740991,
+  max_bytes_per_session: 1..9007199254740991,
+}
+
+protocol-error-code =
+  "unsupported_version" /
+  "unsupported_profile" /
+  "profile_hash_mismatch" /
+  "required_capability_missing" /
+  "required_extension_missing" /
+  "malformed_envelope" /
+  "signature_invalid" /
+  "payload_decrypt_failed" /
+  "frame_too_large" /
+  "frame_malformed" /
+  "frame_replayed" /
+  "authentication_failed" /
+  "capability_required" /
+  "capability_expired" /
+  "capability_revoked" /
+  "quota_exceeded" /
+  "peer_unavailable" /
+  "route_unavailable" /
+  "migration_rejected" /
+  "rate_limited" /
+  "timeout" /
+  "internal_unavailable"

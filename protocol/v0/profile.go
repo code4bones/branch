@@ -8,6 +8,11 @@ import (
 const (
 	// ProfileHashAlgorithm names the draft profile hash algorithm.
 	ProfileHashAlgorithm = "multihash.sha2-256"
+
+	// DevelopmentProfileMultihash is the current exact-byte draft profile hash.
+	// It changes whenever spec/connectivity-profile-v0.draft.json changes and
+	// must not be treated as published v0 conformance.
+	DevelopmentProfileMultihash = "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw"
 )
 
 // DraftProfileMultihash returns a multibase base64url-encoded SHA-256

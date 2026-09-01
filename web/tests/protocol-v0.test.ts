@@ -12,6 +12,7 @@ import {
 import { cborMap, decodeDeterministicCbor, encodeDeterministicCbor, readCborMap, sameBytes, type CborEntry } from "../src/protocol/v0/cbor.js";
 import { decodeDraftEnvelopeText, protocolID, ProtocolError } from "../src/protocol/v0/envelope.js";
 import { draftProfileMultihash, profileHashAlgorithm } from "../src/protocol/v0/profile.js";
+import { decodeDraftRelayAttachmentFrameText, relayAttachmentSchema, relayProofDomain, RelayAttachmentError } from "../src/protocol/v0/relay-attachment.js";
 import { decodeBase64URL, encodeBase64URL } from "../src/protocol/v0/base64url.js";
 import { branchTextWrapperPrefix } from "../src/protocol/v0/text-carrier.js";
 
@@ -22,6 +23,7 @@ interface VectorManifest {
   readonly profile: VectorProfile;
   readonly transcripts: VectorTranscripts;
   readonly bootstrap_beacon: BootstrapBeaconVectorsRef;
+  readonly relay_attachment: RelayAttachmentVectorsRef;
   readonly cases: readonly VectorCase[];
 }
 
@@ -49,6 +51,43 @@ interface BootstrapBeaconVectorsRef {
   readonly fixture: string;
   readonly required_invalid_reasons: readonly string[];
 }
+
+interface RelayAttachmentVectorsRef {
+  readonly fixture: string;
+  readonly frame_schema: typeof relayAttachmentSchema;
+  readonly required_frame_types: readonly RelayFrameType[];
+  readonly required_invalid_reasons: readonly string[];
+}
+
+interface RelayAttachmentVectors {
+  readonly schema: "branch.relay-attachment-vectors/0";
+  readonly protocol: typeof protocolID;
+  readonly profile_multihash: string;
+  readonly frame_schema: typeof relayAttachmentSchema;
+  readonly proof_domain: typeof relayProofDomain;
+  readonly valid: readonly RelayAttachmentVectorCase[];
+  readonly invalid: readonly RelayAttachmentVectorCase[];
+}
+
+interface RelayAttachmentVectorCase {
+  readonly name: string;
+  readonly expect: "accept" | "reject";
+  readonly reason?: string;
+  readonly frame: unknown;
+}
+
+type RelayFrameType =
+  | "HELLO"
+  | "CHALLENGE"
+  | "AUTH"
+  | "READY"
+  | "PRESENCE"
+  | "HEARTBEAT"
+  | "LOOKUP"
+  | "RENDEZVOUS"
+  | "ENVELOPE"
+  | "ACK"
+  | "ERROR";
 
 interface BootstrapBeaconVectors {
   readonly schema: "branch.bootstrap-beacon-vectors/0";
@@ -114,6 +153,7 @@ void test("draft envelope vectors pass shared conformance checks", async (t) => 
   );
   await assertTranscriptCoverage(manifest);
   await assertBootstrapBeaconVectorCoverage(manifest);
+  await assertRelayAttachmentVectorCoverage(manifest);
 
   for (const vectorCase of manifest.cases) {
     await t.test(vectorCase.name, async () => {
@@ -273,6 +313,41 @@ async function assertBootstrapBeaconVectorCoverage(manifest: VectorManifest): Pr
   }
 }
 
+async function assertRelayAttachmentVectorCoverage(manifest: VectorManifest): Promise<void> {
+  const text = await readFile(join(vectorsDir, manifest.relay_attachment.fixture), "utf8");
+  const vectors: unknown = JSON.parse(text);
+
+  if (!isRelayAttachmentVectors(vectors)) {
+    throw new Error("invalid relay attachment vectors");
+  }
+
+  assert.equal(vectors.profile_multihash, manifest.profile.development_multihash);
+  assert.equal(vectors.frame_schema, manifest.relay_attachment.frame_schema);
+  assert.equal(vectors.proof_domain, relayProofDomain);
+
+  const seenFrameTypes = new Set<RelayFrameType>();
+  for (const vectorCase of vectors.valid) {
+    assert.equal(vectorCase.expect, "accept");
+    const frame = decodeDraftRelayAttachmentFrameText(JSON.stringify(vectorCase.frame));
+    seenFrameTypes.add(frame.type);
+  }
+  for (const frameType of manifest.relay_attachment.required_frame_types) {
+    assert.equal(seenFrameTypes.has(frameType), true, `missing relay frame type ${frameType}`);
+  }
+
+  const seenReasons = new Set<string>();
+  for (const vectorCase of vectors.invalid) {
+    assert.equal(vectorCase.expect, "reject");
+    assert.throws(() => decodeDraftRelayAttachmentFrameText(JSON.stringify(vectorCase.frame)), RelayAttachmentError);
+    if (vectorCase.reason !== undefined) {
+      seenReasons.add(vectorCase.reason);
+    }
+  }
+  for (const reason of manifest.relay_attachment.required_invalid_reasons) {
+    assert.equal(seenReasons.has(reason), true, `missing relay attachment invalid reason ${reason}`);
+  }
+}
+
 async function assertTranscriptCoverage(manifest: VectorManifest): Promise<void> {
   const text = await readFile(join(vectorsDir, manifest.transcripts.fixture), "utf8");
   const bundle: unknown = JSON.parse(text);
@@ -317,6 +392,7 @@ function isManifest(value: unknown): value is VectorManifest {
     readonly profile?: unknown;
     readonly transcripts?: unknown;
     readonly bootstrap_beacon?: unknown;
+    readonly relay_attachment?: unknown;
     readonly cases?: unknown;
   };
 
@@ -327,6 +403,7 @@ function isManifest(value: unknown): value is VectorManifest {
     isVectorProfile(candidate.profile) &&
     isVectorTranscripts(candidate.transcripts) &&
     isBootstrapBeaconVectorsRef(candidate.bootstrap_beacon) &&
+    isRelayAttachmentVectorsRef(candidate.relay_attachment) &&
     Array.isArray(candidate.cases) &&
     candidate.cases.every(isVectorCase)
   );
@@ -406,6 +483,92 @@ function isBootstrapBeaconVectors(value: unknown): value is BootstrapBeaconVecto
     isBootstrapBeaconValidVector(candidate.valid) &&
     Array.isArray(candidate.invalid) &&
     candidate.invalid.every(isBootstrapBeaconInvalidVector)
+  );
+}
+
+function isRelayAttachmentVectorsRef(value: unknown): value is RelayAttachmentVectorsRef {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly fixture?: unknown;
+    readonly frame_schema?: unknown;
+    readonly required_frame_types?: unknown;
+    readonly required_invalid_reasons?: unknown;
+  };
+
+  return (
+    typeof candidate.fixture === "string" &&
+    candidate.frame_schema === relayAttachmentSchema &&
+    Array.isArray(candidate.required_frame_types) &&
+    candidate.required_frame_types.every(isRelayFrameType) &&
+    Array.isArray(candidate.required_invalid_reasons) &&
+    candidate.required_invalid_reasons.every((reason) => typeof reason === "string")
+  );
+}
+
+function isRelayAttachmentVectors(value: unknown): value is RelayAttachmentVectors {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly schema?: unknown;
+    readonly protocol?: unknown;
+    readonly profile_multihash?: unknown;
+    readonly frame_schema?: unknown;
+    readonly proof_domain?: unknown;
+    readonly valid?: unknown;
+    readonly invalid?: unknown;
+  };
+
+  return (
+    candidate.schema === "branch.relay-attachment-vectors/0" &&
+    candidate.protocol === protocolID &&
+    typeof candidate.profile_multihash === "string" &&
+    candidate.frame_schema === relayAttachmentSchema &&
+    candidate.proof_domain === relayProofDomain &&
+    Array.isArray(candidate.valid) &&
+    candidate.valid.every(isRelayAttachmentVectorCase) &&
+    Array.isArray(candidate.invalid) &&
+    candidate.invalid.every(isRelayAttachmentVectorCase)
+  );
+}
+
+function isRelayAttachmentVectorCase(value: unknown): value is RelayAttachmentVectorCase {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as {
+    readonly name?: unknown;
+    readonly expect?: unknown;
+    readonly reason?: unknown;
+    readonly frame?: unknown;
+  };
+
+  return (
+    typeof candidate.name === "string" &&
+    (candidate.expect === "accept" || candidate.expect === "reject") &&
+    (candidate.reason === undefined || typeof candidate.reason === "string") &&
+    candidate.frame !== undefined
+  );
+}
+
+function isRelayFrameType(value: unknown): value is RelayFrameType {
+  return (
+    value === "HELLO" ||
+    value === "CHALLENGE" ||
+    value === "AUTH" ||
+    value === "READY" ||
+    value === "PRESENCE" ||
+    value === "HEARTBEAT" ||
+    value === "LOOKUP" ||
+    value === "RENDEZVOUS" ||
+    value === "ENVELOPE" ||
+    value === "ACK" ||
+    value === "ERROR"
   );
 }
 

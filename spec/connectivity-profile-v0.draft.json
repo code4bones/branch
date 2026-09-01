@@ -97,12 +97,64 @@
     "capability_expired",
     "capability_revoked",
     "quota_exceeded",
+    "peer_unavailable",
     "route_unavailable",
     "migration_rejected",
     "rate_limited",
     "timeout",
     "internal_unavailable"
   ],
+  "relay_attachment": {
+    "schema": "branch.relay-attachment/0.draft",
+    "decision": "D-BRANCH-034",
+    "transport": "wss",
+    "endpoint_path": "/relay/v0",
+    "encoding": "json.diagnostic.draft",
+    "published_encoding": "cbor.det.rfc8949",
+    "max_frame_bytes": 49152,
+    "max_offers": 8,
+    "max_presence_ttl_seconds": 300,
+    "max_heartbeat_interval_seconds": 60,
+    "proof_domain": "BRANCH relay attachment v0\n",
+    "relay_identity": "validated_bootstrap_beacon.signed_event.sender.public_key",
+    "transcript_binding": [
+      "bootstrap_beacon_signed_bytes_or_hash",
+      "hello_offers_complete",
+      "selected_offer",
+      "client_nonce",
+      "relay_nonce",
+      "relay_endpoint_uri",
+      "relay_public_key"
+    ],
+    "frames": [
+      "HELLO",
+      "CHALLENGE",
+      "AUTH",
+      "READY",
+      "PRESENCE",
+      "HEARTBEAT",
+      "LOOKUP",
+      "RENDEZVOUS",
+      "ENVELOPE",
+      "ACK",
+      "ERROR"
+    ],
+    "ack_types": ["relay.accepted", "relay.forwarded", "peer.received"],
+    "durable_ack": false,
+    "presence": {
+      "storage": "memory-only",
+      "expires_on": ["disconnect", "ttl_expiry", "quota_exhaustion", "shutdown", "restart"],
+      "global_directory": false,
+      "mailbox": false
+    },
+    "envelope": {
+      "payload_visibility": "opaque",
+      "server_decrypts": false,
+      "server_persists": false,
+      "server_replays_after_restart": false,
+      "destination_absent_error": "peer_unavailable"
+    }
+  },
   "session_frame_contract": {
     "required_fields": [
       "session_id",
@@ -132,7 +184,8 @@
     "relay_attachment_transcript",
     "delivery_dedup_transcript",
     "path_migration_transcript",
-    "relay_restart_transcript"
+    "relay_restart_transcript",
+    "relay_attachment_vectors"
   ],
   "publication_blockers": [
     "accepted payload encryption suite",

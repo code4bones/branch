@@ -103,7 +103,7 @@ scaffold testing, not the final published deterministic CBOR profile. Its
 current development multihash is:
 
 ```text
-uEiDdmdOZeq5F3-d32wIB0uu0am_58AYZs5x6WSFihQPSlw
+uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw
 ```
 
 The current shared development vector manifest is
@@ -213,6 +213,96 @@ exhaustion, shutdown, or restart. Relays do not restore session routes, delivery
 queues, user messages, files, contact state, or canonical presence after
 restart.
 
+### Same-relay WSS attachment draft
+
+D-BRANCH-034 defines the first transport milestone as an online-only vertical
+slice where two simultaneously connected clients attach to one relay over WSS.
+This subsection fixes the executable draft frame contract used by current
+fixtures. It is not the final published deterministic CBOR wire encoding.
+
+The current draft attachment schema is `branch.relay-attachment/0.draft`.
+Diagnostic fixtures encode frames as strict JSON objects only so the Go and
+TypeScript protocol cores can execute the same structural tests before the WSS
+adapter exists. Final wire publication still requires deterministic CBOR
+profile bytes and reviewed session encryption.
+
+All relay attachment frames are bounded before decoding. Unknown fields are
+rejected. Binary identifiers, nonces, transcript hashes, ciphertext, and
+signatures are rendered in fixtures as unpadded base64url strings. The relay
+must treat every remote field as hostile until decoded, bounded, and validated.
+
+The initial frame roles are:
+
+| Frame | Direction | Purpose |
+| --- | --- | --- |
+| `HELLO` | client to relay | Offers `branch/connectivity/0`, profile hashes, requested `relay.forward.live/0`, client nonce, client time, and client frame limit. |
+| `CHALLENGE` | relay to client | Selects one accepted offer, returns relay nonce, relay public key, transcript hash, and relay proof. |
+| `AUTH` | client to relay | Returns client public key, both nonces, transcript hash, and client proof. |
+| `READY` | relay to client | Opens a memory-only live session with session id, route id, heartbeat interval, presence TTL, and accepted limits. |
+| `PRESENCE` | authenticated client to relay | Announces a live peer id and short TTL for the current session route. |
+| `HEARTBEAT` | authenticated client to relay | Renews the live presence TTL. |
+| `LOOKUP` | authenticated client to relay | Asks whether a specific peer id is currently reachable under local policy. |
+| `RENDEZVOUS` | authenticated client/relay | Binds a live route id to a currently reachable peer id. |
+| `ENVELOPE` | authenticated client/relay | Carries opaque end-to-end encrypted bytes over a live route only. |
+| `ACK` | relay/client | Reports relay acceptance/forwarding or peer receipt; it never claims durable custody. |
+| `ERROR` | relay/client | Carries a typed bounded failure code and retryability hint. |
+
+`HELLO` contains `client_nonce`, `client_time`, `requested_role`,
+`max_frame_bytes`, and an ordered bounded `offers` array. Each offer contains
+`wire_version`, `protocol`, `profile_multihash`, `capabilities`,
+`required_capabilities`, `extensions`, and `required_extensions`. The relay
+rejects unsupported versions, unaccepted profile hashes, and missing
+`relay.forward.live/0` before creating presence, route, mailbox, or message
+state.
+
+`CHALLENGE` contains the original `client_nonce`, a fresh `relay_nonce`, the
+relay Ed25519 public key, the selected offer, `transcript_hash`, and
+`relay_proof`. The relay public key must match the Ed25519 `sender.public_key`
+from the validated BootstrapBeacon used to choose this endpoint. TLS protects
+the transport, but it is not the B.R.A.N.C.H. relay identity.
+
+The relay proof input is domain separated:
+
+```text
+"BRANCH relay attachment v0\n" || canonical_attachment_transcript
+```
+
+`canonical_attachment_transcript` binds at least the original BootstrapBeacon
+signed bytes or hash, the complete HELLO offer set, the selected offer,
+`client_nonce`, `relay_nonce`, relay endpoint URI, and relay public key. The
+current executable fixtures validate the presence and size of these fields.
+The WSS adapter task must implement actual Ed25519 verification against the
+same transcript once the final canonical bytes are accepted.
+
+`AUTH` mirrors the nonce and transcript binding from the client side. It does
+not authorize offline delivery, durable retry, global presence publication, or
+carrier scraping.
+
+`READY` returns `session_id`, `route_id`, `presence_ttl_seconds`,
+`heartbeat_interval_seconds`, and `accepted_limits`. Accepted limits include
+`max_frame_bytes`, `max_queue_depth`, `max_frames_per_session`, and
+`max_bytes_per_session`. A relay may choose lower limits than the client
+offered. Limits are live connection limits, not storage quotas.
+
+`PRESENCE` and `HEARTBEAT` create only ephemeral routing state. A peer is
+currently reachable only until disconnect, close, quota exhaustion, relay
+shutdown, or TTL expiry. Presence is not a searchable directory, social graph,
+mailbox, or delivery receipt. `LOOKUP` and `RENDEZVOUS` can only return live
+routes currently permitted by local policy.
+
+`ENVELOPE` contains `session_id`, `route_id`, `path_epoch`, `stream_id`,
+`delivery_id`, `ciphertext`, and `ack_requested`. The relay validates only the
+outer routing and bounds needed for live forwarding. It must not decrypt,
+persist, index, replay after restart, or log the ciphertext. If the destination
+is absent, disconnected, expired, over quota, or unreachable, the relay returns
+`ERROR` with `peer_unavailable` or another explicit transient code. It does not
+create a "you were called" event.
+
+`ACK` distinguishes `relay.accepted`, `relay.forwarded`, and `peer.received`.
+The `durable` field is always `false` for relay acknowledgements in this
+profile. Sender-owned pending retry state may keep a stable `delivery_id`, but
+that persistence belongs to the client, not the relay.
+
 ### Authenticated session and framing contract
 
 An authenticated session is established only after the selected reviewed session
@@ -281,6 +371,7 @@ Baseline error families:
 - `capability_expired`;
 - `capability_revoked`;
 - `quota_exceeded`;
+- `peer_unavailable`;
 - `route_unavailable`;
 - `migration_rejected`;
 - `rate_limited`;

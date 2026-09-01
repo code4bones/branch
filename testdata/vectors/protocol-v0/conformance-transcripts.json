@@ -1,7 +1,7 @@
 {
   "schema": "branch.conformance.transcripts/0",
   "protocol": "branch/connectivity/0",
-  "profile_multihash": "uEiDdmdOZeq5F3-d32wIB0uu0am_58AYZs5x6WSFihQPSlw",
+  "profile_multihash": "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw",
   "cases": [
     {
       "name": "negotiate-known-v0-profile",
@@ -35,6 +35,23 @@
       ]
     },
     {
+      "name": "same-relay-wss-online-delivery",
+      "kind": "relay_attachment_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "steps": [
+        "alice obtains a validated BootstrapBeacon and passes only relay identity, accepted profile, capabilities, expiry and ordered WSS endpoints to transport",
+        "alice opens WSS /relay/v0 and sends HELLO with accepted profile hash, fresh client nonce and relay.forward.live/0",
+        "relay replies CHALLENGE with fresh relay nonce, selected offer, transcript_hash and Ed25519 relay_proof from the beacon sender key",
+        "alice verifies relay key proof and sends AUTH binding both nonces and the selected transcript",
+        "relay replies READY with memory-only session_id, route_id, heartbeat interval, presence TTL and bounded accepted_limits",
+        "alice and bob both publish PRESENCE and renew it with HEARTBEAT while attached",
+        "alice LOOKUP and RENDEZVOUS resolve only bob's currently live route",
+        "alice sends one opaque ENVELOPE and relay forwards it only because bob is currently attached",
+        "relay sends ACK relay.forwarded with durable false and never claims mailbox custody"
+      ]
+    },
+    {
       "name": "relay-attach-missing-capability",
       "kind": "relay_attachment_transcript",
       "expect": "reject",
@@ -43,6 +60,19 @@
         "client opens a relay WSS attachment with accepted version and profile",
         "client omits receiver-issued live forwarding capability",
         "relay rejects without creating durable route, mailbox, message, or presence state"
+      ]
+    },
+    {
+      "name": "relay-envelope-peer-unavailable",
+      "kind": "relay_attachment_transcript",
+      "expect": "reject",
+      "selected_error": "peer_unavailable",
+      "steps": [
+        "alice has an authenticated READY relay session and sends ENVELOPE for bob's route",
+        "bob is disconnected, expired or not currently reachable under local policy",
+        "relay returns ERROR peer_unavailable with retryable true",
+        "relay does not persist the ENVELOPE, does not create a you-were-called event, and does not replay after bob reconnects",
+        "alice owns any pending retry state locally"
       ]
     },
     {

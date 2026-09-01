@@ -9,12 +9,13 @@ import (
 )
 
 type vectorManifest struct {
-	Schema      string            `json:"schema"`
-	Protocol    string            `json:"protocol"`
-	Status      string            `json:"status"`
-	Profile     vectorProfile     `json:"profile"`
-	Transcripts vectorTranscripts `json:"transcripts"`
-	Cases       []vectorCase      `json:"cases"`
+	Schema          string                     `json:"schema"`
+	Protocol        string                     `json:"protocol"`
+	Status          string                     `json:"status"`
+	Profile         vectorProfile              `json:"profile"`
+	Transcripts     vectorTranscripts          `json:"transcripts"`
+	RelayAttachment vectorRelayAttachmentFiles `json:"relay_attachment"`
+	Cases           []vectorCase               `json:"cases"`
 }
 
 type vectorProfile struct {
@@ -37,6 +38,13 @@ type vectorTranscripts struct {
 	IndependentImplementationStatus string   `json:"independent_implementation_status"`
 }
 
+type vectorRelayAttachmentFiles struct {
+	Fixture                string   `json:"fixture"`
+	FrameSchema            string   `json:"frame_schema"`
+	RequiredFrameTypes     []string `json:"required_frame_types"`
+	RequiredInvalidReasons []string `json:"required_invalid_reasons"`
+}
+
 type transcriptBundle struct {
 	Schema           string           `json:"schema"`
 	Protocol         string           `json:"protocol"`
@@ -55,6 +63,23 @@ type transcriptCase struct {
 	SelectedError                   *string  `json:"selected_error"`
 	RestoresUserTrafficAfterRestart *bool    `json:"restores_user_traffic_after_restart"`
 	Steps                           []string `json:"steps"`
+}
+
+type relayAttachmentBundle struct {
+	Schema           string                      `json:"schema"`
+	Protocol         string                      `json:"protocol"`
+	ProfileMultihash string                      `json:"profile_multihash"`
+	FrameSchema      string                      `json:"frame_schema"`
+	ProofDomain      string                      `json:"proof_domain"`
+	Valid            []relayAttachmentVectorCase `json:"valid"`
+	Invalid          []relayAttachmentVectorCase `json:"invalid"`
+}
+
+type relayAttachmentVectorCase struct {
+	Name   string          `json:"name"`
+	Expect string          `json:"expect"`
+	Reason string          `json:"reason"`
+	Frame  json.RawMessage `json:"frame"`
 }
 
 func TestDraftEnvelopeVectors(t *testing.T) {
@@ -95,6 +120,7 @@ func TestDraftEnvelopeVectors(t *testing.T) {
 		t.Fatalf("profile multihash = %q, want %q", got, manifest.Profile.DevelopmentMultihash)
 	}
 	assertTranscriptCoverage(t, root, manifest)
+	assertRelayAttachmentVectorCoverage(t, root, manifest)
 
 	for _, testCase := range manifest.Cases {
 		t.Run(testCase.Name, func(t *testing.T) {
@@ -121,6 +147,73 @@ func TestDraftEnvelopeVectors(t *testing.T) {
 				t.Fatalf("unsupported vector expectation %q", testCase.Expect)
 			}
 		})
+	}
+}
+
+func assertRelayAttachmentVectorCoverage(t *testing.T, root string, manifest vectorManifest) {
+	t.Helper()
+
+	if manifest.RelayAttachment.FrameSchema != RelayAttachmentSchema {
+		t.Fatalf("relay attachment schema = %q", manifest.RelayAttachment.FrameSchema)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, manifest.RelayAttachment.Fixture))
+	if err != nil {
+		t.Fatalf("read relay attachment fixture: %v", err)
+	}
+
+	var bundle relayAttachmentBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatalf("decode relay attachment fixture: %v", err)
+	}
+	if bundle.Schema != "branch.relay-attachment-vectors/0" {
+		t.Fatalf("relay attachment bundle schema = %q", bundle.Schema)
+	}
+	if bundle.Protocol != ProtocolID {
+		t.Fatalf("relay attachment protocol = %q", bundle.Protocol)
+	}
+	if bundle.ProfileMultihash != manifest.Profile.DevelopmentMultihash {
+		t.Fatalf("relay attachment profile hash = %q", bundle.ProfileMultihash)
+	}
+	if bundle.FrameSchema != RelayAttachmentSchema {
+		t.Fatalf("relay attachment frame schema = %q", bundle.FrameSchema)
+	}
+	if bundle.ProofDomain != RelayProofDomain {
+		t.Fatalf("relay proof domain = %q", bundle.ProofDomain)
+	}
+
+	seenFrameTypes := map[string]bool{}
+	for _, testCase := range bundle.Valid {
+		if testCase.Name == "" || testCase.Expect != "accept" {
+			t.Fatalf("invalid accepted relay attachment case: %+v", testCase)
+		}
+		frame, err := DecodeDraftRelayAttachmentFrame(testCase.Frame)
+		if err != nil {
+			t.Fatalf("accepted relay attachment case %q rejected: %v", testCase.Name, err)
+		}
+		seenFrameTypes[string(frame.Type)] = true
+	}
+	for _, frameType := range manifest.RelayAttachment.RequiredFrameTypes {
+		if !seenFrameTypes[frameType] {
+			t.Fatalf("missing relay attachment frame type %q", frameType)
+		}
+	}
+
+	seenReasons := map[string]bool{}
+	for _, testCase := range bundle.Invalid {
+		if testCase.Name == "" || testCase.Expect != "reject" || testCase.Reason == "" {
+			t.Fatalf("invalid rejected relay attachment case: %+v", testCase)
+		}
+		_, err := DecodeDraftRelayAttachmentFrame(testCase.Frame)
+		if !errors.Is(err, ErrInvalidRelayAttachmentFrame) {
+			t.Fatalf("rejected relay attachment case %q got %v", testCase.Name, err)
+		}
+		seenReasons[testCase.Reason] = true
+	}
+	for _, reason := range manifest.RelayAttachment.RequiredInvalidReasons {
+		if !seenReasons[reason] {
+			t.Fatalf("missing relay attachment invalid reason %q", reason)
+		}
 	}
 }
 

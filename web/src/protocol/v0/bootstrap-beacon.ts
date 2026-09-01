@@ -20,6 +20,7 @@ import {
 } from "./cbor.js";
 import { decodeBase64URL, encodeBase64URL } from "./base64url.js";
 import { maxDraftEnvelopeBytes, maxDraftTimestamp, protocolID } from "./envelope.js";
+import { developmentProfileMultihash } from "./profile.js";
 import { branchTextWrapperPrefix, isBranchTextWrapper } from "./text-carrier.js";
 
 const signatureDomain = "BRANCH signed event v0\n";
@@ -33,7 +34,7 @@ const maxRelayEndpointTransportBytes = 32;
 const maxBootstrapNameBytes = 128;
 
 export const defaultBootstrapRelayEndpointUri = "wss://branch.undoo.ru:443/relay/v0" as const;
-export const defaultBootstrapProfileMultihashes = ["uEiDdmdOZeq5F3-d32wIB0uu0am_58AYZs5x6WSFihQPSlw"] as const;
+export const defaultBootstrapProfileMultihashes = [developmentProfileMultihash] as const;
 export const defaultBootstrapRelayCapabilities = ["relay.forward.live/0", "route.relay.wss/0"] as const;
 
 export type BootstrapBeaconValidationReason =
