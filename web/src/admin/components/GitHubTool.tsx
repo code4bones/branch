@@ -2,10 +2,18 @@ import { useRef } from "react";
 
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
 import { defaultBranchWrapper, githubBundleFilename } from "../defaults.js";
-import { discoverGitHubDropIns, githubDiscoveryConstraints, type GitHubValidatedRecord } from "../github-discovery.js";
+import {
+  createGitHubSearchCarrier,
+  gitHubReportsFromCarrierReports,
+  githubDiscoveryConstraints,
+  githubDiscoveryFallbackQuery,
+  mergeGitHubDiscoveryReports,
+  type GitHubValidatedRecord
+} from "../../discovery/github.js";
 import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
 import { makeRootReadmeSnippet } from "../publication-profile.js";
 import { useAdminStore } from "../store.js";
+import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
 import { createBootstrapBeaconWrapper } from "../../protocol/v0/bootstrap-beacon.js";
 
 export function GitHubTool(): React.JSX.Element {
@@ -25,6 +33,7 @@ export function GitHubTool(): React.JSX.Element {
   const setGitHubStatus = useAdminStore((state) => state.setGitHubStatus);
   const setGitHubDiscoveryQuery = useAdminStore((state) => state.setGitHubDiscoveryQuery);
   const setGitHubDiscoveryIncludeForks = useAdminStore((state) => state.setGitHubDiscoveryIncludeForks);
+  const setGitHubDiscoveryIncludeLegacyFallback = useAdminStore((state) => state.setGitHubDiscoveryIncludeLegacyFallback);
   const setGitHubDiscoveryPerPage = useAdminStore((state) => state.setGitHubDiscoveryPerPage);
   const setGitHubDiscoveryPage = useAdminStore((state) => state.setGitHubDiscoveryPage);
   const setGitHubDiscoveryRunning = useAdminStore((state) => state.setGitHubDiscoveryRunning);
@@ -62,18 +71,27 @@ export function GitHubTool(): React.JSX.Element {
     setGitHubDiscoveryResults([]);
     setGitHubDiscoveryStatus("searching GitHub", "status-warn");
     try {
-      const report = await discoverGitHubDropIns({
-        query: github.discoveryQuery,
+      const discovery = await discoverClientBootstrapBeacons({
+        carrier: createGitHubSearchCarrier(),
+        primaryQuery: github.discoveryQuery,
+        fallbackQuery: githubDiscoveryFallbackQuery,
+        includeFallback: github.discoveryIncludeLegacyFallback,
         includeForks: github.discoveryIncludeForks,
         perPage: readBoundedInteger(github.discoveryPerPage, 1, 10, 5),
         page: readBoundedInteger(github.discoveryPage, 1, 10, 1),
         signal: controller.signal
       });
+      const report = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
       setGitHubDiscoveryResults(report.results);
       const incomplete = report.incompleteResults ? ", incomplete" : "";
+      const fallback = discovery.carrierReports.length > 1 ? ", fallback searched" : "";
       setGitHubDiscoveryStatus(
-        `${report.message}${incomplete}; rate ${report.rateLimitRemaining ?? "unknown"}`,
-        report.status === "ok" ? "status-good" : report.status === "failed" || report.status === "rate_limited" ? "status-bad" : "status-warn"
+        `${discovery.message}${fallback}${incomplete}; rate ${report.rateLimitRemaining ?? "unknown"}`,
+        discovery.status === "ok" || discovery.status === "partial"
+          ? "status-good"
+          : discovery.status === "failed" || discovery.status === "rate_limited"
+            ? "status-bad"
+            : "status-warn"
       );
     } catch (error) {
       setGitHubDiscoveryStatus(controller.signal.aborted ? "cancelled" : errorMessage(error), controller.signal.aborted ? "status-warn" : "status-bad");
@@ -202,7 +220,7 @@ export function GitHubTool(): React.JSX.Element {
             </div>
             <p className={github.statusClass}>{github.status}</p>
 
-            <label htmlFor="github-badge-snippet">Root README snippet</label>
+            <label htmlFor="github-badge-snippet">Optional root README snippet</label>
             <input
               id="github-badge-snippet"
               ref={badgeRef}
@@ -311,6 +329,17 @@ export function GitHubTool(): React.JSX.Element {
                 onChange={(event) => { setGitHubDiscoveryIncludeForks(event.currentTarget.checked); }}
               />
               <span>Include forks</span>
+            </label>
+
+            <label className="checkbox-row" htmlFor="github-discovery-fallback">
+              <input
+                id="github-discovery-fallback"
+                name="github-discovery-fallback"
+                type="checkbox"
+                checked={github.discoveryIncludeLegacyFallback}
+                onChange={(event) => { setGitHubDiscoveryIncludeLegacyFallback(event.currentTarget.checked); }}
+              />
+              <span>Legacy fallback</span>
             </label>
 
             <div className="button-row">

@@ -43,11 +43,13 @@ void test("github drop-in module validates exact BRANCH0 records and emits local
 
   assert.deepEqual(records, [defaultBranchWrapper]);
   assert.equal(files[0]?.path, ".branch/records.br0");
+  assert(!files.some((file) => file.path === "README.md" || file.path === "/README.md"));
+  assert(files.every((file) => file.path.startsWith(".branch/") || file.path.startsWith(".github/workflows/")));
   assert.match(bundle, /Blue Ribbon Autonomous Network for Carrier Hopping/);
   assert.match(bundle, /branch.repository-dropin\/0/);
   assert.match(bundle, /branchbootstrapv0/);
   assert.match(bundle, /"locator": "branchbootstrapv0"/);
-  assert.match(bundle, /"root_readme_snippet": "\[!\[Blue Ribbon/);
+  assert.match(bundle, /"root_readme_snippet": "\[!\[B\.R\.A\.N\.C\.H\. branchbootstrapv0 Blue Ribbon/);
   assert.match(bundle, /"github_repository_description": "B\.R\.A\.N\.C\.H\. bootstrap carrier branchbootstrapv0 carry-the-ribbon"/);
   assert.match(bundle, /"mode": "demo"/);
   assert.match(bundle, /"record_count": 1/);
@@ -68,12 +70,15 @@ void test("github drop-in archive contains repository paths", async () => {
     ".branch/ribbon.svg",
     ".github/workflows/branch-carry-ribbon.yml"
   ]);
+  assert(!readZipEntryPaths(archive).some((path) => path === "README.md" || path === "/README.md"));
+  assert(readZipEntryPaths(archive).every((path) => path.startsWith(".branch/") || path.startsWith(".github/workflows/")));
   assert.equal(readZipFileText(archive, ".branch/records.br0"), `${defaultBranchWrapper}\n`);
   assert.match(readZipFileText(archive, ".branch/manifest.json"), /branch\.repository-dropin\/0/);
   assert.match(readZipFileText(archive, ".branch/manifest.json"), /branchbootstrapv0/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /demo fixture/);
+  assert.match(readZipFileText(archive, ".branch/README.md"), /does not create or replace a root README\.md file/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /Search locator: branchbootstrapv0/);
-  assert.match(readZipFileText(archive, ".branch/README.md"), /\[!\[Blue Ribbon/);
+  assert.match(readZipFileText(archive, ".branch/README.md"), /\[!\[B\.R\.A\.N\.C\.H\. branchbootstrapv0 Blue Ribbon/);
   assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /drop-in lint/);
   assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /branchbootstrapv0/);
   assert.doesNotMatch(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /schedule|verify-dropin|contents: write/);
@@ -83,7 +88,16 @@ void test("github drop-in module rejects non-BRANCH0 records", async () => {
   await assert.rejects(parseBranchRecords("not-a-wrapper"), /records\.br0 accepts exact BRANCH0/);
   await assert.rejects(parseBranchRecords("BRANCH0.abc=", { mode: "demo" }), /bounded unpadded base64url/);
   await assert.rejects(parseBranchRecords(defaultBranchWrapper, { mode: "live" }), /refuses the demo BRANCH0 fixture/);
+  assert.match(makeBadgeSnippet(), /branchbootstrapv0/);
+  assert.match(makeBadgeSnippet(), /^\[!\[B\.R\.A\.N\.C\.H\. branchbootstrapv0 Blue Ribbon/);
   assert.match(makeBadgeSnippet(), /\.branch\/ribbon\.svg/);
+  assert.throws(() => {
+    makeGitHubArchive([{
+      path: "README.md",
+      type: "text/markdown",
+      content: "# original overwrite\n"
+    }]);
+  }, /must not contain root README\.md/);
 });
 
 void test("github publication profile exposes canonical locator metadata", () => {
@@ -91,7 +105,9 @@ void test("github publication profile exposes canonical locator metadata", () =>
 
   assert.equal(branchBootstrapLocator, "branchbootstrapv0");
   assert.match(githubDiscoveryDefaultQuery, /^branchbootstrapv0 in:readme$/);
+  assert.match(makeBadgeSnippet(), /branchbootstrapv0/);
   assert.match(rootSnippet, /branchbootstrapv0 BRANCH0 branch\/connectivity\/0 branch-bootstrap-v0 carry-the-ribbon/);
+  assert.match(rootSnippet, /\[!\[B\.R\.A\.N\.C\.H\. branchbootstrapv0 Blue Ribbon/);
   assert.equal(githubRepositoryDescription, "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon");
   assert.deepEqual(githubRepositoryTopics, ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"]);
 });

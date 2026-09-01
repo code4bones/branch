@@ -10,8 +10,10 @@ const adminStorePath = resolve(process.cwd(), "src/admin/store.tsx");
 const ribbonToolPath = resolve(process.cwd(), "src/admin/components/RibbonTool.tsx");
 const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.tsx");
 const githubDiscoveryPath = resolve(process.cwd(), "src/admin/github-discovery.ts");
+const discoveryGitHubPath = resolve(process.cwd(), "src/discovery/github.ts");
+const discoveryClientPath = resolve(process.cwd(), "src/discovery/client.ts");
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
-const publicationProfilePath = resolve(process.cwd(), "src/admin/publication-profile.ts");
+const publicationProfilePath = resolve(process.cwd(), "src/discovery/publication-profile.ts");
 const defaultsPath = resolve(process.cwd(), "src/admin/defaults.ts");
 const canvasImagePath = resolve(process.cwd(), "src/visual/canvas-image.ts");
 const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
@@ -99,12 +101,14 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /createBootstrapBeaconWrapper/);
   assert.match(githubTool, /id="relay-endpoint-uri"/);
   assert.match(githubTool, /id="github-badge-snippet"/);
-  assert.match(githubTool, /Root README snippet/);
+  assert.match(githubTool, /Optional root README snippet/);
   assert.match(githubTool, /makeRootReadmeSnippet/);
   assert.match(githubTool, /id="github-discovery-form"/);
   assert.match(githubTool, /id="github-discovery-query"/);
   assert.match(githubTool, /id="github-discovery-forks"/);
-  assert.match(githubTool, /discoverGitHubDropIns/);
+  assert.match(githubTool, /discoverClientBootstrapBeacons/);
+  assert.match(githubTool, /createGitHubSearchCarrier/);
+  assert.match(githubTool, /github-discovery-fallback/);
   assert.match(githubTool, /acceptedCount/);
   assert.match(githubTool, /relayEndpoint/);
   assert.match(githubTool, /formatUnixSeconds/);
@@ -188,11 +192,19 @@ void test("admin github generator stays offline and produces local drop-in paths
 });
 
 void test("admin github discovery uses bounded public GitHub API reads", async () => {
-  const source = await readFile(githubDiscoveryPath, "utf8");
+  const facade = await readFile(githubDiscoveryPath, "utf8");
+  const source = await readFile(discoveryGitHubPath, "utf8");
+  const client = await readFile(discoveryClientPath, "utf8");
 
+  assert.match(facade, /export \* from "\.\.\/discovery\/github\.js"/);
   assert.match(source, /https:\/\/api\.github\.com\/search\/repositories/);
   assert.match(source, /githubPrimaryLocatorQuery/);
   assert.match(source, /githubLegacyMarkerQuery/);
+  assert.match(source, /createGitHubSearchCarrier/);
+  assert.match(client, /SearchCarrier/);
+  assert.match(client, /discoverClientBootstrapBeacons/);
+  assert.match(client, /fallbackQuery/);
+  assert.match(client, /dedupeObservations/);
   assert.match(source, /\.branch\/records\.br0/);
   assert.match(source, /x-ratelimit-remaining/);
   assert.match(source, /403/);
@@ -201,7 +213,7 @@ void test("admin github discovery uses bounded public GitHub API reads", async (
   assert.match(source, /fork:true/);
   assert.match(source, /default branch/);
   assert.match(source, /extractBranchTextWrappers/);
-  assert.doesNotMatch(source, /GITHUB_TOKEN|Authorization|raw\.githubusercontent\.com|contents: write/);
+  assert.doesNotMatch(`${source}\n${client}`, /GITHUB_TOKEN|Authorization|raw\.githubusercontent\.com|contents: write|localStorage|indexedDB|WebSocket/);
 });
 
 void test("admin css remains dark and bounded", async () => {

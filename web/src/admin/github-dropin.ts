@@ -2,6 +2,7 @@ import { defaultBranchWrapper } from "./defaults.js";
 import {
   branchBootstrapLocator,
   branchPublicationMarkers,
+  githubBadgeAltText,
   githubRepositoryDescription,
   githubRepositoryTopics,
   makeRootReadmeSnippet
@@ -109,11 +110,12 @@ export function makeBundle(files: readonly GitHubDropInFile[]): string {
 }
 
 export function makeGitHubArchive(files: readonly GitHubDropInFile[]): Uint8Array<ArrayBuffer> {
+  assertDropInArchivePaths(files);
   return makeStoredZipArchive(files);
 }
 
 export function makeBadgeSnippet(): string {
-  return "[![Blue Ribbon — Carry the Ribbon](.branch/ribbon.svg)](.branch/README.md)";
+  return `[![${githubBadgeAltText}](.branch/ribbon.svg)](.branch/README.md)`;
 }
 
 async function validateLiveBranchRecord(record: string): Promise<void> {
@@ -145,7 +147,9 @@ Search markers: ${branchPublicationMarkers().join(" ")}
 
 ${modeNote}
 
-Optional root README snippet:
+Optional root README snippet. Insert it manually into an existing repository
+README only if you want the badge and public locator visible there. This bundle
+does not create or replace a root README.md file.
 
 \`\`\`md
 ${makeRootReadmeSnippet().trimEnd()}
@@ -167,6 +171,17 @@ The signed records are stored in \`.branch/records.br0\`. Repository ownership,
 badges, topics, branch names, and CI status are publication evidence only. The
 decoded B.R.A.N.C.H. signed event envelope remains the authority.
 `;
+}
+
+function assertDropInArchivePaths(files: readonly GitHubDropInFile[]): void {
+  for (const file of files) {
+    if (file.path === "README.md" || file.path === "/README.md") {
+      throw new Error("GitHub drop-in archive must not contain root README.md");
+    }
+    if (!file.path.startsWith(".branch/") && !file.path.startsWith(".github/workflows/")) {
+      throw new Error("GitHub drop-in archive files must stay under .branch/ or .github/workflows/");
+    }
+  }
 }
 
 function makeRibbonSvg(): string {

@@ -45,6 +45,7 @@ export interface GitHubState {
   readonly badgeSnippet: string;
   readonly discoveryQuery: string;
   readonly discoveryIncludeForks: boolean;
+  readonly discoveryIncludeLegacyFallback: boolean;
   readonly discoveryPerPage: string;
   readonly discoveryPage: string;
   readonly discoveryRunning: boolean;
@@ -102,6 +103,7 @@ export interface AdminActions {
   readonly setGitHubStatus: (status: string, statusClass: StatusClass) => void;
   readonly setGitHubDiscoveryQuery: (query: string) => void;
   readonly setGitHubDiscoveryIncludeForks: (includeForks: boolean) => void;
+  readonly setGitHubDiscoveryIncludeLegacyFallback: (includeLegacyFallback: boolean) => void;
   readonly setGitHubDiscoveryPerPage: (perPage: string) => void;
   readonly setGitHubDiscoveryPage: (page: string) => void;
   readonly setGitHubDiscoveryRunning: (running: boolean) => void;
@@ -175,6 +177,7 @@ function createAdminStore(): AdminStoreApi {
       badgeSnippet: "",
       discoveryQuery: githubDiscoveryDefaultQuery,
       discoveryIncludeForks: false,
+      discoveryIncludeLegacyFallback: true,
       discoveryPerPage: "5",
       discoveryPage: "1",
       discoveryRunning: false,
@@ -305,6 +308,13 @@ function createAdminStore(): AdminStoreApi {
         github: {
           ...state.github,
           discoveryIncludeForks
+        }
+      })); },
+    setGitHubDiscoveryIncludeLegacyFallback: (discoveryIncludeLegacyFallback) =>
+      { set((state) => ({
+        github: {
+          ...state.github,
+          discoveryIncludeLegacyFallback
         }
       })); },
     setGitHubDiscoveryPerPage: (discoveryPerPage) =>
