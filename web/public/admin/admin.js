@@ -64,14 +64,26 @@
       const file = elements.coverImage.files && elements.coverImage.files[0];
       if (!file) {
         state.coverImage = null;
+        clearRibbonDownload();
+        drawIdleCanvas();
+        setRibbonDiagnostics(emptyDiagnostics(), "idle", "status-warn");
         return;
       }
       try {
         state.coverImage = await loadLocalImage(file);
         elements.outputWidth.value = String(clamp(state.coverImage.width, 640, 4096));
         elements.outputHeight.value = String(clamp(state.coverImage.height, 640, 4096));
+        clearRibbonDownload();
+        drawCoverPreview(
+          state.coverImage,
+          Number(elements.outputWidth.value),
+          Number(elements.outputHeight.value)
+        );
+        setRibbonDiagnostics(emptyDiagnostics(), "cover loaded", "status-good");
       } catch {
         state.coverImage = null;
+        clearRibbonDownload();
+        drawIdleCanvas();
         setRibbonDiagnostics(emptyDiagnostics(), "cover image failed", "status-bad");
       }
     });
@@ -94,9 +106,7 @@
         });
         setRibbonDiagnostics(generated.diagnostics, "generated", "status-good");
 
-        if (state.ribbonPngUrl) {
-          URL.revokeObjectURL(state.ribbonPngUrl);
-        }
+        clearRibbonDownload();
         elements.canvas.toBlob((blob) => {
           if (!blob) {
             setRibbonDiagnostics(generated.diagnostics, "png export failed", "status-bad");
@@ -287,6 +297,13 @@
     const x = Math.round((outputWidth - width) / 2);
     const y = Math.round((outputHeight - height) / 2);
     context.drawImage(coverImage.image, x, y, width, height);
+  }
+
+  function drawCoverPreview(coverImage, outputWidth, outputHeight) {
+    elements.canvas.width = outputWidth;
+    elements.canvas.height = outputHeight;
+    const context = elements.canvas.getContext("2d");
+    drawCoverImage(context, coverImage, outputWidth, outputHeight);
   }
 
   function computePlacement(placement, outputWidth, outputHeight, symbolSize) {
@@ -545,23 +562,28 @@ jobs:
     }
 
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const image = new Image();
-      image.onload = () => {
-        const width = image.naturalWidth;
-        const height = image.naturalHeight;
-        URL.revokeObjectURL(url);
-        if (width <= 0 || height <= 0 || width * height > 4096 * 4096) {
-          reject(new Error("cover image dimensions outside bounds"));
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== "string") {
+          reject(new Error("cover image read failed"));
           return;
         }
-        resolve({ image, width, height });
+
+        const image = new Image();
+        image.onload = () => {
+          const width = image.naturalWidth;
+          const height = image.naturalHeight;
+          if (width <= 0 || height <= 0 || width * height > 4096 * 4096) {
+            reject(new Error("cover image dimensions outside bounds"));
+            return;
+          }
+          resolve({ image, width, height });
+        };
+        image.onerror = () => reject(new Error("cover image failed"));
+        image.src = reader.result;
       };
-      image.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("cover image failed"));
-      };
-      image.src = url;
+      reader.onerror = () => reject(new Error("cover image read failed"));
+      reader.readAsDataURL(file);
     });
   }
 
@@ -598,6 +620,14 @@ jobs:
     document.body.append(link);
     link.click();
     link.remove();
+  }
+
+  function clearRibbonDownload() {
+    if (state.ribbonPngUrl) {
+      URL.revokeObjectURL(state.ribbonPngUrl);
+      state.ribbonPngUrl = "";
+    }
+    elements.downloadRibbon.disabled = true;
   }
 
   async function copyText(text) {

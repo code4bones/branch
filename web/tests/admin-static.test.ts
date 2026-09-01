@@ -7,6 +7,7 @@ const adminHtmlPath = resolve(process.cwd(), "public/admin/index.html");
 const adminJsPath = resolve(process.cwd(), "public/admin/admin.js");
 const adminCssPath = resolve(process.cwd(), "public/admin/admin.css");
 const buildScriptPath = resolve(process.cwd(), "scripts/build-static.mjs");
+const nginxConfigPath = resolve(process.cwd(), "../deployments/nginx/branch.undoo.ru.conf");
 
 void test("admin surface is static and open", async () => {
   const html = await readFile(adminHtmlPath, "utf8");
@@ -27,8 +28,12 @@ void test("admin ribbon generator mirrors ribbon-seal frame constants", async ()
   assert.match(source, /payloadLimit = 768/);
   assert.match(source, /0x82f63b78/);
   assert.match(source, /loadLocalImage/);
-  assert.match(source, /URL\.createObjectURL/);
+  assert.match(source, /FileReader/);
+  assert.match(source, /readAsDataURL/);
   assert.match(source, /drawCoverImage/);
+  assert.match(source, /drawCoverPreview/);
+  assert.match(source, /cover loaded/);
+  assert.match(source, /clearRibbonDownload/);
   assert.match(source, /computePlacement/);
   assert.doesNotMatch(source, /\bfetch\s*\(/);
   assert.doesNotMatch(source, /XMLHttpRequest|localStorage|indexedDB/);
@@ -61,4 +66,10 @@ void test("static build bundles qrcode from local dependency", async () => {
   assert.match(source, /node_modules\/qrcode\/lib\/browser\.js/);
   assert.match(source, /qrcode-browser\.js/);
   assert.match(source, /createRequire/);
+});
+
+void test("nginx csp permits local cover image object urls", async () => {
+  const source = await readFile(nginxConfigPath, "utf8");
+
+  assert.match(source, /img-src 'self' data: blob:/);
 });
