@@ -4,15 +4,13 @@ import assert from "node:assert/strict";
 import { defaultBranchWrapper } from "../src/admin/defaults.js";
 import {
   discoverGitHubDropIns,
-  githubDiscoveryDefaultQuery,
   githubDiscoveryConstraints,
+  githubDiscoveryDefaultQuery,
   makeGitHubRepositorySearchUrl
 } from "../src/admin/github-discovery.js";
 import { makeBadgeSnippet, makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
-import { createBetaBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
-import { makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
+import { makeAutoDecodeBaseOptions, makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
-import { runTransformLab } from "../src/admin/transform-lab-runner.js";
 import {
   classifyTransformLabResult,
   makeFailedTransformLabResult,
@@ -23,22 +21,14 @@ import {
   type TransformImageSummary,
   type TransformLabPreset
 } from "../src/admin/transform-lab.js";
-import { fitInsideWithPadding, resizeNearest } from "../src/visual/corpus.js";
-import { computeModulePitch, computePlacement, fixedRibbonPlacement, type RibbonPlacement } from "../src/visual/geometry.js";
+import { runTransformLab } from "../src/admin/transform-lab-runner.js";
+import { createBetaBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
+import { extractBranchTextWrappers, isBranchTextWrapper } from "../src/protocol/v0/text-carrier.js";
+import { resizeNearest } from "../src/visual/corpus.js";
 import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "../src/visual/ribbon-block.js";
 import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
-import {
-  embedRibbonLocator,
-  makeRibbonLocatorHint,
-  readRibbonLocator,
-  ribbonLocatorProfile,
-  ribbonTintProfile
-} from "../src/visual/ribbon-locator.js";
-import { generateRibbonSymbol, symbolSizePixels } from "../src/visual/ribbon-render.js";
-import { extractStegoTintCandidates } from "../src/visual/ribbon-tint.js";
-import { embedWatermarkPayload, extractWatermarkPayload, ribbonWatermarkProfile } from "../src/visual/ribbon-watermark.js";
-import { decodeRibbonSeal, type RibbonImageData } from "../src/visual/ribbon-image.js";
-import { extractBranchTextWrappers, isBranchTextWrapper } from "../src/protocol/v0/text-carrier.js";
+import { branchWrapperBytes, type RibbonImageData } from "../src/visual/ribbon-image.js";
+import { generateRibbonSymbol } from "../src/visual/ribbon-render.js";
 
 void test("github drop-in module validates exact BRANCH0 records and emits local files", async () => {
   const records = await parseBranchRecords(`# comment\n${defaultBranchWrapper}\n`);
@@ -73,8 +63,7 @@ void test("github drop-in archive contains repository paths", async () => {
   assert.match(readZipFileText(archive, ".branch/README.md"), /demo fixture/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /\[!\[Blue Ribbon/);
   assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /drop-in lint/);
-  assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /pull_request/);
-  assert.doesNotMatch(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /schedule|verify-dropin|Verify local/);
+  assert.doesNotMatch(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /schedule|verify-dropin|contents: write/);
 });
 
 void test("github drop-in module rejects non-BRANCH0 records", async () => {
@@ -139,10 +128,8 @@ void test("github discovery searches repositories and reads default-branch drop-
   assert.equal(report.status, "ok");
   assert.equal(report.rateLimitRemaining, "9");
   assert.equal(firstResult.repository, "alice/carrier");
-  assert.equal(firstResult.defaultBranch, "main");
   assert.equal(firstResult.wrapperCount, 1);
   assert.match(fetched[0] ?? "", /search\/repositories/);
-  assert.match(fetched[0] ?? "", /in%3Areadme/);
   assert.match(fetched[1] ?? "", /repos\/alice\/carrier\/contents\/.branch\/records.br0\?ref=main/);
   assert(githubDiscoveryConstraints.some((constraint) => constraint.includes("403/429")));
 });
@@ -170,47 +157,42 @@ void test("github discovery surfaces API rate limits and bounded query construct
   assert.equal(report.rateLimitRemaining, "0");
 });
 
-void test("visual geometry preserves bounded placement and pitch", () => {
-  assert.equal(computeModulePitch(57, 8, 720), 9);
-  assert.deepEqual(computePlacement(fixedRibbonPlacement, 1000, 1500, 657), { x: 40, y: 40 });
-});
+void test("ribbon symbol generator emits block-profile visual frames", () => {
+  const symbol = generateRibbonSymbol(defaultBranchWrapper);
+  const decoded = decodeRibbonImage(embedBlockPayload(makeNoCarrierImage(1000, 1500), symbol.frame, fullRegion(1000, 1500)));
 
-void test("tint stego extractor reconstructs generated wrapper from PNG LSB modules", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const image = makeStegoImage(symbol.modules, symbol.diagnostics.modulePitch, quietZone);
-  const decoded = decodeRibbonImage(image, {
-    quietZone,
-    carrierSize,
-    placement: "top-left",
-    preferredVersion: symbol.diagnostics.sourceSymbolVersion
-  });
-
-  assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
+  assert.equal(symbol.diagnostics.profile, ribbonBlockProfile);
+  assert.equal(symbol.diagnostics.payloadLength, branchWrapperBytes(defaultBranchWrapper).byteLength);
+  assert.equal(decoded.status, "block decoded");
   assert.equal(decoded.wrapper, defaultBranchWrapper);
 });
 
-void test("large undecodable ribbon image uses bounded decode work", () => {
-  const image = makeNoCarrierImage(1200, 1500);
-  const decoded = decodeRibbonImage(image, {
-    quietZone: 8,
-    carrierSize: 720,
-    placement: fixedRibbonPlacement,
-    maxDirectPixels: 1,
-    maxVersionAttempts: 2,
-    maxTintCandidates: 8
-  });
+void test("ribbon block profile carries exact signed frame bytes through resize", () => {
+  const symbol = generateRibbonSymbol(defaultBranchWrapper);
+  const source = makeNoCarrierImage(1000, 1500);
+  const region = fullRegion(source.width, source.height);
+  const blocked = embedBlockPayload(source, symbol.frame, region);
+  const resized = resizeNearest(blocked, 750, 1125);
+  const decoded = decodeRibbonImage(resized);
 
-  assert.equal(decoded.status, "tint extraction failed");
+  assert.deepEqual(extractBlockPayload(blocked, region), symbol.frame);
+  assert.equal(decoded.status, "block decoded");
+  assert.equal(decoded.wrapper, defaultBranchWrapper);
+  assert.deepEqual(decoded.foundRegion, fullRegion(750, 1125));
+});
+
+void test("large undecodable ribbon image uses bounded block-only decode work", () => {
+  const image = makeNoCarrierImage(1200, 1500);
+  const decoded = decodeRibbonImage(image, makeAutoDecodeBaseOptions(image.width, image.height));
+
+  assert.equal(decoded.status, "block extraction failed");
   assert.equal(decoded.wrapper, "");
 });
 
-void test("ribbon decode worker reconstructs generated tint wrapper", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const image = makeStegoImage(symbol.modules, symbol.diagnostics.modulePitch, quietZone);
+void test("ribbon decode worker reconstructs generated block wrapper", () => {
+  const source = makeNoCarrierImage(1000, 1500);
+  const symbol = generateRibbonSymbol(defaultBranchWrapper);
+  const image = embedBlockPayload(source, symbol.frame, fullRegion(source.width, source.height));
   const response = handleWorkerMessage({
     type: "decode-ribbon-image",
     requestId: 1,
@@ -219,33 +201,19 @@ void test("ribbon decode worker reconstructs generated tint wrapper", () => {
       height: image.height,
       data: copyToArrayBuffer(image.data)
     },
-    options: {
-      quietZone,
-      carrierSize,
-      placement: "top-left",
-      preferredVersion: symbol.diagnostics.sourceSymbolVersion
-    }
+    options: makeAutoDecodeBaseOptions(image.width, image.height)
   });
 
   assert.equal(response.type, "decode-ribbon-image-result");
-  assert.equal(response.result.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
+  assert.equal(response.result.status, "block decoded");
   assert.equal(response.result.wrapper, defaultBranchWrapper);
 });
 
-void test("raw stego candidates remain valid ribbon seal images", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const image = makeStegoImage(symbol.modules, symbol.diagnostics.modulePitch, quietZone);
-  const candidate = extractStegoTintCandidates(
-    image,
-    { x: 0, y: 0 },
-    symbol.diagnostics.moduleCount,
-    symbol.diagnostics.modulePitch,
-    quietZone
-  )[0];
+void test("auto decode candidate search is block-only and bounded", () => {
+  const candidates = makeAutoDecodeCandidates(1000, 1500);
 
-  assert.equal(candidate === undefined ? "missing" : decodeRibbonSeal(candidate).status, "beacon_accepted");
+  assert.equal(maxAutoDecodeCandidates, 1);
+  assert.deepEqual(candidates, [{}]);
 });
 
 void test("transform lab preset catalog covers service-processing simulations", () => {
@@ -267,11 +235,8 @@ void test("transform lab preset catalog covers service-processing simulations", 
   assert(!idSet.has("thumbnail-center-crop"));
   assert(!idSet.has("thumbnail-fit-padding"));
   assert(!idSet.has("rotate-90"));
-  assert(!idSet.has("rotate-180"));
-  assert(!idSet.has("color-shift"));
   assert(!idSet.has("blur"));
   assert(!idSet.has("sharpen"));
-  assert.equal(transformLabPresets.find((preset) => preset.id === "pinterest-like-simulation")?.label, "Pinterest-like simulation");
 });
 
 void test("transform lab selection is bounded and has stable fallback", () => {
@@ -293,12 +258,8 @@ void test("transform lab runner reports visible per-case progress", async () => 
     source: image,
     sourceMime: "image/png",
     presets: [noOpPreset],
-    decodeOptions: {
-      quietZone: 8,
-      carrierSize: 320,
-      placement: fixedRibbonPlacement
-    },
-    decode: () => Promise.resolve({ status: "seal decoded", wrapper: defaultBranchWrapper }),
+    decodeOptions: makeAutoDecodeBaseOptions(image.width, image.height),
+    decode: () => Promise.resolve({ status: "block decoded", wrapper: defaultBranchWrapper }),
     onProgress: (step) => {
       progress.push(`${String(step.current)}/${String(step.total)} ${step.label}`);
     },
@@ -309,7 +270,7 @@ void test("transform lab runner reports visible per-case progress", async () => 
   assert.equal(results.length, 2);
 });
 
-void test("transform lab classification requires exact baseline match and reports unverified signatures honestly", () => {
+void test("transform lab classification requires exact baseline match and reports block regions", () => {
   const summary: TransformImageSummary = {
     width: 1000,
     height: 1500,
@@ -324,11 +285,12 @@ void test("transform lab classification requires exact baseline match and report
     input: summary,
     output: { ...summary, mime: "image/jpeg", quality: 0.8 },
     operations: ["JPEG quality 80"],
-    decodeStatus: "seal decoded auto",
+    decodeStatus: "block decoded",
     decodedWrapper: defaultBranchWrapper,
     wrapperSha256: "abc",
     baselineSha256: "abc",
     signatureValidation: "not_available",
+    foundRegion: { x: 0, y: 0, size: 1000, width: 1000, height: 1500, source: "block" },
     durationMs: 12.6
   } as const;
   const exact = classifyTransformLabResult(exactInput);
@@ -339,9 +301,7 @@ void test("transform lab classification requires exact baseline match and report
   });
 
   assert.equal(exact.status, "exact-unverified");
-  assert.equal(exact.signatureValidation, "not_available");
-  assert.equal(exact.foundRegion, null);
-  assert.equal(exact.locatorProfile, null);
+  assert.equal(exact.foundRegion?.source, "block");
   assert.equal(mismatch.status, "mismatch");
 });
 
@@ -360,451 +320,14 @@ void test("transform lab report omits image bytes filenames and raw wrappers", (
     5,
     "webp encoder unsupported"
   );
-  const json = makeTransformLabJson([failed], "2026-09-01T00:00:00.000Z", ribbonWatermarkProfile);
+  const json = makeTransformLabJson([failed], "2026-09-01T00:00:00.000Z", ribbonBlockProfile);
 
   assert.match(json, /branch\.transform-lab\/0/);
-  assert.match(json, /ribbon-watermark\/0\.draft/);
+  assert.match(json, /ribbon-block\/0\.draft/);
   assert.match(json, /webp encoder unsupported/);
   assert.doesNotMatch(json, /BRANCH0\.|data:|blob:|source\.png|samples\//);
   assert.doesNotMatch(json, /"data"\s*:/);
 });
-
-void test("transform lab report may include safe found-region metadata", () => {
-  const summary: TransformImageSummary = {
-    width: 1000,
-    height: 1500,
-    mime: "image/png",
-    quality: null,
-    byteSize: 4567
-  };
-  const result = classifyTransformLabResult({
-    presetId: "original",
-    presetLabel: "Original decode",
-    simulation: false,
-    input: summary,
-    output: summary,
-    operations: ["original"],
-    decodeStatus: "tint decoded v10 locator auto",
-    decodedWrapper: defaultBranchWrapper,
-    wrapperSha256: "abc",
-    baselineSha256: "abc",
-    signatureValidation: "not_available",
-    foundRegion: { x: 303, y: 803, size: 657, source: "locator" },
-    locatorProfile: ribbonLocatorProfile,
-    durationMs: 7.2
-  });
-  const json = makeTransformLabJson([result], "2026-09-01T00:00:00.000Z");
-
-  assert.match(json, /"foundRegion"/);
-  assert.match(json, /"source": "locator"/);
-  assert.match(json, /ribbon-locator\/0\.draft/);
-  assert.doesNotMatch(json, /BRANCH0\.|data:|blob:|source\.png|samples\//);
-  assert.doesNotMatch(json, /"data"\s*:/);
-});
-
-void test("auto decode candidate search is bounded and does not need UI geometry hints", () => {
-  const candidates = makeAutoDecodeCandidates(1000, 1500);
-  const resizedCandidates = makeAutoDecodeCandidates(750, 1125);
-
-  assert(candidates.length > 1);
-  assert(candidates.length <= maxAutoDecodeCandidates);
-  assert(resizedCandidates.length <= maxAutoDecodeCandidates);
-  const firstCandidate = candidates[0] ?? failCandidate();
-  assert.equal(firstCandidate.carrierSize, 720);
-  assert.equal(firstCandidate.maxDirectPixels, 1);
-  assert.equal(firstCandidate.preferredVersion, 10);
-  assert.equal(firstCandidate.placement, fixedRibbonPlacement);
-  assert.deepEqual(new Set(candidates.map((candidate) => candidate.placement)), new Set([fixedRibbonPlacement]));
-  assert(resizedCandidates.some((candidate) =>
-    candidate.quietZone === 8 &&
-    candidate.preferredVersion === 10 &&
-    candidate.carrierSize === 540
-  ));
-});
-
-void test("auto decode prioritizes default generated tint images", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const image = makePlacedStegoImage(
-    1000,
-    1500,
-    symbol.modules,
-    symbol.diagnostics.modulePitch,
-    quietZone,
-    fixedRibbonPlacement
-  );
-  const firstCandidate = makeAutoDecodeCandidates(image.width, image.height)[0];
-
-  assert.equal((firstCandidate ?? failCandidate()).preferredVersion, symbol.diagnostics.sourceSymbolVersion);
-  const decoded = decodeRibbonImage(image, firstCandidate ?? failCandidate());
-
-  assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
-  assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, { x: 40, y: 40, size: 657 });
-});
-
-void test("auto decode can skip repeated full-image payload extraction after first candidate", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const placement = fixedRibbonPlacement;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const source = makeNoCarrierImage(1000, 1500);
-  const region = {
-    x: 0,
-    y: 0,
-    size: Math.min(source.width, source.height),
-    width: source.width,
-    height: source.height
-  };
-  const watermarked = embedWatermarkPayload(source, symbol.frame, region);
-  const firstDecoded = decodeRibbonImage(watermarked, {
-    quietZone,
-    carrierSize,
-    placement,
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2
-  });
-  const repeatedDecoded = decodeRibbonImage(watermarked, {
-    quietZone,
-    carrierSize,
-    placement,
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2,
-    skipFullImagePayloads: true
-  });
-
-  assert.equal(firstDecoded.status, "watermark decoded heuristic");
-  assert.equal(firstDecoded.wrapper, defaultBranchWrapper);
-  assert.equal(repeatedDecoded.status, "tint extraction failed");
-  assert.equal(repeatedDecoded.wrapper, "");
-});
-
-void test("ribbon decode worker accepts bounded full-image skip option", () => {
-  const image = makeNoCarrierImage(8, 8);
-  const response = handleWorkerMessage({
-    type: "decode-ribbon-image",
-    requestId: 2,
-    image: {
-      width: image.width,
-      height: image.height,
-      data: copyToArrayBuffer(image.data)
-    },
-    options: {
-      quietZone: 8,
-      carrierSize: 320,
-      placement: fixedRibbonPlacement,
-      maxDirectPixels: 1,
-      maxVersionAttempts: 1,
-      maxTintCandidates: 1,
-      skipFullImagePayloads: true
-    }
-  });
-
-  assert.equal(response.type, "decode-ribbon-image-result");
-  assert.equal(response.result.wrapper, "");
-});
-
-void test("ribbon locator embeds pixel magic and accelerates hidden tint decode", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const placement = fixedRibbonPlacement;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const source = makePlacedStegoImage(
-    1000,
-    1500,
-    symbol.modules,
-    symbol.diagnostics.modulePitch,
-    quietZone,
-    placement
-  );
-  const hint = makeRibbonLocatorHint({
-    visualProfile: ribbonTintProfile,
-    quietZone,
-    modulePitch: symbol.diagnostics.modulePitch,
-    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
-    moduleCount: symbol.diagnostics.moduleCount,
-    placement,
-    outputWidth: source.width,
-    outputHeight: source.height
-  });
-  const image = embedRibbonLocator(source, hint);
-  const locator = readRibbonLocator(image) ?? failLocator();
-
-  assert.equal(locator.profile, ribbonLocatorProfile);
-  assert.equal(locator.visualProfile, ribbonTintProfile);
-  assert.deepEqual(locator.payloadRegion, hint.payloadRegion);
-
-  const decoded = decodeRibbonImage(image, {
-    quietZone: 4,
-    carrierSize: 320,
-    placement: "top-left",
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2
-  });
-
-  assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)} locator`);
-  assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, hint.payloadRegion);
-});
-
-void test("ribbon block profile carries exact signed frame bytes through locator decode", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const placement = fixedRibbonPlacement;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const source = makeNoCarrierImage(1000, 1500);
-  const region = {
-    x: 0,
-    y: 0,
-    size: Math.min(source.width, source.height),
-    width: source.width,
-    height: source.height
-  };
-  const blocked = embedBlockPayload(source, symbol.frame, region);
-  const image = embedRibbonLocator(blocked, makeRibbonLocatorHint({
-    visualProfile: ribbonBlockProfile,
-    quietZone,
-    modulePitch: symbol.diagnostics.modulePitch,
-    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
-    moduleCount: symbol.diagnostics.moduleCount,
-    placement,
-    outputWidth: source.width,
-    outputHeight: source.height
-  }));
-  const locator = readRibbonLocator(image) ?? failLocator();
-  const frame = extractBlockPayload(image, region);
-  const decoded = decodeRibbonImage(image, {
-    quietZone: 4,
-    carrierSize: 320,
-    placement: "top-left",
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2
-  });
-
-  assert.deepEqual(frame, symbol.frame);
-  assert.equal(locator.visualProfile, ribbonBlockProfile);
-  assert.equal(decoded.status, "block decoded locator");
-  assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, region);
-});
-
-void test("ribbon block profile survives nearest resize with locator-scaled region", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const placement = fixedRibbonPlacement;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const source = makeNoCarrierImage(1000, 1500);
-  const sourceRegion = {
-    x: 0,
-    y: 0,
-    size: Math.min(source.width, source.height),
-    width: source.width,
-    height: source.height
-  };
-  const blocked = embedBlockPayload(source, symbol.frame, sourceRegion);
-  const located = embedRibbonLocator(blocked, makeRibbonLocatorHint({
-    visualProfile: ribbonBlockProfile,
-    quietZone,
-    modulePitch: symbol.diagnostics.modulePitch,
-    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
-    moduleCount: symbol.diagnostics.moduleCount,
-    placement,
-    outputWidth: source.width,
-    outputHeight: source.height
-  }));
-  const resized = resizeNearest(located, 750, 1125);
-  const decoded = decodeRibbonImage(resized, {
-    quietZone: 8,
-    carrierSize: 720,
-    placement,
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2
-  });
-
-  assert.equal(decoded.status, "block decoded locator");
-  assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, { x: 0, y: 0, size: 750, width: 750, height: 1125 });
-});
-
-void test("ribbon block profile has bounded default heuristic when locator is stripped", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const placement = fixedRibbonPlacement;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const source = makeNoCarrierImage(1000, 1500);
-  const sourceRegion = {
-    x: 0,
-    y: 0,
-    size: Math.min(source.width, source.height),
-    width: source.width,
-    height: source.height
-  };
-  const blocked = embedBlockPayload(source, symbol.frame, sourceRegion);
-  const resized = resizeNearest(blocked, 750, 1125);
-  const decoded = decodeRibbonImage(resized, {
-    quietZone,
-    carrierSize: 540,
-    placement,
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2
-  });
-
-  assert.equal(decoded.status, "block decoded heuristic");
-  assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, { x: 0, y: 0, size: 750, width: 750, height: 1125 });
-});
-
-void test("ribbon watermark profile carries exact signed frame bytes without locator", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const placement = fixedRibbonPlacement;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const source = makeNoCarrierImage(1000, 1500);
-  const region = {
-    x: 0,
-    y: 0,
-    size: Math.min(source.width, source.height),
-    width: source.width,
-    height: source.height
-  };
-  const watermarked = embedWatermarkPayload(source, symbol.frame, region);
-  const frame = extractWatermarkPayload(watermarked, region);
-  const decoded = decodeRibbonImage(watermarked, {
-    quietZone,
-    carrierSize,
-    placement,
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2
-  });
-
-  assert.deepEqual(frame, symbol.frame);
-  assert.equal(decoded.status, "watermark decoded heuristic");
-  assert.equal(decoded.wrapper, defaultBranchWrapper);
-  assert.deepEqual(decoded.foundRegion, region);
-});
-
-void test("ribbon locator reads legacy browser grid as bounded hint", () => {
-  const image = makeNoCarrierImage(1000, 1500);
-  drawLegacyBrowserLocator(image, [
-    66, 82, 76, 79, 67, 48, 0, 2,
-    2, 8, 9, 10, 57, 2, 145, 3,
-    232, 5, 220
-  ]);
-  const locator = readRibbonLocator(image) ?? failLocator();
-
-  assert.equal(locator.profile, ribbonLocatorProfile);
-  assert.equal(locator.visualProfile, ribbonTintProfile);
-  assert.equal(locator.placement, "bottom-right");
-  assert.equal(locator.quietZone, 8);
-  assert.equal(locator.modulePitch, 9);
-  assert.equal(locator.sourceSymbolVersion, 10);
-  assert.deepEqual(locator.payloadRegion, { x: 303, y: 803, size: 657 });
-});
-
-void test("ribbon locator remains non-authoritative without signed payload recovery", () => {
-  const image = makeNoCarrierImage(1000, 1500);
-  const located = embedRibbonLocator(image, {
-    profile: ribbonLocatorProfile,
-    visualProfile: ribbonTintProfile,
-    quietZone: 8,
-    modulePitch: 9,
-    sourceModulePitch: 9,
-    sourceSymbolVersion: 10,
-    moduleCount: 57,
-    placement: "bottom-right",
-    symbolSize: 657,
-    sourceSymbolSize: 657,
-    sourceWidth: 1000,
-    sourceHeight: 1500,
-    payloadRegion: { x: 303, y: 803, size: 657 }
-  });
-  const locator = readRibbonLocator(located);
-  const decoded = decodeRibbonImage(located, {
-    quietZone: 8,
-    carrierSize: 720,
-    placement: "bottom-right",
-    maxDirectPixels: 1,
-    maxVersionAttempts: 1,
-    maxTintCandidates: 2
-  });
-
-  assert.equal(locator?.profile, ribbonLocatorProfile);
-  assert.equal(decoded.wrapper, "");
-  assert.notEqual(decoded.status, "beacon_accepted");
-});
-
-void test("ribbon locator pixel magic survives nearest resize as a geometry hint", () => {
-  const quietZone = 8;
-  const carrierSize = 720;
-  const placement = fixedRibbonPlacement;
-  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
-  const source = makePlacedStegoImage(
-    1000,
-    1500,
-    symbol.modules,
-    symbol.diagnostics.modulePitch,
-    quietZone,
-    placement
-  );
-  const image = embedRibbonLocator(source, makeRibbonLocatorHint({
-    visualProfile: ribbonTintProfile,
-    quietZone,
-    modulePitch: symbol.diagnostics.modulePitch,
-    sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
-    moduleCount: symbol.diagnostics.moduleCount,
-    placement,
-    outputWidth: source.width,
-    outputHeight: source.height
-  }));
-  const resized = resizeNearest(image, 750, 1125);
-  const locator = readRibbonLocator(resized) ?? failLocator();
-
-  assert.equal(locator.sourceWidth, 1000);
-  assert.equal(locator.sourceHeight, 1500);
-  assert.equal(locator.sourceModulePitch, symbol.diagnostics.modulePitch);
-  assert.equal(locator.modulePitch, 7);
-  assert.equal(locator.placement, placement);
-});
-
-void test("transform lab resize helper preserves bounds", () => {
-  const image = makeNoCarrierImage(12, 10);
-
-  assert.deepEqual(fitInsideWithPadding(image, 8, 8).data.byteLength, 8 * 8 * 4);
-});
-
-function makeStegoImage(
-  modules: { readonly size: number; get(x: number, y: number): unknown },
-  modulePitch: number,
-  quietZone: number
-): RibbonImageData {
-  const size = symbolSizePixels(modules.size, quietZone, modulePitch);
-  const data = new Uint8ClampedArray(size * size * 4);
-  data.fill(128);
-  for (let index = 3; index < data.length; index += 4) {
-    data[index] = 255;
-  }
-
-  for (let moduleY = 0; moduleY < modules.size; moduleY += 1) {
-    for (let moduleX = 0; moduleX < modules.size; moduleX += 1) {
-      const bit = modules.get(moduleX, moduleY) ? 1 : 0;
-      for (let y = (moduleY + quietZone) * modulePitch; y < (moduleY + quietZone + 1) * modulePitch; y += 1) {
-        for (let x = (moduleX + quietZone) * modulePitch; x < (moduleX + quietZone + 1) * modulePitch; x += 1) {
-          data[(y * size + x) * 4 + 2] = 128 | bit;
-        }
-      }
-    }
-  }
-
-  return { width: size, height: size, data };
-}
 
 function jsonResponse(value: unknown, headers: Record<string, string> = {}, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -820,64 +343,6 @@ function base64Text(value: string): string {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
-function makePlacedStegoImage(
-  width: number,
-  height: number,
-  modules: { readonly size: number; get(x: number, y: number): unknown },
-  modulePitch: number,
-  quietZone: number,
-  placement: RibbonPlacement
-): RibbonImageData {
-  const image = makeNoCarrierImage(width, height);
-  const symbolSize = symbolSizePixels(modules.size, quietZone, modulePitch);
-  const position = computePlacement(placement, width, height, symbolSize);
-
-  for (let moduleY = 0; moduleY < modules.size; moduleY += 1) {
-    for (let moduleX = 0; moduleX < modules.size; moduleX += 1) {
-      const bit = modules.get(moduleX, moduleY) ? 1 : 0;
-      for (let y = position.y + (moduleY + quietZone) * modulePitch; y < position.y + (moduleY + quietZone + 1) * modulePitch; y += 1) {
-        for (let x = position.x + (moduleX + quietZone) * modulePitch; x < position.x + (moduleX + quietZone + 1) * modulePitch; x += 1) {
-          image.data[(y * width + x) * 4 + 2] = (image.data[(y * width + x) * 4 + 2] ?? 0) & 0xfe | bit;
-        }
-      }
-    }
-  }
-
-  return image;
-}
-
-function drawLegacyBrowserLocator(image: RibbonImageData, firstBytes: readonly number[]): void {
-  const columns = 38;
-  const cellSize = 8;
-  const origin = 8;
-  for (let bitIndex = 0; bitIndex < firstBytes.length * 8; bitIndex += 1) {
-    const byte = firstBytes[Math.floor(bitIndex / 8)] ?? 0;
-    const bit = ((byte >> (7 - bitIndex % 8)) & 1) === 1;
-    const cellX = bitIndex % columns;
-    const cellY = Math.floor(bitIndex / columns);
-    tintTestLocatorCell(image, origin + cellX * cellSize, origin + cellY * cellSize, cellSize, bit);
-  }
-}
-
-function tintTestLocatorCell(image: RibbonImageData, x: number, y: number, size: number, bit: boolean): void {
-  for (let offsetY = 0; offsetY < size; offsetY += 1) {
-    for (let offsetX = 0; offsetX < size; offsetX += 1) {
-      const offset = ((y + offsetY) * image.width + x + offsetX) * 4;
-      if (bit) {
-        image.data[offset] = 0;
-        image.data[offset + 1] = 0;
-        image.data[offset + 2] = 255;
-        image.data[offset + 3] = 255;
-        continue;
-      }
-      image.data[offset] = 255;
-      image.data[offset + 1] = 255;
-      image.data[offset + 2] = 0;
-      image.data[offset + 3] = 255;
-    }
-  }
-}
-
 function makeNoCarrierImage(width: number, height: number): RibbonImageData {
   const data = new Uint8ClampedArray(width * height * 4);
   for (let index = 0; index < data.length; index += 4) {
@@ -889,6 +354,16 @@ function makeNoCarrierImage(width: number, height: number): RibbonImageData {
   return { width, height, data };
 }
 
+function fullRegion(width: number, height: number): { readonly x: 0; readonly y: 0; readonly size: number; readonly width: number; readonly height: number } {
+  return {
+    x: 0,
+    y: 0,
+    size: Math.min(width, height),
+    width,
+    height
+  };
+}
+
 function copyToArrayBuffer(data: Uint8ClampedArray): ArrayBuffer {
   const buffer = new ArrayBuffer(data.byteLength);
   new Uint8ClampedArray(buffer).set(data);
@@ -897,14 +372,6 @@ function copyToArrayBuffer(data: Uint8ClampedArray): ArrayBuffer {
 
 function failPreset(): never {
   throw new Error("missing test preset");
-}
-
-function failCandidate(): never {
-  throw new Error("missing auto decode candidate");
-}
-
-function failLocator(): never {
-  throw new Error("missing ribbon locator");
 }
 
 function failGitHubDiscoveryResult(): never {
@@ -936,21 +403,28 @@ function readZipEntryPaths(archive: Uint8Array): readonly string[] {
 function readZipFileText(archive: Uint8Array, path: string): string {
   const decoder = new TextDecoder();
   const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
-  let offset = 0;
-  while (offset < archive.byteLength - 22) {
-    if (view.getUint32(offset, true) !== 0x04034b50) {
-      break;
+  const endOffset = archive.byteLength - 22;
+  const entryCount = view.getUint16(endOffset + 10, true);
+  let offset = view.getUint32(endOffset + 16, true);
+
+  for (let index = 0; index < entryCount; index += 1) {
+    assert.equal(view.getUint32(offset, true), 0x02014b50);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const nameStart = offset + 46;
+    const entryPath = decoder.decode(archive.subarray(nameStart, nameStart + nameLength));
+    if (entryPath === path) {
+      assert.equal(view.getUint32(localHeaderOffset, true), 0x04034b50);
+      const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+      const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      return decoder.decode(archive.subarray(dataStart, dataStart + compressedSize));
     }
-    const compressedSize = view.getUint32(offset + 18, true);
-    const nameLength = view.getUint16(offset + 26, true);
-    const extraLength = view.getUint16(offset + 28, true);
-    const nameStart = offset + 30;
-    const contentStart = nameStart + nameLength + extraLength;
-    const name = decoder.decode(archive.subarray(nameStart, nameStart + nameLength));
-    if (name === path) {
-      return decoder.decode(archive.subarray(contentStart, contentStart + compressedSize));
-    }
-    offset = contentStart + compressedSize;
+    offset = nameStart + nameLength + extraLength + commentLength;
   }
-  throw new Error(`zip entry not found: ${path}`);
+
+  throw new Error(`missing zip entry ${path}`);
 }

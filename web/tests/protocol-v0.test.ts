@@ -135,7 +135,7 @@ void test("BRANCH0 bootstrap.beacon wrapper validates exact signed CBOR", async 
     now,
     expiresAt: now + 3600,
     sequence: 7,
-    capabilities: ["search.direct-browser/0", "visual.ribbon-seal/0"]
+    capabilities: ["search.direct-browser/0", "visual.ribbon-block/0.draft"]
   });
   const result = await validateBranchTextBootstrapBeacon(wrapper, { now });
 

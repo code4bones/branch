@@ -160,7 +160,7 @@ The initial capability families are:
 - `route.relay.wss/0`: WSS relay route candidate support;
 - `route.migrate/0`: authenticated path migration within an established
   session;
-- `visual.ribbon-seal/0`: Ribbon Image `ribbon-seal/0` discovery support.
+- `visual.ribbon-block/0.draft`: Ribbon Image block-carrier discovery support.
 
 Advertising a capability does not prove that a carrier, board, or relay is
 honest, available, fresh, or well provisioned. It only states the sender's claim
@@ -996,21 +996,19 @@ metadata.
 
 #### Visual frame
 
-The decoded visual payload is a framed byte string:
+The only active Ribbon Image profile in this draft is
+`ribbon-block/0.draft`. Earlier QR, tint, watermark, and locator experiments are
+retired from the reference generator and decoder. They are historical
+measurements, not advertised capabilities.
+
+The decoded visual payload is a framed byte string carried inside the block
+packet. The inner visual frame is exact bytes:
 
 ```text
-"BRIMG0" || profile_id || frame_flags || payload_len || payload ||
-crc32c(payload) || visual_ecc
-```
-
-For the `ribbon-seal/0` MVP, the QR/Data Matrix symbol carries the frame before
-visual ECC as exact bytes:
-
-```text
-magic               = "BRIMG0"              ; 6 ASCII bytes
+magic               = "BRIMG0"                 ; 6 ASCII bytes
 profile_id_length   = uint8
-profile_id          = UTF-8 profile string  ; initially "ribbon-seal/0"
-frame_flags         = uint8                 ; bit 0 means BRANCH0. text payload
+profile_id          = "ribbon-block/0.draft"   ; UTF-8 profile string
+frame_flags         = uint8                    ; bit 0 means BRANCH0. text payload
 payload_len         = uint16 big endian
 payload             = exact payload bytes
 crc32c_payload      = uint32 big endian CRC32C(payload)
@@ -1023,41 +1021,19 @@ validation.
 
 `payload` is either an exact `BRANCH0.` text wrapper or exact deterministic CBOR
 signed-event bytes with an explicit payload-kind bit. The receiver must preserve
-the decoded payload bytes exactly. It may retry image preprocessing and symbol
-decoding, but it must not normalize, repair, reserialize, or guess protocol
-bytes after visual decoding. CRC32C is a corruption filter only. It is not
-authentication and it never replaces Ed25519 signature verification.
+the decoded payload bytes exactly. It may retry bounded image preprocessing, but
+it must not normalize, repair, reserialize, or guess protocol bytes after visual
+decoding. CRC32C is a corruption filter only. It is not authentication and it
+never replaces Ed25519 signature verification.
 
-`visual_ecc` is profile-specific. The MVP profiles use a standard QR Code or
-Data Matrix symbol with its own Reed-Solomon error correction. A future
-branch-aware profile may add an outer Reed-Solomon or BCH code plus interleaving
-around the frame before rendering. Outer ECC is allowed only if it produces a
-single exact candidate payload for signature validation or a bounded small set
-of candidates; unbounded search is invalid.
+#### Block profile
 
-#### Profiles
-
-`ribbon-seal/0` is the robust visible or semi-visible profile. It renders a
-standards-compatible QR Code or Data Matrix symbol with high error correction,
-preserved finder/timing or equivalent synchronization structures, a quiet zone,
-and enough luminance contrast to survive common social-media recompression. The
-symbol may be styled as Blue Ribbon artwork, but styling must not move module
-centers, erase synchronization marks, or rely only on hue. JPEG chroma
-subsampling and palette conversion can erase chroma-only data.
-
-`ribbon-tint/0` is the branch-aware profile. It keeps the same module grid and
-error-correction assumptions but embeds module values as blue-on-blue
-luminance/gamma modulation over arbitrary artwork. The B.R.A.N.C.H. decoder
-performs local background estimation, channel or luminance extraction, contrast
-stretching, adaptive thresholding, and perspective normalization before handing a
-clean module bitmap to an ordinary barcode decoder. Generic-camera readability
-is not a requirement for this profile.
-
-`ribbon-block/0.draft` is a browser-local measurement profile for service-upload
-survivability experiments. It carries the same exact `BRIMG0` visual frame bytes
-as `ribbon-seal/0`, but renders them into bounded distributed differential
-pixel cells over the carrier image instead of rendering a QR/Data Matrix symbol
-or a dense local payload square. The current draft packet is:
+`ribbon-block/0.draft` is the browser-local measurement profile for ordinary
+service-upload survivability. It renders exact `BRIMG0` visual frame bytes into
+bounded distributed differential pixel cells over the full carrier image, using
+the top-left image origin and no separate locator/header band. It intentionally
+accepts a visible block texture as the Blue Ribbon visual treatment instead of
+trying to hide the carrier. The current draft packet is:
 
 ```text
 magic           = "BRBLK0"        ; 6 ASCII bytes encoded in pixels
@@ -1073,117 +1049,27 @@ using one of a bounded set of deterministic masks; the decoder averages the
 masked luminance score and majority-decodes repeated cells. The repeat factor
 is selected only from bounded odd values that fit the carrier capacity, and
 receivers try the same bounded repeat set before validating magic, length,
-CRC32C, and then the enclosed `BRIMG0` frame. The locator is optional for this
-profile; the current generator relies on bounded full-image recovery so it does
-not draw a separate visible locator header for `ribbon-block/0.draft`. This
-profile is intended to measure resistance to common service transformations
-such as JPEG/WebP recompression and resize. It is a robust visual block carrier,
-not a visually hidden steganographic profile: smooth artwork may show an obvious
-digital texture. A visually unobtrusive service-upload profile must use a later
-watermark-oriented design and publish separate corpus results. `ribbon-block/0.draft`
-is not a generic-camera barcode and is not accepted v0 conformance until the
-published corpus records its measured limits.
-
-`ribbon-watermark/0.draft` is a browser-local stealth experiment. It carries
-the same exact `BRIMG0` visual frame bytes as `ribbon-seal/0`, but distributes a
-low-amplitude balanced luminance watermark across the whole carrier image
-instead of drawing a QR/Data Matrix symbol, locator header, or visible block
-grid. The current draft packet is:
-
-```text
-magic                = "BRWMK0"        ; 6 ASCII bytes encoded in pixels
-watermark_version    = uint8           ; current draft value 0
-frame_len            = uint16 big endian
-frame                = exact BRIMG0 visual frame bytes
-crc32c_frame         = uint32 big endian CRC32C(frame)
-```
-
-Each packet bit is repeated across deterministic full-image cells selected by a
-bounded permutation. A cell applies a zero-mean fine-grain grayscale basis at low
-strength; the decoder reads bounded full-image candidates, validates magic,
-length, CRC32C, and then validates the enclosed `BRIMG0` frame. This profile is
-designed to reduce normal-view visual artifacts, not to maximize service-upload
-survivability. JPEG 95 and resize 75% results are corpus measurements, and
-regressions versus `ribbon-block/0.draft` are acceptable when they are recorded
-explicitly. `ribbon-watermark/0.draft` is not a generic-camera barcode and is
-not accepted v0 conformance.
-
-`ribbon-watermark/0` remains the future stable profile name. A watermark that
-cannot recover exact signed bytes is a discovery hint only.
-
-#### Draft pixel locator
-
-`ribbon-locator/0.draft` is a non-authoritative pixel-level locator for hidden
-Ribbon Image profiles. It is not written before the image file bytes, stored in
-EXIF, or placed in PNG/JPEG metadata. It is drawn into pixels near the image
-origin so ordinary file rewriting does not intentionally strip it as metadata.
-
-The current draft locator encodes the ASCII pixel magic `BRLOC0`, a locator
-version byte, a visual-profile hint, bounded geometry hints, and a CRC32C over
-the locator header:
-
-```text
-magic                 = "BRLOC0"       ; 6 ASCII bytes encoded in pixels
-locator_version       = uint8          ; current draft value 0
-visual_profile_hint   = uint8          ; 1 ribbon-seal/0, 2 ribbon-tint/0, 3 ribbon-block/0.draft
-placement_hint        = uint8          ; bounded placement enum
-quiet_zone_hint       = uint8
-module_pitch_hint     = uint8
-qr_version_hint       = uint8
-module_count_hint     = uint8
-symbol_size_hint      = uint16 big endian
-source_width_hint     = uint16 big endian
-source_height_hint    = uint16 big endian
-crc32c_locator        = uint32 big endian CRC32C(bytes before this field)
-```
-
-The locator is encoded as a small fixed grid of pixel cells. Each bit is carried
-by repeated pixels inside its cell using blue-channel parity plus a low-amplitude
-chroma/luminance bias. The draft implementation writes one locator band near
-the top-left origin and keeps the payload symbol inside the existing placement
-margin so the locator and payload do not overwrite each other.
-
-The browser-local generator writes new UI-generated `ribbon-seal/0` and
-`ribbon-tint/0` payload symbols at the fixed top-left placement. Placement is
-not a secrecy mechanism in an open protocol, and avoiding corner variants keeps
-heuristic decode bounded and predictable. The draft locator retains a
-`placement_hint` field only so older experimental images can be decoded while
-the profile remains draft.
-
-Receivers may use a valid locator only as a fast bounded search hint. If the
-current image dimensions differ from `source_width_hint` and
-`source_height_hint`, receivers may scale the module-pitch and symbol-size hints
-within local bounds before attempting payload recovery. A locator with bad
-magic, bad CRC, unknown version, unsupported profile hint, impossible geometry,
-unsafe scaling, or a payload region outside image bounds is ignored. A valid
-locator does not prove authenticity, freshness, profile conformance, payload
-integrity, or platform compatibility. Success still requires exact visual frame
-recovery followed by the normal `BRANCH0.` signed envelope validation path. If
-locator decode fails or locator-guided payload recovery fails, receivers fall
-back to the ordinary bounded heuristic scan.
-
-The current locator is a draft measurement aid. It does not reinterpret
-`ribbon-seal/0`, and future accepted visual profiles must publish their locator
-layout, redundancy, transform limits, and corpus results before claiming
-conformance.
+CRC32C, and then the enclosed `BRIMG0` frame. This profile is intended to
+measure resistance to common service transformations such as JPEG/WebP
+recompression, resize, and screenshot-style resampling. It is not a
+generic-camera barcode and is not accepted v0 conformance until the published
+corpus records its measured limits.
 
 #### Payload capacity and size policy
 
-The visual beacon must be compact enough to fit comfortably inside high-error
-correction symbols. The first generator should target a public relay or mirror
+The visual beacon must be compact enough to fit comfortably inside the bounded
+block carrier. The first generator should target a public relay or mirror
 BootstrapBeacon payload of at most 512 bytes before visual framing and must
 reject payloads above 768 bytes unless a profile-specific corpus proves reliable
 decoding. Larger multi-subject bundles belong in repository drop-ins or ordinary
 SearchCarrier records, not the visual MVP.
 
 Minimum reliable image size is a measured property, not a protocol constant. The
-initial acceptance target for `ribbon-seal/0` is reliable decode from a
-1000 x 1500 px sRGB image after JPEG conversion and resizing, with the carrier
-symbol occupying a square region of at least 640 x 640 px and with the smallest
-module rendered at 6 px or larger in the source image. A generated image must
-declare its profile, source symbol version, module count, module pitch, quiet
-zone, payload length, and ECC level in local diagnostic metadata. That metadata
-is not signed and is not required for decoding.
+current acceptance target for `ribbon-block/0.draft` starts from a 1000 x 1500 px
+sRGB image with the payload distributed across the full image from the top-left
+origin. A generated image must declare its profile, payload length, canvas size,
+and local diagnostic status. That metadata is not signed and is not required for
+decoding.
 
 The measured minimum accepted by v0 is the smallest source and post-transform
 carrier region that passes the repeatable corpus below with the accepted
@@ -1197,14 +1083,11 @@ the exact decoded payload or failure reason for each transform:
 
 - JPEG recompression at quality 95, 85, 75, 65, and 50;
 - WebP recompression at quality 95, 85, 75, 65, and 50;
-- resizing to 1000, 800, 640, 480, and 320 px on the carrier-region short side;
-- platform-style thumbnailing with center crop and fit-inside modes;
-- crop removing 0%, 5%, 10%, and 15% of each edge independently;
-- rotation by 90, 180, and 270 degrees, plus skewed deskew input;
-- brightness, contrast, gamma, saturation, and white-balance shifts;
+- resizing to common service output dimensions such as 1000, 800, 640, 480, and
+  320 px on the carrier-region short side;
 - screenshot capture at common desktop and mobile display scales;
-- camera capture with perspective warp, mild blur, sensor noise, and glare;
 - at least one manually executed Pinterest upload/download round trip;
+- manually executed VK/Facebook-style upload/download round trips when available;
 - negative controls with no visual carrier and with a mutated decoded payload.
 
 As of 2026-08-31, Pinterest's public help says uploaded images may be converted
@@ -1223,20 +1106,15 @@ content type, transform class, decode result, and signature validation result.
 It must not record platform cookies, account identifiers, private board names,
 access tokens, or unrelated image metadata.
 
-The current automated `ribbon-seal/0` draft corpus is recorded in
+The current automated `ribbon-block/0.draft` corpus is recorded in
 `testdata/visual-carrier/corpus.json` and exercised by
-`web/tests/ribbon-image.test.ts`. For the current 80-byte wrapper fixture, QR
-version 10-H, 57 modules, 16 px module pitch, and 8-module quiet zone, the
-local RGBA corpus currently records:
+`web/tests/ribbon-image.test.ts`. For the current 80-byte wrapper fixture and a
+1000 x 1500 px source image, the local RGBA corpus currently records:
 
-- nearest-neighbour resize succeeds down to 240 px square and first fails at
-  200 px square;
-- equal edge crop succeeds at 10% per side and first fails at 15% per side;
-- right-angle rotation, color/gamma/white-balance shifts, and screenshot-style
-  scale down/up through 4x succeed;
-- the current synthetic mild perspective transform fails with
-  `no_carrier_detected`, so perspective normalization is not yet part of the
-  MVP claim.
+- nearest-neighbour resize to 75% succeeds and 50% is the first recorded
+  automated failure;
+- screenshot-style scale down/up through 2x succeeds;
+- blank images and CRC/payload violations reject without unbounded search.
 
 JPEG/WebP recompression, real-device screenshot/camera capture, and the manual
 Pinterest upload/download round trip remain measurement work. They are not
@@ -1299,7 +1177,7 @@ Shared Go and TypeScript fixtures must cover:
   `.branch/records.br0`, and `.branch/manifest.json`;
 - workflow refresh cases that update only `.branch` bytes, skip no-op commits,
   and avoid recursive generated commits;
-- visual carrier fixtures for `ribbon-seal/0` and `ribbon-tint/0`, including
+- visual carrier fixtures for `ribbon-block/0.draft`, including
   exact decoded payload bytes, visual corruption failures, no-carrier negatives,
   transformed images from the corpus above, and signature rejection after a
   payload mutation.

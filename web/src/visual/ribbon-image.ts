@@ -1,21 +1,10 @@
-import jsQR from "jsqr";
-import * as QRCode from "qrcode";
+import { embedBlockPayload, ribbonBlockProfile } from "./ribbon-block.js";
 
 const magic = new Uint8Array([0x42, 0x52, 0x49, 0x4d, 0x47, 0x30]);
 const branchWrapperPrefix = "BRANCH0.";
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
-type JSQRDecoder = (
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  options?: { readonly inversionAttempts?: "dontInvert" | "onlyInvert" | "attemptBoth" | "invertFirst" }
-) => { readonly binaryData: readonly number[] } | null;
-
-const decodeQR: JSQRDecoder = jsQR as unknown as JSQRDecoder;
-
-export const ribbonSealProfile = "ribbon-seal/0" as const;
 export const ribbonPayloadKindBranchWrapper = 0x01;
 export const maxRibbonPayloadBytes = 768;
 
@@ -35,25 +24,21 @@ export interface RibbonImageData {
 }
 
 export interface RibbonFrame {
-  readonly profileId: typeof ribbonSealProfile;
+  readonly profileId: typeof ribbonBlockProfile;
   readonly flags: number;
   readonly payload: Uint8Array;
 }
 
-export interface RibbonSealDiagnostics {
-  readonly profile: typeof ribbonSealProfile;
-  readonly sourceSymbolVersion: number;
-  readonly moduleCount: number;
-  readonly modulePitch: number;
-  readonly quietZone: number;
+export interface RibbonCarrierDiagnostics {
+  readonly profile: typeof ribbonBlockProfile;
   readonly payloadLength: number;
-  readonly errorCorrectionLevel: "H";
+  readonly errorCorrectionLevel: "block-repeat";
 }
 
-export interface GeneratedRibbonSeal {
+export interface GeneratedRibbonCarrier {
   readonly image: RibbonImageData;
   readonly frame: Uint8Array;
-  readonly diagnostics: RibbonSealDiagnostics;
+  readonly diagnostics: RibbonCarrierDiagnostics;
 }
 
 export interface RibbonDecodeSuccess {
@@ -67,15 +52,6 @@ export interface RibbonDecodeFailure {
 
 export type RibbonDecodeResult = RibbonDecodeSuccess | RibbonDecodeFailure;
 
-export interface GenerateRibbonSealOptions {
-  readonly modulePitch?: number;
-  readonly quietZone?: number;
-}
-
-export interface DecodeRibbonSealOptions {
-  readonly maxPixels?: number;
-}
-
 export function branchWrapperBytes(wrapper: string): Uint8Array {
   if (!wrapper.startsWith(branchWrapperPrefix)) {
     throw new Error("payload must be a BRANCH0. wrapper");
@@ -88,7 +64,7 @@ export function encodeRibbonFrame(payload: Uint8Array): Uint8Array {
     throw new Error("payload too large");
   }
 
-  const profile = textEncoder.encode(ribbonSealProfile);
+  const profile = textEncoder.encode(ribbonBlockProfile);
   if (profile.byteLength > 255) {
     throw new Error("profile id too large");
   }
@@ -137,7 +113,7 @@ export function decodeRibbonFrame(frame: Uint8Array): RibbonDecodeResult {
 
   const profileId = decodeUTF8(frame.subarray(offset, offset + profileLength));
   offset += profileLength;
-  if (profileId !== ribbonSealProfile) {
+  if (profileId !== ribbonBlockProfile) {
     return { status: "payload_kind_unsupported" };
   }
 
@@ -170,108 +146,44 @@ export function decodeRibbonFrame(frame: Uint8Array): RibbonDecodeResult {
   return {
     status: "beacon_accepted",
     frame: {
-      profileId: ribbonSealProfile,
+      profileId: ribbonBlockProfile,
       flags,
       payload
     }
   };
 }
 
-export function generateRibbonSeal(
-  branchWrapper: string,
-  options: GenerateRibbonSealOptions = {}
-): GeneratedRibbonSeal {
+export function generateRibbonCarrier(branchWrapper: string): GeneratedRibbonCarrier {
   const payload = branchWrapperBytes(branchWrapper);
   const frame = encodeRibbonFrame(payload);
-  const qr = QRCode.create([{ mode: "byte", data: frame }], { errorCorrectionLevel: "H" });
-  const modulePitch = options.modulePitch ?? 8;
-  const quietZone = options.quietZone ?? 4;
+  const source = makeBlankRibbonImage(1000, 1500);
 
   return {
     frame,
-    image: renderQRModules(qr.modules, modulePitch, quietZone),
+    image: embedBlockPayload(source, frame, {
+      x: 0,
+      y: 0,
+      size: Math.min(source.width, source.height),
+      width: source.width,
+      height: source.height
+    }),
     diagnostics: {
-      profile: ribbonSealProfile,
-      sourceSymbolVersion: qr.version,
-      moduleCount: qr.modules.size,
-      modulePitch,
-      quietZone,
+      profile: ribbonBlockProfile,
       payloadLength: payload.byteLength,
-      errorCorrectionLevel: "H"
+      errorCorrectionLevel: "block-repeat"
     }
   };
 }
 
-export function decodeRibbonSeal(
-  image: RibbonImageData,
-  options: DecodeRibbonSealOptions = {}
-): RibbonDecodeResult {
-  const maxPixels = options.maxPixels ?? 4096 * 4096;
-  if (image.width <= 0 || image.height <= 0 || image.width * image.height > maxPixels) {
-    return { status: "visual_sync_failed" };
-  }
-  if (image.data.byteLength !== image.width * image.height * 4) {
-    return { status: "visual_sync_failed" };
-  }
-
-  const code = decodeQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" });
-  if (code === null) {
-    return { status: "no_carrier_detected" };
-  }
-  return decodeRibbonFrame(Uint8Array.from(code.binaryData));
-}
-
-function renderQRModules(
-  modules: QRCode.QRCode["modules"],
-  modulePitch: number,
-  quietZone: number
-): RibbonImageData {
-  if (!Number.isInteger(modulePitch) || modulePitch < 1) {
-    throw new Error("module pitch must be a positive integer");
-  }
-  if (!Number.isInteger(quietZone) || quietZone < 0) {
-    throw new Error("quiet zone must be a non-negative integer");
-  }
-
-  const moduleCount = modules.size;
-  const width = (moduleCount + quietZone * 2) * modulePitch;
-  const height = width;
+function makeBlankRibbonImage(width: number, height: number): RibbonImageData {
   const data = new Uint8ClampedArray(width * height * 4);
-  data.fill(255);
-  for (let index = 3; index < data.length; index += 4) {
-    data[index] = 255;
+  for (let index = 0; index < data.length; index += 4) {
+    data[index] = 7;
+    data[index + 1] = 17;
+    data[index + 2] = 29;
+    data[index + 3] = 255;
   }
-
-  for (let moduleY = 0; moduleY < moduleCount; moduleY += 1) {
-    for (let moduleX = 0; moduleX < moduleCount; moduleX += 1) {
-      if (modules.get(moduleX, moduleY) === 0) {
-        continue;
-      }
-      fillModule(data, width, moduleX + quietZone, moduleY + quietZone, modulePitch);
-    }
-  }
-
   return { width, height, data };
-}
-
-function fillModule(
-  data: Uint8ClampedArray,
-  width: number,
-  moduleX: number,
-  moduleY: number,
-  modulePitch: number
-): void {
-  const startX = moduleX * modulePitch;
-  const startY = moduleY * modulePitch;
-  for (let y = startY; y < startY + modulePitch; y += 1) {
-    for (let x = startX; x < startX + modulePitch; x += 1) {
-      const offset = (y * width + x) * 4;
-      data[offset] = 0;
-      data[offset + 1] = 48;
-      data[offset + 2] = 120;
-      data[offset + 3] = 255;
-    }
-  }
 }
 
 function crc32c(data: Uint8Array): number {

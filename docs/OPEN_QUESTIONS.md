@@ -45,6 +45,9 @@ their reasoning rather than silently replacing earlier assumptions.
   before treating bootstrap as healthy rather than degraded?
 - Which carrier-specific query profiles become normative fixtures first beyond
   GitHub, npm, and crates.io?
+- When should `spec/connectivity-profile-v0.draft.json` replace the retired QR
+  visual capability with `visual.ribbon-block/0.draft`? The T-BRANCH-052
+  implementation scope intentionally excludes `spec/**`.
 
 ## Relays and mesh routing
 

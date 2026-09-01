@@ -157,9 +157,10 @@ async function decodeOne(
           x: decoded.foundRegion.x,
           y: decoded.foundRegion.y,
           size: decoded.foundRegion.size,
-          source: decoded.locator === undefined ? "heuristic" : "locator"
+          width: decoded.foundRegion.width,
+          height: decoded.foundRegion.height,
+          source: "block"
         },
-      locatorProfile: decoded.locator?.profile ?? null,
       durationMs: performance.now() - startedAt
     })
   };
@@ -358,11 +359,9 @@ function summarizeImage(
 }
 
 function scaleDecodeOptions(options: DecodeRibbonImageOptions, carrierScale: number, image: RibbonImageData): DecodeRibbonImageOptions {
-  const scaledCarrierSize = Math.round(options.carrierSize * carrierScale);
-  return {
-    ...options,
-    carrierSize: Math.max(320, Math.min(image.width, image.height, scaledCarrierSize))
-  };
+  void carrierScale;
+  void image;
+  return options;
 }
 
 async function sha256Text(value: string): Promise<string> {

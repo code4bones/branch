@@ -71,23 +71,7 @@ function isDecodeOptions(options: unknown): options is DecodeRibbonImageOptions 
   if (!isRecord(options)) {
     return false;
   }
-  return typeof options["quietZone"] === "number" &&
-    typeof options["carrierSize"] === "number" &&
-    isPlacement(options["placement"]) &&
-    isOptionalNumber(options["maxInputPixels"]) &&
-    isOptionalNumber(options["maxDirectPixels"]) &&
-    isOptionalNumber(options["maxVersionAttempts"]) &&
-    isOptionalNumber(options["maxTintCandidates"]) &&
-    isOptionalNumber(options["preferredVersion"]) &&
-    isOptionalBoolean(options["skipFullImagePayloads"]);
-}
-
-function isPlacement(value: unknown): value is DecodeRibbonImageOptions["placement"] {
-  return value === "center" ||
-    value === "bottom-right" ||
-    value === "bottom-left" ||
-    value === "top-right" ||
-    value === "top-left";
+  return isOptionalNumber(options["maxInputPixels"]);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,10 +80,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isOptionalNumber(value: unknown): boolean {
   return value === undefined || typeof value === "number";
-}
-
-function isOptionalBoolean(value: unknown): boolean {
-  return value === undefined || typeof value === "boolean";
 }
 
 function readWorkerSelf(): RibbonDecodeWorkerGlobal | null {

@@ -48,7 +48,9 @@ export interface TransformFoundRegion {
   readonly x: number;
   readonly y: number;
   readonly size: number;
-  readonly source: "heuristic" | "locator";
+  readonly width?: number;
+  readonly height?: number;
+  readonly source: "block";
 }
 
 export interface TransformLabProgress {
@@ -73,7 +75,6 @@ export interface TransformLabResult {
   readonly signatureValidation: SignatureValidationStatus;
   readonly correctedErrors: "not_available";
   readonly foundRegion: TransformFoundRegion | null;
-  readonly locatorProfile: string | null;
   readonly durationMs: number;
   readonly failureReason: string | null;
 }
@@ -99,7 +100,6 @@ export interface TransformClassificationInput {
   readonly baselineSha256: string | null;
   readonly signatureValidation: SignatureValidationStatus;
   readonly foundRegion?: TransformFoundRegion | null;
-  readonly locatorProfile?: string | null;
   readonly durationMs: number;
   readonly failureReason?: string;
 }
@@ -224,7 +224,6 @@ export function classifyTransformLabResult(input: TransformClassificationInput):
     signatureValidation: input.signatureValidation,
     correctedErrors: "not_available",
     foundRegion: input.foundRegion ?? null,
-    locatorProfile: input.locatorProfile ?? null,
     durationMs: Math.max(0, Math.round(input.durationMs)),
     failureReason: input.failureReason ?? null
   };
@@ -253,7 +252,6 @@ export function makeFailedTransformLabResult(
     signatureValidation: "not_available",
     correctedErrors: "not_available",
     foundRegion: null,
-    locatorProfile: null,
     durationMs: Math.max(0, Math.round(durationMs)),
     failureReason
   };

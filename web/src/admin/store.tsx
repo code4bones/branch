@@ -7,7 +7,6 @@ import { githubDiscoveryDefaultQuery, type GitHubDiscoveryResult } from "./githu
 import type { GitHubDropInFile } from "./github-dropin.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
-import type { RibbonVisualMode } from "../visual/ribbon-render.js";
 
 export type AdminTab = "ribbon" | "github";
 export type RibbonTab = "encode" | "decode";
@@ -15,10 +14,6 @@ export type StatusClass = "status-good" | "status-warn" | "status-bad";
 
 export interface RibbonFormState {
   readonly wrapper: string;
-  readonly visualMode: RibbonVisualMode;
-  readonly quietZone: string;
-  readonly carrierSize: string;
-  readonly tintStrength: string;
   readonly outputWidth: string;
   readonly outputHeight: string;
 }
@@ -34,10 +29,6 @@ export interface DiagnosticsState {
   readonly statusClass: StatusClass;
   readonly mode: string;
   readonly payloadLength: string;
-  readonly sourceSymbolVersion: string;
-  readonly moduleCount: string;
-  readonly modulePitch: string;
-  readonly quietZone: string;
   readonly canvas: string;
   readonly ecc: string;
 }
@@ -137,14 +128,10 @@ export function createDiagnostics(status: string, statusClass: StatusClass, patc
     profile: ribbonProfileLabel,
     status,
     statusClass,
-    mode: "tint",
+    mode: "block",
     payloadLength: "-",
-    sourceSymbolVersion: "-",
-    moduleCount: "-",
-    modulePitch: "-",
-    quietZone: "-",
     canvas: "640x640",
-    ecc: "H",
+    ecc: "block-repeat",
     ...patch
   };
 }
@@ -155,10 +142,6 @@ function createAdminStore(): AdminStoreApi {
     ribbonTab: "encode",
     ribbon: {
       wrapper: defaultBranchWrapper,
-      visualMode: "tint",
-      quietZone: "8",
-      carrierSize: "720",
-      tintStrength: "0",
       outputWidth: "1000",
       outputHeight: "1500"
     },

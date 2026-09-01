@@ -1,23 +1,23 @@
 {
   "schema": "branch.visual-carrier.corpus/0",
-  "profile": "ribbon-seal/0",
+  "profile": "ribbon-block/0.draft",
   "status": "draft",
-  "generated_by": "web/src/visual/ribbon-image.ts",
+  "generated_by": "web/src/visual/ribbon-block.ts",
   "payload_limit_bytes": 768,
   "current_automated_cases": [
     {
-      "name": "canonical-generated-qr",
-      "transform": "none",
-      "expect": "beacon_accepted"
+      "name": "canonical-generated-block",
+      "transform": "full_image_block_payload_over_1000x1500_source",
+      "expect": "block_decoded"
     },
     {
       "name": "blank-image-negative",
       "transform": "no_carrier",
-      "expect": "no_carrier_detected"
+      "expect": "block_extraction_failed"
     },
     {
       "name": "mutated-payload-crc",
-      "transform": "payload_byte_flip_before_qr_encoding",
+      "transform": "payload_byte_flip_before_block_encoding",
       "expect": "visual_crc_failed"
     },
     {
@@ -31,98 +31,38 @@
       "expect": "payload_too_large"
     },
     {
-      "name": "resize-short-side-640",
-      "transform": "nearest_resize_to_640_square_from_generated_source",
-      "expect": "beacon_accepted"
+      "name": "resize-75-percent",
+      "transform": "nearest_resize_to_750x1125_from_1000x1500_source",
+      "expect": "block_decoded"
     },
     {
-      "name": "resize-short-side-480",
-      "transform": "nearest_resize_to_480_square_from_generated_source",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "resize-short-side-240",
-      "transform": "nearest_resize_to_240_square_from_generated_source",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "resize-short-side-200",
-      "transform": "nearest_resize_to_200_square_from_generated_source",
-      "expect": "no_carrier_detected",
-      "notes": "Current measured lower resize boundary for the automated source fixture."
-    },
-    {
-      "name": "center-thumbnail-80-percent",
-      "transform": "center_crop_to_80_percent_source_extent",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "edge-crop-5-percent",
-      "transform": "remove_5_percent_from_each_edge",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "edge-crop-10-percent",
-      "transform": "remove_10_percent_from_each_edge",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "edge-crop-15-percent",
-      "transform": "remove_15_percent_from_each_edge",
-      "expect": "no_carrier_detected"
-    },
-    {
-      "name": "rotate-90-180-270",
-      "transform": "lossless_right_angle_rotations",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "brightness-contrast-gamma-saturation",
-      "transform": "rgba_color_shift_brightness_10_contrast_1_12_gamma_0_92_saturation_0_78_white_balance_1_04_1_0_0_94",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "strong-color-shift",
-      "transform": "rgba_color_shift_brightness_35_contrast_1_4_gamma_0_75_saturation_0_45_white_balance_1_15_1_0_0_85",
-      "expect": "beacon_accepted"
+      "name": "resize-50-percent",
+      "transform": "nearest_resize_to_500x750_from_1000x1500_source",
+      "expect": "block_extraction_failed",
+      "notes": "Current measured lower resize boundary for the automated fixture."
     },
     {
       "name": "screenshot-scale-2",
       "transform": "downscale_to_half_then_upscale_to_source_dimensions",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "screenshot-scale-4",
-      "transform": "downscale_to_quarter_then_upscale_to_source_dimensions",
-      "expect": "beacon_accepted"
-    },
-    {
-      "name": "mild-camera-perspective",
-      "transform": "deterministic_horizontal_top_inset_perspective_simulation",
-      "expect": "no_carrier_detected",
-      "notes": "Current MVP decoder does not recover this synthetic perspective case; keep as failure threshold until a perspective normalization pass exists."
+      "expect": "block_decoded"
     }
   ],
   "manual_or_future_cases": [
     "jpeg-recompression-q95-q85-q75-q65-q50",
     "webp-recompression-q95-q85-q75-q65-q50",
-    "thumbnail-platform-fit-inside-and-center-crop",
+    "resize-service-widths-1000-800-640-480-320",
     "screenshot-real-desktop-mobile",
-    "camera-perspective-blur-noise-glare-real-device",
-    "manual-pinterest-upload-download-round-trip"
+    "manual-pinterest-upload-download-round-trip",
+    "manual-vk-facebook-upload-download-round-trip"
   ],
   "automated_measurement_source": {
     "wrapper_bytes": 80,
-    "source_symbol_version": 10,
-    "module_count": 57,
-    "module_pitch": 16,
-    "quiet_zone_modules": 8,
+    "source_frame_profile": "ribbon-block/0.draft",
     "source_image": "generated in web/tests/ribbon-image.test.ts",
-    "source_image_px": "1168x1168",
-    "minimum_resize_short_side_px": 240,
-    "first_failed_resize_short_side_px": 200,
-    "maximum_passing_edge_crop_each_side": "10%",
-    "first_failed_edge_crop_each_side": "15%"
+    "source_image_px": "1000x1500",
+    "minimum_passing_resize_percent": "75%",
+    "first_failed_resize_percent": "50%",
+    "payload_region": "full image from top-left origin"
   },
   "manual_round_trip_status": "not-yet-recorded",
   "privacy_boundary": "Record dimensions, content type, transform class, decode status, and signature status only; never record platform cookies, account identifiers, tokens, private board names, payload plaintext, or unrelated metadata."

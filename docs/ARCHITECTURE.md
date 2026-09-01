@@ -65,6 +65,11 @@ credentials, automated publishing, image hashes, or Pinterest-specific identity.
 The decoded signed beacon is the authority; the artwork and hosting platform
 are distribution evidence only.
 
+The reference visual carrier currently uses one intentional block-coded profile,
+`ribbon-block/0.draft`, distributed across the image from the top-left origin.
+Earlier QR, tint, watermark, and locator experiments are not active reference
+profiles.
+
 First contact uses this fabric only as a rendezvous control plane. A sender
 discovers a recipient's signed bootstrap material, selects one or more public
 boards allowed by both sides, publishes a sealed signed offer, and accepts a

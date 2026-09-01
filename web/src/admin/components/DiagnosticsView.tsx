@@ -7,10 +7,6 @@ export function DiagnosticsView(): React.JSX.Element {
     ["Status", diagnostics.status],
     ["Mode", diagnostics.mode],
     ["Payload", diagnostics.payloadLength],
-    ["QR version", diagnostics.sourceSymbolVersion],
-    ["Modules", diagnostics.moduleCount],
-    ["Pitch", diagnostics.modulePitch],
-    ["Quiet zone", diagnostics.quietZone],
     ["Canvas", diagnostics.canvas],
     ["ECC", diagnostics.ecc]
   ];

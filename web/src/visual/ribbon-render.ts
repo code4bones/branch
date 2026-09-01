@@ -1,66 +1,32 @@
-import * as QRCode from "qrcode";
-
-import { computeModulePitch, computePlacement, type RibbonPlacement } from "./geometry.js";
-import { drawBlockPayload } from "./ribbon-block.js";
+import { drawBlockPayload, ribbonBlockProfile } from "./ribbon-block.js";
 import {
   branchWrapperBytes,
   encodeRibbonFrame,
-  ribbonSealProfile,
-  type RibbonSealDiagnostics
+  type RibbonCarrierDiagnostics
 } from "./ribbon-image.js";
-import {
-  drawRibbonLocator,
-  makeRibbonLocatorHint,
-  ribbonTintProfile,
-  type RibbonLocatorVisualProfile
-} from "./ribbon-locator.js";
-import { drawTintQR } from "./ribbon-tint.js";
-import { drawWatermarkPayload } from "./ribbon-watermark.js";
 import type { LoadedBrowserImage } from "./canvas-image.js";
 
-export type RibbonVisualMode = "seal" | "tint" | "block" | "watermark";
-
-export interface QRModules {
-  readonly size: number;
-  get(x: number, y: number): unknown;
-}
+export type RibbonVisualMode = "block";
 
 export interface GeneratedRibbonSymbol {
   readonly frame: Uint8Array;
-  readonly modules: QRModules;
-  readonly diagnostics: RibbonSealDiagnostics;
+  readonly diagnostics: RibbonCarrierDiagnostics;
 }
 
 export interface RenderRibbonOptions {
   readonly outputWidth: number;
   readonly outputHeight: number;
-  readonly carrierSize: number;
-  readonly visualMode: RibbonVisualMode;
-  readonly tintStrength: number;
-  readonly placement: RibbonPlacement;
   readonly coverImage: LoadedBrowserImage | null;
 }
 
-export function generateRibbonSymbol(
-  wrapper: string,
-  quietZone: number,
-  carrierSize: number
-): GeneratedRibbonSymbol {
+export function generateRibbonSymbol(wrapper: string): GeneratedRibbonSymbol {
   const payload = branchWrapperBytes(wrapper);
-  const frame = encodeRibbonFrame(payload);
-  const qr = QRCode.create([{ mode: "byte", data: frame }], { errorCorrectionLevel: "H" });
-  const modulePitch = computeModulePitch(qr.modules.size, quietZone, carrierSize);
   return {
-    frame,
-    modules: qr.modules,
+    frame: encodeRibbonFrame(payload),
     diagnostics: {
-      profile: ribbonSealProfile,
-      sourceSymbolVersion: qr.version,
-      moduleCount: qr.modules.size,
-      modulePitch,
-      quietZone,
+      profile: ribbonBlockProfile,
       payloadLength: payload.byteLength,
-      errorCorrectionLevel: "H"
+      errorCorrectionLevel: "block-repeat"
     }
   };
 }
@@ -70,73 +36,33 @@ export function renderRibbonImage(
   symbol: GeneratedRibbonSymbol,
   options: RenderRibbonOptions
 ): void {
-  if (options.coverImage === null || options.visualMode === "seal") {
-    const symbolSize = symbolSizePixels(symbol.diagnostics.moduleCount, symbol.diagnostics.quietZone, symbol.diagnostics.modulePitch);
-    canvas.width = symbolSize;
-    canvas.height = symbolSize;
-    const context = requireCanvasContext(canvas);
-    if (options.coverImage !== null) {
-      canvas.width = options.outputWidth;
-      canvas.height = options.outputHeight;
-      drawCoverImage(context, options.coverImage, options.outputWidth, options.outputHeight);
-      ensureCarrierFits(symbolSize, options.outputWidth, options.outputHeight);
-      const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
-      drawQR(context, symbol.modules, placement.x, placement.y, symbol.diagnostics.modulePitch, symbol.diagnostics.quietZone);
-      drawLocator(context, symbol, options, "ribbon-seal/0");
-      return;
-    }
-    drawQR(context, symbol.modules, 0, 0, symbol.diagnostics.modulePitch, symbol.diagnostics.quietZone);
-    return;
-  }
-
   canvas.width = options.outputWidth;
   canvas.height = options.outputHeight;
   const context = requireCanvasContext(canvas);
-  drawCoverImage(context, options.coverImage, options.outputWidth, options.outputHeight);
-
-  const symbolSize = symbolSizePixels(symbol.diagnostics.moduleCount, symbol.diagnostics.quietZone, symbol.diagnostics.modulePitch);
-  ensureCarrierFits(symbolSize, options.outputWidth, options.outputHeight);
-  const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
-  if (options.visualMode === "block" || options.visualMode === "watermark") {
-    const payloadRegion = {
-      x: 0,
-      y: 0,
-      size: Math.min(options.outputWidth, options.outputHeight),
-      width: options.outputWidth,
-      height: options.outputHeight
-    };
-    if (options.visualMode === "block") {
-      drawBlockPayload(context, symbol.frame, payloadRegion);
-    } else {
-      drawWatermarkPayload(context, symbol.frame, payloadRegion);
-    }
-    return;
+  if (options.coverImage === null) {
+    drawNeutralBackground(context, options.outputWidth, options.outputHeight);
+  } else {
+    drawCoverImage(context, options.coverImage, options.outputWidth, options.outputHeight);
   }
 
-  drawTintQR(
-    context,
-    symbol.modules,
-    placement.x,
-    placement.y,
-    symbol.diagnostics.modulePitch,
-    symbol.diagnostics.quietZone,
-    options.tintStrength
-  );
-  drawLocator(context, symbol, options, ribbonTintProfile);
+  drawBlockPayload(context, symbol.frame, {
+    x: 0,
+    y: 0,
+    size: Math.min(options.outputWidth, options.outputHeight),
+    width: options.outputWidth,
+    height: options.outputHeight
+  });
 }
 
 export function drawIdleCanvas(canvas: HTMLCanvasElement): void {
   canvas.width = 640;
   canvas.height = 640;
   const context = requireCanvasContext(canvas);
-  context.fillStyle = "#f8fbff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#d8e3f1";
-  context.fillRect(128, 128, 384, 384);
-  context.fillStyle = "#003078";
-  context.fillRect(168, 168, 96, 96);
-  context.fillRect(376, 168, 96, 96);
-  context.fillRect(168, 376, 96, 96);
+  drawNeutralBackground(context, canvas.width, canvas.height);
+  context.fillStyle = "#1f6feb";
+  context.fillRect(136, 136, 368, 72);
+  context.fillRect(136, 288, 368, 72);
+  context.fillRect(136, 440, 368, 72);
 }
 
 export function drawCoverPreview(
@@ -166,66 +92,9 @@ export function drawCoverImage(
   context.drawImage(coverImage.image, x, y, width, height);
 }
 
-export function symbolSizePixels(moduleCount: number, quietZone: number, modulePitch: number): number {
-  return (moduleCount + quietZone * 2) * modulePitch;
-}
-
-function drawQR(
-  context: CanvasRenderingContext2D,
-  modules: QRModules,
-  x: number,
-  y: number,
-  modulePitch: number,
-  quietZone: number
-): void {
-  const moduleCount = modules.size;
-  const size = symbolSizePixels(moduleCount, quietZone, modulePitch);
-  context.fillStyle = "#f8fbff";
-  context.fillRect(x, y, size, size);
-  context.fillStyle = "#003078";
-
-  for (let moduleY = 0; moduleY < moduleCount; moduleY += 1) {
-    for (let moduleX = 0; moduleX < moduleCount; moduleX += 1) {
-      if (!modules.get(moduleX, moduleY)) {
-        continue;
-      }
-      context.fillRect(
-        x + (moduleX + quietZone) * modulePitch,
-        y + (moduleY + quietZone) * modulePitch,
-        modulePitch,
-        modulePitch
-      );
-    }
-  }
-}
-
-function ensureCarrierFits(symbolSize: number, outputWidth: number, outputHeight: number): void {
-  if (symbolSize > outputWidth || symbolSize > outputHeight) {
-    throw new Error("carrier size too large for output");
-  }
-}
-
-function drawLocator(
-  context: CanvasRenderingContext2D,
-  symbol: GeneratedRibbonSymbol,
-  options: RenderRibbonOptions,
-  visualProfile: RibbonLocatorVisualProfile
-): void {
-  drawRibbonLocator(
-    context,
-    options.outputWidth,
-    options.outputHeight,
-    makeRibbonLocatorHint({
-      visualProfile,
-      quietZone: symbol.diagnostics.quietZone,
-      modulePitch: symbol.diagnostics.modulePitch,
-      sourceSymbolVersion: symbol.diagnostics.sourceSymbolVersion,
-      moduleCount: symbol.diagnostics.moduleCount,
-      placement: options.placement,
-      outputWidth: options.outputWidth,
-      outputHeight: options.outputHeight
-    })
-  );
+function drawNeutralBackground(context: CanvasRenderingContext2D, width: number, height: number): void {
+  context.fillStyle = "#07111d";
+  context.fillRect(0, 0, width, height);
 }
 
 function requireCanvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {

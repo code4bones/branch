@@ -28,18 +28,16 @@ import {
   loadLocalImage,
   type LoadedBrowserImage
 } from "../../visual/canvas-image.js";
-import { clamp, fixedRibbonPlacement } from "../../visual/geometry.js";
+import { clamp } from "../../visual/geometry.js";
 import { ribbonBlockProfile } from "../../visual/ribbon-block.js";
+import type { RibbonFoundRegion } from "../../visual/ribbon-decode.js";
 import {
   drawCoverPreview,
   drawIdleCanvas,
   generateRibbonSymbol,
   renderRibbonImage,
-  type GeneratedRibbonSymbol,
-  type RibbonVisualMode
+  type GeneratedRibbonSymbol
 } from "../../visual/ribbon-render.js";
-import { ribbonTintProfile, type RibbonLocatorRegion } from "../../visual/ribbon-locator.js";
-import { ribbonWatermarkProfile } from "../../visual/ribbon-watermark.js";
 import { DiagnosticsView } from "./DiagnosticsView.js";
 
 type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
@@ -95,11 +93,9 @@ export function RibbonTool(): React.JSX.Element {
       const loaded = await loadLocalImage(file);
       const outputWidth = clamp(Math.max(readOptionalInteger(ribbon.outputWidth, 1000), loaded.width), 640, 4096);
       const outputHeight = clamp(Math.max(readOptionalInteger(ribbon.outputHeight, 1500), loaded.height), 640, 4096);
-      const carrierSize = fitCarrierSize(ribbon.carrierSize, outputWidth, outputHeight);
       setCover({ image: loaded, filename: file.name });
       setRibbonField("outputWidth", String(outputWidth));
       setRibbonField("outputHeight", String(outputHeight));
-      setRibbonField("carrierSize", String(carrierSize));
       replaceRibbonPngUrl("");
       drawCover(loaded, outputWidth, outputHeight);
       setDiagnostics(createDiagnostics("cover loaded", "status-good", { canvas: `${String(outputWidth)}x${String(outputHeight)}` }));
@@ -115,22 +111,15 @@ export function RibbonTool(): React.JSX.Element {
     event.preventDefault();
     const canvas = requireCanvas();
     try {
-      const quietZone = readBoundedInteger(ribbon.quietZone, 4, 12, "quiet zone");
       const outputWidth = readBoundedInteger(ribbon.outputWidth, 640, 4096, "output width");
       const outputHeight = readBoundedInteger(ribbon.outputHeight, 640, 4096, "output height");
-      const carrierSize = fitCarrierSize(ribbon.carrierSize, outputWidth, outputHeight);
-      setRibbonField("carrierSize", String(carrierSize));
-      const symbol = generateRibbonSymbol(ribbon.wrapper.trim(), quietZone, carrierSize);
+      const symbol = generateRibbonSymbol(ribbon.wrapper.trim());
       renderRibbonImage(canvas, symbol, {
         outputWidth,
         outputHeight,
-        carrierSize,
-        visualMode: ribbon.visualMode,
-        tintStrength: readBoundedInteger(ribbon.tintStrength, 0, 24, "tint strength"),
-        placement: fixedRibbonPlacement,
         coverImage: cover?.image ?? null
       });
-      setDiagnostics(diagnosticsFromSymbol(symbol, ribbon.visualMode, canvas, "generated", "status-good"));
+      setDiagnostics(diagnosticsFromSymbol(symbol, canvas, "generated", "status-good"));
 
       replaceRibbonPngUrl("");
       const blob = await canvasToPngBlob(canvas);
@@ -138,13 +127,13 @@ export function RibbonTool(): React.JSX.Element {
     } catch (error) {
       replaceRibbonPngUrl("");
       preserveCoverPreviewOnError();
-      setDiagnostics(createDiagnostics(error instanceof Error ? error.message : "generation failed", "status-bad", { mode: ribbon.visualMode }));
+      setDiagnostics(createDiagnostics(error instanceof Error ? error.message : "generation failed", "status-bad"));
     }
   }
 
   async function onDecode(): Promise<void> {
     try {
-      setDiagnostics(createDiagnostics("decoding", "status-warn", { mode: ribbon.visualMode }));
+      setDiagnostics(createDiagnostics("decoding", "status-warn"));
       const image = await loadDecodeImage({ refreshPreview: true });
       const result = await decodeRibbonImageAutoWithWorker(image);
       setDecodedWrapper(result.wrapper);
@@ -152,12 +141,11 @@ export function RibbonTool(): React.JSX.Element {
         drawFoundRegion(result.foundRegion);
       }
       setDiagnostics(createDiagnostics(result.status, result.wrapper === "" ? "status-bad" : "status-good", {
-        mode: ribbon.visualMode,
         canvas: `${String(image.width)}x${String(image.height)}`
       }));
     } catch (error) {
       setDecodedWrapper("");
-      setDiagnostics(createDiagnostics(error instanceof Error ? error.message : "decode failed", "status-bad", { mode: ribbon.visualMode }));
+      setDiagnostics(createDiagnostics(error instanceof Error ? error.message : "decode failed", "status-bad"));
     }
   }
 
@@ -178,7 +166,7 @@ export function RibbonTool(): React.JSX.Element {
       }));
     } catch (error) {
       drawIdle();
-      setDiagnostics(createDiagnostics(errorMessage(error), "status-bad", { mode: ribbon.visualMode }));
+      setDiagnostics(createDiagnostics(errorMessage(error), "status-bad"));
     }
   }
 
@@ -209,7 +197,7 @@ export function RibbonTool(): React.JSX.Element {
         },
         signal: controller.signal
       });
-      const reportJson = makeTransformLabJson(results, new Date().toISOString(), readVisualProfileLabel(ribbon.visualMode, ""));
+      const reportJson = makeTransformLabJson(results, new Date().toISOString(), ribbonBlockProfile);
       setTransformLabResults(results, reportJson);
       const [status, statusClass] = transformLabStatusFromResults(results, controller.signal.aborted);
       setTransformLabStatus(status, statusClass);
@@ -285,14 +273,14 @@ export function RibbonTool(): React.JSX.Element {
     drawCoverPreview(requireCanvas(), image, image.width, image.height);
   }
 
-  function drawFoundRegion(region: RibbonLocatorRegion): void {
+  function drawFoundRegion(region: RibbonFoundRegion): void {
     const canvas = requireCanvas();
     const context = canvasContext(canvas);
     const lineWidth = Math.max(3, Math.round(Math.min(canvas.width, canvas.height) * 0.005));
     const x = clamp(region.x, 0, Math.max(0, canvas.width - 1));
     const y = clamp(region.y, 0, Math.max(0, canvas.height - 1));
-    const right = clamp(region.x + region.size, x + 1, canvas.width);
-    const bottom = clamp(region.y + region.size, y + 1, canvas.height);
+    const right = clamp(region.x + region.width, x + 1, canvas.width);
+    const bottom = clamp(region.y + region.height, y + 1, canvas.height);
 
     context.save();
     context.strokeStyle = "#38e8ff";
@@ -422,22 +410,7 @@ function RibbonEncodePanel(
         <input id="cover-image" name="cover-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onCoverChange(event)} />
       </div>
 
-      <div className="control-row">
-        <label htmlFor="visual-mode">Visual mode</label>
-        <select id="visual-mode" name="visual-mode" value={ribbon.visualMode} onChange={(event) => { setRibbonField("visualMode", readVisualMode(event.currentTarget.value)); }}>
-          <option value="seal">Seal</option>
-          <option value="tint">Tint</option>
-          <option value="block">Robust block</option>
-          <option value="watermark">Watermark</option>
-        </select>
-      </div>
-
-      <RibbonGeometryControls idPrefix="" ribbon={ribbon} setRibbonField={setRibbonField} includeOutputSize={true} />
-
-      <div className="control-row">
-        <label htmlFor="tint-strength">Tint strength</label>
-        <input id="tint-strength" name="tint-strength" type="range" min="0" max="24" step="1" value={ribbon.tintStrength} onChange={(event) => { setRibbonField("tintStrength", event.currentTarget.value); }} />
-      </div>
+      <RibbonOutputSizeControls ribbon={ribbon} setRibbonField={setRibbonField} />
 
       <div className="button-row">
         <button type="submit">Generate</button>
@@ -447,13 +420,6 @@ function RibbonEncodePanel(
       </div>
     </form>
   );
-}
-
-function readVisualMode(value: string): RibbonVisualMode {
-  if (value === "seal" || value === "block" || value === "watermark") {
-    return value;
-  }
-  return "tint";
 }
 
 function RibbonDecodePanel(
@@ -615,48 +581,25 @@ function TransformLabResults({ results }: { readonly results: readonly Transform
   );
 }
 
-function RibbonGeometryControls(
-  { idPrefix, ribbon, setRibbonField, includeOutputSize }: {
-    readonly idPrefix: "" | "decode";
+function RibbonOutputSizeControls(
+  { ribbon, setRibbonField }: {
     readonly ribbon: RibbonFormState;
     readonly setRibbonField: SetRibbonField;
-    readonly includeOutputSize: boolean;
   }
 ): React.JSX.Element {
-  const quietZoneId = controlId(idPrefix, "quiet-zone");
-  const carrierSizeId = controlId(idPrefix, "carrier-size");
-
   return (
     <>
       <div className="control-row">
-        <label htmlFor={quietZoneId}>Quiet zone</label>
-        <input id={quietZoneId} name={quietZoneId} type="number" min="4" max="12" step="1" value={ribbon.quietZone} onChange={(event) => { setRibbonField("quietZone", event.currentTarget.value); }} />
+        <label htmlFor="output-width">Output width</label>
+        <input id="output-width" name="output-width" type="number" min="640" max="4096" step="10" value={ribbon.outputWidth} onChange={(event) => { setRibbonField("outputWidth", event.currentTarget.value); }} />
       </div>
 
       <div className="control-row">
-        <label htmlFor={carrierSizeId}>Carrier size</label>
-        <input id={carrierSizeId} name={carrierSizeId} type="number" min="320" max="1600" step="16" value={ribbon.carrierSize} onChange={(event) => { setRibbonField("carrierSize", event.currentTarget.value); }} />
+        <label htmlFor="output-height">Output height</label>
+        <input id="output-height" name="output-height" type="number" min="640" max="4096" step="10" value={ribbon.outputHeight} onChange={(event) => { setRibbonField("outputHeight", event.currentTarget.value); }} />
       </div>
-
-      {includeOutputSize ? (
-        <>
-          <div className="control-row">
-            <label htmlFor="output-width">Output width</label>
-            <input id="output-width" name="output-width" type="number" min="640" max="4096" step="10" value={ribbon.outputWidth} onChange={(event) => { setRibbonField("outputWidth", event.currentTarget.value); }} />
-          </div>
-
-          <div className="control-row">
-            <label htmlFor="output-height">Output height</label>
-            <input id="output-height" name="output-height" type="number" min="640" max="4096" step="10" value={ribbon.outputHeight} onChange={(event) => { setRibbonField("outputHeight", event.currentTarget.value); }} />
-          </div>
-        </>
-      ) : null}
     </>
   );
-}
-
-function controlId(prefix: "" | "decode", id: string): string {
-  return prefix === "" ? id : `${prefix}-${id}`;
 }
 
 function transformLabStatusFromResults(results: readonly TransformLabResult[], cancelled: boolean): readonly [string, StatusClass] {
@@ -690,8 +633,7 @@ function formatFoundRegion(result: TransformLabResult): string {
   if (result.foundRegion === null) {
     return "-";
   }
-  const locator = result.locatorProfile === null ? "" : " loc";
-  return `${result.foundRegion.source}${locator} ${String(result.foundRegion.x)},${String(result.foundRegion.y)} ${String(result.foundRegion.size)}`;
+  return `${result.foundRegion.source} ${String(result.foundRegion.x)},${String(result.foundRegion.y)} ${String(result.foundRegion.width ?? result.foundRegion.size)}x${String(result.foundRegion.height ?? result.foundRegion.size)}`;
 }
 
 function readDecodeSourceMime(file: File | undefined): "image/png" | "image/jpeg" | "image/webp" | "image/unknown" {
@@ -707,40 +649,17 @@ function errorMessage(error: unknown): string {
 
 function diagnosticsFromSymbol(
   symbol: GeneratedRibbonSymbol,
-  mode: string,
   canvas: HTMLCanvasElement,
   status: string,
   statusClass: "status-good" | "status-warn" | "status-bad"
 ): DiagnosticsState {
   return createDiagnostics(status, statusClass, {
-    profile: readVisualProfileLabel(mode, symbol.diagnostics.profile),
-    mode,
+    profile: symbol.diagnostics.profile,
+    mode: "block",
     payloadLength: String(symbol.diagnostics.payloadLength),
-    sourceSymbolVersion: String(symbol.diagnostics.sourceSymbolVersion),
-    moduleCount: String(symbol.diagnostics.moduleCount),
-    modulePitch: String(symbol.diagnostics.modulePitch),
-    quietZone: String(symbol.diagnostics.quietZone),
     canvas: `${String(canvas.width)}x${String(canvas.height)}`,
     ecc: symbol.diagnostics.errorCorrectionLevel
   });
-}
-
-function readVisualProfileLabel(mode: string, fallback: string): string {
-  if (mode === "block") {
-    return ribbonBlockProfile;
-  }
-  if (mode === "watermark") {
-    return ribbonWatermarkProfile;
-  }
-  if (mode === "tint") {
-    return ribbonTintProfile;
-  }
-  return fallback;
-}
-
-function fitCarrierSize(value: string, outputWidth: number, outputHeight: number): number {
-  const requested = readBoundedInteger(value, 320, 1600, "carrier size");
-  return clamp(requested, 320, Math.min(1600, outputWidth, outputHeight));
 }
 
 function readBoundedInteger(value: string, min: number, max: number, name: string): number {
