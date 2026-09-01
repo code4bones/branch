@@ -68,6 +68,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="copy-transform-report"/);
   assert.match(ribbonTool, /id="download-transform-report"/);
   assert.match(ribbonTool, /decodeRibbonImageAutoWithWorker/);
+  assert.match(ribbonTool, /onDecodeImageChange/);
+  assert.match(ribbonTool, /drawDecodePreview/);
+  assert.match(ribbonTool, /drawFoundRegion/);
   assert.match(ribbonTool, /id="cover-image"/);
   assert.match(ribbonTool, /id="visual-mode"/);
   assert.match(ribbonTool, /id="tint-strength"/);
@@ -122,7 +125,10 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(autoDecode, /decodeRibbonImageWithWorker/);
   assert.match(transformLab, /Pinterest-like simulation/);
   assert.match(transformLab, /branch\.transform-lab\/0/);
+  assert.match(transformLab, /foundRegion/);
+  assert.match(transformLab, /locatorProfile/);
   assert.match(transformLabRunner, /canvas\.toBlob/);
+  assert.match(transformLabRunner, /decoded\.foundRegion/);
   assert.match(transformLabRunner, /request\.decode\(request\.image, request\.decodeOptions, request\.signal\)/);
   assert.match(canvasImage, /willReadFrequently:\s*true/);
   assert.match(render, /willReadFrequently:\s*true/);

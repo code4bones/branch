@@ -147,6 +147,15 @@ async function decodeOne(
       wrapperSha256,
       baselineSha256,
       signatureValidation,
+      foundRegion: decoded.foundRegion === undefined
+        ? null
+        : {
+          x: decoded.foundRegion.x,
+          y: decoded.foundRegion.y,
+          size: decoded.foundRegion.size,
+          source: decoded.locator === undefined ? "heuristic" : "locator"
+        },
+      locatorProfile: decoded.locator?.profile ?? null,
       durationMs: performance.now() - startedAt
     })
   };

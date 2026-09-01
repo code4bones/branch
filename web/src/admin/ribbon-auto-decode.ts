@@ -23,7 +23,9 @@ export async function decodeRibbonImageAutoWithWorker(
     if (result.wrapper !== "") {
       return {
         status: `${result.status} auto`,
-        wrapper: result.wrapper
+        wrapper: result.wrapper,
+        ...(result.locator === undefined ? {} : { locator: result.locator }),
+        ...(result.foundRegion === undefined ? {} : { foundRegion: result.foundRegion })
       };
     }
     lastStatus = result.status;

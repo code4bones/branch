@@ -200,6 +200,8 @@ void test("transform lab classification requires exact baseline match and report
 
   assert.equal(exact.status, "exact-unverified");
   assert.equal(exact.signatureValidation, "not_available");
+  assert.equal(exact.foundRegion, null);
+  assert.equal(exact.locatorProfile, null);
   assert.equal(mismatch.status, "mismatch");
 });
 
@@ -222,6 +224,39 @@ void test("transform lab report omits image bytes filenames and raw wrappers", (
 
   assert.match(json, /branch\.transform-lab\/0/);
   assert.match(json, /webp encoder unsupported/);
+  assert.doesNotMatch(json, /BRANCH0\.|data:|blob:|source\.png|samples\//);
+  assert.doesNotMatch(json, /"data"\s*:/);
+});
+
+void test("transform lab report may include safe found-region metadata", () => {
+  const summary: TransformImageSummary = {
+    width: 1000,
+    height: 1500,
+    mime: "image/png",
+    quality: null,
+    byteSize: 4567
+  };
+  const result = classifyTransformLabResult({
+    presetId: "original",
+    presetLabel: "Original decode",
+    simulation: false,
+    input: summary,
+    output: summary,
+    operations: ["original"],
+    decodeStatus: "tint decoded v10 locator auto",
+    decodedWrapper: defaultBranchWrapper,
+    wrapperSha256: "abc",
+    baselineSha256: "abc",
+    signatureValidation: "not_available",
+    foundRegion: { x: 303, y: 803, size: 657, source: "locator" },
+    locatorProfile: ribbonLocatorProfile,
+    durationMs: 7.2
+  });
+  const json = makeTransformLabJson([result], "2026-09-01T00:00:00.000Z");
+
+  assert.match(json, /"foundRegion"/);
+  assert.match(json, /"source": "locator"/);
+  assert.match(json, /ribbon-locator\/0\.draft/);
   assert.doesNotMatch(json, /BRANCH0\.|data:|blob:|source\.png|samples\//);
   assert.doesNotMatch(json, /"data"\s*:/);
 });
@@ -257,6 +292,7 @@ void test("auto decode prioritizes default generated tint images", () => {
 
   assert.equal(decoded.status, `tint decoded v${String(symbol.diagnostics.sourceSymbolVersion)}`);
   assert.equal(decoded.wrapper, defaultBranchWrapper);
+  assert.deepEqual(decoded.foundRegion, { x: 303, y: 803, size: 657 });
 });
 
 void test("ribbon locator embeds pixel magic and accelerates hidden tint decode", () => {

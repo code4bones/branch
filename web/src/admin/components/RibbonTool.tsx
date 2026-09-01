@@ -21,6 +21,7 @@ import {
 } from "../transform-lab.js";
 import { runTransformLab } from "../transform-lab-runner.js";
 import {
+  canvasContext,
   canvasToImageData,
   canvasToPngBlob,
   imageToData,
@@ -35,6 +36,7 @@ import {
   renderRibbonImage,
   type GeneratedRibbonSymbol
 } from "../../visual/ribbon-render.js";
+import type { RibbonLocatorRegion } from "../../visual/ribbon-locator.js";
 import { DiagnosticsView } from "./DiagnosticsView.js";
 
 type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
@@ -139,9 +141,12 @@ export function RibbonTool(): React.JSX.Element {
   async function onDecode(): Promise<void> {
     try {
       setDiagnostics(createDiagnostics("decoding", "status-warn", { mode: ribbon.visualMode }));
-      const image = await loadDecodeImage();
+      const image = await loadDecodeImage({ refreshPreview: true });
       const result = await decodeRibbonImageAutoWithWorker(image);
       setDecodedWrapper(result.wrapper);
+      if (result.wrapper !== "" && result.foundRegion !== undefined) {
+        drawFoundRegion(result.foundRegion);
+      }
       setDiagnostics(createDiagnostics(result.status, result.wrapper === "" ? "status-bad" : "status-good", {
         mode: ribbon.visualMode,
         canvas: `${String(image.width)}x${String(image.height)}`
@@ -149,6 +154,27 @@ export function RibbonTool(): React.JSX.Element {
     } catch (error) {
       setDecodedWrapper("");
       setDiagnostics(createDiagnostics(error instanceof Error ? error.message : "decode failed", "status-bad", { mode: ribbon.visualMode }));
+    }
+  }
+
+  async function onDecodeImageChange(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.currentTarget.files?.[0];
+    setDecodedWrapper("");
+    if (file === undefined) {
+      drawIdle();
+      setDiagnostics(createDiagnostics("idle", "status-warn"));
+      return;
+    }
+
+    try {
+      const loaded = await loadLocalImage(file, "decode image");
+      drawDecodePreview(loaded);
+      setDiagnostics(createDiagnostics("decode image loaded", "status-good", {
+        canvas: `${String(loaded.width)}x${String(loaded.height)}`
+      }));
+    } catch (error) {
+      drawIdle();
+      setDiagnostics(createDiagnostics(errorMessage(error), "status-bad", { mode: ribbon.visualMode }));
     }
   }
 
@@ -214,12 +240,16 @@ export function RibbonTool(): React.JSX.Element {
     downloadText(transformLab.reportJson, "branch-transform-lab.json", "application/json");
   }
 
-  async function loadDecodeImage() {
+  async function loadDecodeImage(options: { readonly refreshPreview?: boolean } = {}) {
     const file = decodeFileRef.current?.files?.[0];
     if (file === undefined) {
       return canvasToImageData(requireCanvas());
     }
-    return imageToData(await loadLocalImage(file, "decode image"));
+    const loaded = await loadLocalImage(file, "decode image");
+    if (options.refreshPreview === true) {
+      drawDecodePreview(loaded);
+    }
+    return imageToData(loaded);
   }
 
   function preserveCoverPreviewOnError(): void {
@@ -238,6 +268,34 @@ export function RibbonTool(): React.JSX.Element {
 
   function drawCover(image: LoadedBrowserImage, outputWidth: number, outputHeight: number): void {
     drawCoverPreview(requireCanvas(), image, outputWidth, outputHeight);
+  }
+
+  function drawDecodePreview(image: LoadedBrowserImage): void {
+    drawCoverPreview(requireCanvas(), image, image.width, image.height);
+  }
+
+  function drawFoundRegion(region: RibbonLocatorRegion): void {
+    const canvas = requireCanvas();
+    const context = canvasContext(canvas);
+    const lineWidth = Math.max(3, Math.round(Math.min(canvas.width, canvas.height) * 0.005));
+    const x = clamp(region.x, 0, Math.max(0, canvas.width - 1));
+    const y = clamp(region.y, 0, Math.max(0, canvas.height - 1));
+    const right = clamp(region.x + region.size, x + 1, canvas.width);
+    const bottom = clamp(region.y + region.size, y + 1, canvas.height);
+
+    context.save();
+    context.strokeStyle = "#38e8ff";
+    context.lineWidth = lineWidth;
+    context.setLineDash([lineWidth * 3, lineWidth * 1.5]);
+    context.shadowColor = "rgba(56, 232, 255, 0.72)";
+    context.shadowBlur = lineWidth * 2;
+    context.strokeRect(
+      x + lineWidth / 2,
+      y + lineWidth / 2,
+      Math.max(1, right - x - lineWidth),
+      Math.max(1, bottom - y - lineWidth)
+    );
+    context.restore();
   }
 
   function requireCanvas(): HTMLCanvasElement {
@@ -264,6 +322,7 @@ export function RibbonTool(): React.JSX.Element {
           <RibbonDecodePanel
             decodeFileRef={decodeFileRef}
             decodedWrapper={decodedWrapper}
+            onDecodeImageChange={onDecodeImageChange}
             onDecode={onDecode}
             transformLab={transformLab}
             transformReportFallbackRef={transformReportFallbackRef}
@@ -381,6 +440,7 @@ function RibbonDecodePanel(
   {
     decodeFileRef,
     decodedWrapper,
+    onDecodeImageChange,
     onDecode,
     transformLab,
     transformReportFallbackRef,
@@ -392,6 +452,7 @@ function RibbonDecodePanel(
   }: {
     readonly decodeFileRef: React.RefObject<HTMLInputElement | null>;
     readonly decodedWrapper: string;
+    readonly onDecodeImageChange: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
     readonly onDecode: () => Promise<void>;
     readonly transformLab: TransformLabState;
     readonly transformReportFallbackRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -406,7 +467,7 @@ function RibbonDecodePanel(
     <section className="panel control-panel" id="ribbon-panel-decode" role="tabpanel" aria-labelledby="ribbon-tab-decode">
       <div className="decode-controls">
         <label htmlFor="decode-image">Decode image</label>
-        <input id="decode-image" ref={decodeFileRef} name="decode-image" type="file" accept="image/png,image/jpeg,image/webp" />
+        <input id="decode-image" ref={decodeFileRef} name="decode-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onDecodeImageChange(event)} />
         <button type="button" id="decode-ribbon" onClick={() => void onDecode()}>
           Decode
         </button>
@@ -504,6 +565,7 @@ function TransformLabResults({ results }: { readonly results: readonly Transform
             <th scope="col">MIME</th>
             <th scope="col">Bytes</th>
             <th scope="col">Decode</th>
+            <th scope="col">Region</th>
             <th scope="col">Match</th>
             <th scope="col">Signature</th>
             <th scope="col">ms</th>
@@ -518,6 +580,7 @@ function TransformLabResults({ results }: { readonly results: readonly Transform
               <td>{formatMime(result)}</td>
               <td>{result.output.byteSize === null ? "-" : String(result.output.byteSize)}</td>
               <td>{result.failureReason ?? result.decodeStatus}</td>
+              <td>{formatFoundRegion(result)}</td>
               <td>{result.exactMatch ? "exact" : "-"}</td>
               <td>{result.signatureValidation}</td>
               <td>{String(result.durationMs)}</td>
@@ -610,6 +673,14 @@ function statusClassForTransformResult(result: TransformLabResult): StatusClass 
 function formatMime(result: TransformLabResult): string {
   const quality = result.output.quality === null ? "" : `/${String(Math.round(result.output.quality * 100))}`;
   return `${result.output.mime}${quality}`;
+}
+
+function formatFoundRegion(result: TransformLabResult): string {
+  if (result.foundRegion === null) {
+    return "-";
+  }
+  const locator = result.locatorProfile === null ? "" : " loc";
+  return `${result.foundRegion.source}${locator} ${String(result.foundRegion.x)},${String(result.foundRegion.y)} ${String(result.foundRegion.size)}`;
 }
 
 function readDecodeSourceMime(file: File | undefined): "image/png" | "image/jpeg" | "image/webp" | "image/unknown" {
