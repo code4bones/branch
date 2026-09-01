@@ -7,7 +7,9 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { runCarrierHoppingPoC } from "../src/connectivity/carrier-hopping-poc.js";
+import { runDiscoveredCarrierHopPoC } from "../src/discovery/carrier-hop-client.js";
 import type { BrowserRelaySocket, BrowserRelaySocketFactory, RelayRouteMaterial } from "../src/connectivity/same-relay.js";
+import type { BeaconObservation, SearchCarrier } from "../src/discovery/client.js";
 import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
 
 const repoRoot = resolve(process.cwd(), "..");
@@ -40,6 +42,60 @@ void test("carrier-hopping PoC runner works against two local branch-node relay 
   assert.equal(report.unavailableCount, 1);
   assert(report.events.some((event) => event.includes("carrier.disabled delivery continued")));
   assert(report.events.some((event) => event.includes("route.migration.completed")));
+
+  await Promise.all([waitForEmptyRelay(relayA), waitForEmptyRelay(relayB)]);
+});
+
+void test("discovered carrier-hop runner works against two local branch-node relay adapters", async (t) => {
+  const relayA = await startBranchNode("discovered-a");
+  const relayB = await startBranchNode("discovered-b");
+  t.after(async () => {
+    await Promise.all([relayA.stop(), relayB.stop()]);
+  });
+
+  const routeA = makeRoute("local relay A", "wss://relay-a.local/relay/v0", relayA.publicKey);
+  const routeB = makeRoute("local relay B", "wss://relay-b.local/relay/v0", relayB.publicKey);
+  let searchCount = 0;
+  const carrier: SearchCarrier = {
+    id: "local-fixture",
+    search: (request) => {
+      searchCount += 1;
+      return Promise.resolve({
+        carrier: "local-fixture",
+        status: "ok",
+        query: request.query,
+        message: "local accepted branch-node routes",
+        observations: [
+          acceptedObservation("local-fixture:a", "gitlab/alice/local-a", routeA),
+          acceptedObservation("local-fixture:b", "gitlab/bob/local-b", routeB)
+        ],
+        evidenceCount: 2,
+        raw: null
+      });
+    }
+  };
+
+  const report = await runDiscoveredCarrierHopPoC({
+    carrier,
+    primaryQuery: "branchbootstrapv0",
+    includeFallback: false,
+    socketFactory: mappedSocketFactory(new Map([
+      [routeA.endpointUri, `ws://${relayA.publicAddr}/relay/v0`],
+      [routeB.endpointUri, `ws://${relayB.publicAddr}/relay/v0`]
+    ])),
+    stepTimeoutMs: 5_000
+  });
+
+  assert.equal(searchCount, 1);
+  assert.equal(report.discovery.acceptedCount, 2);
+  assert.equal(report.routeSnapshot.length, 2);
+  assert.deepEqual(report.routeSnapshot.map((route) => route.source), [undefined, undefined]);
+  assert.equal(report.transport.status, "ok", JSON.stringify(report, null, 2));
+  assert.equal(report.transport.migrated, true);
+  assert.equal(report.transport.pendingCount, 0);
+  assert.equal(report.transport.unavailableCount, 1);
+  assert(report.transport.events.some((event) => event.includes("carrier.disabled delivery continued")));
+  assert(report.transport.events.some((event) => event.includes("route.migration.completed")));
 
   await Promise.all([waitForEmptyRelay(relayA), waitForEmptyRelay(relayB)]);
 });
@@ -136,6 +192,28 @@ function mappedSocketFactory(urls: ReadonlyMap<string, string>): BrowserRelaySoc
       throw new Error(`missing local relay mapping for ${url}`);
     }
     return new WebSocket(mapped) as BrowserRelaySocket;
+  };
+}
+
+function acceptedObservation(observationId: string, source: string, route: RelayRouteMaterial): BeaconObservation {
+  return {
+    observationId,
+    validation: "accepted",
+    reason: "accepted",
+    wrapperPreview: "BRANCH0.preview",
+    evidence: {
+      carrier: "local-fixture",
+      query: "branchbootstrapv0",
+      source,
+      sourceUrl: `https://example.test/${source}`,
+      recordUrl: `https://example.test/${source}/.branch/records.br0`
+    },
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    relayEndpoint: `wss ${route.endpointUri}`,
+    profileMultihash: route.profileMultihash,
+    senderPublicKey: route.relayPublicKey,
+    beaconId: route.relayPublicKey,
+    sequence: 1
   };
 }
 
