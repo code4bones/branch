@@ -15,6 +15,8 @@ void test("admin surface is static and open", async () => {
   assert.match(html, /\/admin\/admin\.js/);
   assert.match(html, /\/vendor\/qrcode-browser\.js/);
   assert.match(html, /id="cover-image"/);
+  assert.match(html, /id="visual-mode"/);
+  assert.match(html, /id="tint-strength"/);
   assert.match(html, /id="carrier-placement"/);
   assert.doesNotMatch(html, /login|password|token/i);
 });
@@ -37,6 +39,9 @@ void test("admin ribbon generator mirrors ribbon-seal frame constants", async ()
   assert.match(source, /fitCarrierSizeToOutput/);
   assert.match(source, /preserveCoverPreviewOnError/);
   assert.match(source, /computePlacement/);
+  assert.match(source, /drawTintQR/);
+  assert.match(source, /tintStrength/);
+  assert.match(source, /visualMode/);
   assert.doesNotMatch(source, /\bfetch\s*\(/);
   assert.doesNotMatch(source, /XMLHttpRequest|localStorage|indexedDB/);
 });

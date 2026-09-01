@@ -89,6 +89,11 @@ input[type="file"] {
   padding: 10px 12px;
 }
 
+input[type="range"] {
+  padding: 0;
+  accent-color: var(--admin-cyan);
+}
+
 label {
   display: block;
   color: var(--admin-muted);

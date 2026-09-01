@@ -9,9 +9,9 @@
     >
     <title>B.R.A.N.C.H. Admin</title>
     <link rel="stylesheet" href="/assets/app.css?v=20260831-dark">
-    <link rel="stylesheet" href="/admin/admin.css?v=20260901-generate-preview">
+    <link rel="stylesheet" href="/admin/admin.css?v=20260901-tint">
     <script src="/vendor/qrcode-browser.js?v=20260901-admin" defer></script>
-    <script src="/admin/admin.js?v=20260901-generate-preview" defer></script>
+    <script src="/admin/admin.js?v=20260901-tint" defer></script>
   </head>
   <body>
     <main class="admin-shell" aria-labelledby="admin-title">
@@ -48,6 +48,14 @@
           </div>
 
           <div class="control-row">
+            <label for="visual-mode">Visual mode</label>
+            <select id="visual-mode" name="visual-mode">
+              <option value="seal">Seal</option>
+              <option value="tint" selected>Tint</option>
+            </select>
+          </div>
+
+          <div class="control-row">
             <label for="quiet-zone">Quiet zone</label>
             <input id="quiet-zone" name="quiet-zone" type="number" min="4" max="12" step="1" value="8">
           </div>
@@ -55,6 +63,11 @@
           <div class="control-row">
             <label for="carrier-size">Carrier size</label>
             <input id="carrier-size" name="carrier-size" type="number" min="320" max="1600" step="16" value="720">
+          </div>
+
+          <div class="control-row">
+            <label for="tint-strength">Tint strength</label>
+            <input id="tint-strength" name="tint-strength" type="range" min="6" max="42" step="1" value="18">
           </div>
 
           <div class="control-row">

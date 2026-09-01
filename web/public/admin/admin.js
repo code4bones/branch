@@ -22,8 +22,10 @@
     ribbonForm: document.getElementById("ribbon-form"),
     wrapper: document.getElementById("branch-wrapper"),
     coverImage: document.getElementById("cover-image"),
+    visualMode: document.getElementById("visual-mode"),
     quietZone: document.getElementById("quiet-zone"),
     carrierSize: document.getElementById("carrier-size"),
+    tintStrength: document.getElementById("tint-strength"),
     outputWidth: document.getElementById("output-width"),
     outputHeight: document.getElementById("output-height"),
     carrierPlacement: document.getElementById("carrier-placement"),
@@ -106,6 +108,8 @@
           outputWidth,
           outputHeight,
           carrierSize,
+          visualMode: elements.visualMode.value,
+          tintStrength: readBoundedInteger(elements.tintStrength.value, 6, 42, "tint strength"),
           placement: elements.carrierPlacement.value,
           coverImage: state.coverImage
         });
@@ -238,11 +242,22 @@
 
   function renderRibbonImage(modules, diagnostics, options) {
     const canvas = elements.canvas;
-    if (!options.coverImage) {
+    if (!options.coverImage || options.visualMode === "seal") {
       const symbolSize = (diagnostics.moduleCount + diagnostics.quietZone * 2) * diagnostics.modulePitch;
       canvas.width = symbolSize;
       canvas.height = symbolSize;
       const context = canvas.getContext("2d");
+      if (options.coverImage) {
+        canvas.width = options.outputWidth;
+        canvas.height = options.outputHeight;
+        drawCoverImage(context, options.coverImage, options.outputWidth, options.outputHeight);
+        if (symbolSize > options.outputWidth || symbolSize > options.outputHeight) {
+          throw new Error("carrier size too large for output");
+        }
+        const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
+        drawQR(context, modules, placement.x, placement.y, diagnostics.modulePitch, diagnostics.quietZone);
+        return;
+      }
       drawQR(context, modules, 0, 0, diagnostics.modulePitch, diagnostics.quietZone);
       return;
     }
@@ -257,7 +272,15 @@
       throw new Error("carrier size too large for output");
     }
     const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
-    drawQR(context, modules, placement.x, placement.y, diagnostics.modulePitch, diagnostics.quietZone);
+    drawTintQR(
+      context,
+      modules,
+      placement.x,
+      placement.y,
+      diagnostics.modulePitch,
+      diagnostics.quietZone,
+      options.tintStrength
+    );
   }
 
   function drawQR(context, modules, x, y, modulePitch, quietZone) {
@@ -291,6 +314,37 @@
     const x = Math.round((outputWidth - width) / 2);
     const y = Math.round((outputHeight - height) / 2);
     context.drawImage(coverImage.image, x, y, width, height);
+  }
+
+  function drawTintQR(context, modules, x, y, modulePitch, quietZone, tintStrength) {
+    const moduleCount = modules.size;
+    const size = (moduleCount + quietZone * 2) * modulePitch;
+    const image = context.getImageData(x, y, size, size);
+    const data = image.data;
+
+    for (let pixelY = 0; pixelY < size; pixelY += 1) {
+      for (let pixelX = 0; pixelX < size; pixelX += 1) {
+        const moduleX = Math.floor(pixelX / modulePitch) - quietZone;
+        const moduleY = Math.floor(pixelY / modulePitch) - quietZone;
+        if (moduleX < 0 || moduleY < 0 || moduleX >= moduleCount || moduleY >= moduleCount) {
+          continue;
+        }
+
+        const offset = (pixelY * size + pixelX) * 4;
+        if (modules.get(moduleX, moduleY) === 1) {
+          data[offset] = clamp(data[offset] - Math.round(tintStrength * 0.55), 0, 255);
+          data[offset + 1] = clamp(data[offset + 1] - Math.round(tintStrength * 0.35), 0, 255);
+          data[offset + 2] = clamp(data[offset + 2] + tintStrength, 0, 255);
+          continue;
+        }
+
+        data[offset] = clamp(data[offset] + Math.round(tintStrength * 0.18), 0, 255);
+        data[offset + 1] = clamp(data[offset + 1] + Math.round(tintStrength * 0.12), 0, 255);
+        data[offset + 2] = clamp(data[offset + 2] - Math.round(tintStrength * 0.2), 0, 255);
+      }
+    }
+
+    context.putImageData(image, x, y);
   }
 
   function drawCoverPreview(coverImage, outputWidth, outputHeight) {
@@ -359,6 +413,7 @@
     const rows = [
       ["Profile", diagnostics.profile],
       ["Status", status],
+      ["Mode", elements.visualMode.value],
       ["Payload", diagnostics.payloadLength],
       ["QR version", diagnostics.sourceSymbolVersion],
       ["Modules", diagnostics.moduleCount],
