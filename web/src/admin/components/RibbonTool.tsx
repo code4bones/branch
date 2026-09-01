@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { downloadURL } from "../browser-files.js";
 import { ribbonPngFilename } from "../defaults.js";
-import { createDiagnostics, useAdminStore, type DiagnosticsState } from "../store.js";
+import { createDiagnostics, useAdminStore, type DiagnosticsState, type RibbonFormState, type RibbonTab } from "../store.js";
 import {
   canvasToImageData,
   canvasToPngBlob,
@@ -22,13 +22,17 @@ import {
 } from "../../visual/ribbon-render.js";
 import { DiagnosticsView } from "./DiagnosticsView.js";
 
+type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
+
 export function RibbonTool(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const decodeFileRef = useRef<HTMLInputElement | null>(null);
+  const ribbonTab = useAdminStore((state) => state.ribbonTab);
   const ribbon = useAdminStore((state) => state.ribbon);
   const cover = useAdminStore((state) => state.cover);
   const ribbonPngUrl = useAdminStore((state) => state.ribbonPngUrl);
   const decodedWrapper = useAdminStore((state) => state.decodedWrapper);
+  const setRibbonTab = useAdminStore((state) => state.setRibbonTab);
   const setRibbonField = useAdminStore((state) => state.setRibbonField);
   const setCover = useAdminStore((state) => state.setCover);
   const setRibbonPngUrl = useAdminStore((state) => state.setRibbonPngUrl);
@@ -172,90 +176,210 @@ export function RibbonTool(): React.JSX.Element {
   }
 
   return (
-    <section className="tool-grid is-active" data-panel="ribbon" aria-label="Ribbon Image generator">
-      <form className="panel control-panel" id="ribbon-form" onSubmit={(event) => void onGenerate(event)}>
-        <label htmlFor="branch-wrapper">BRANCH0 wrapper</label>
-        <textarea
-          id="branch-wrapper"
-          name="branch-wrapper"
-          spellCheck={false}
-          rows={9}
-          placeholder={ribbon.wrapper}
-          value={ribbon.wrapper}
-          onChange={(event) => { setRibbonField("wrapper", event.currentTarget.value); }}
-        />
-
-        <div className="control-row">
-          <label htmlFor="cover-image">Cover image</label>
-          <input id="cover-image" name="cover-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onCoverChange(event)} />
-        </div>
-
-        <div className="control-row">
-          <label htmlFor="visual-mode">Visual mode</label>
-          <select id="visual-mode" name="visual-mode" value={ribbon.visualMode} onChange={(event) => { setRibbonField("visualMode", event.currentTarget.value === "seal" ? "seal" : "tint"); }}>
-            <option value="seal">Seal</option>
-            <option value="tint">Tint</option>
-          </select>
-        </div>
-
-        <div className="control-row">
-          <label htmlFor="quiet-zone">Quiet zone</label>
-          <input id="quiet-zone" name="quiet-zone" type="number" min="4" max="12" step="1" value={ribbon.quietZone} onChange={(event) => { setRibbonField("quietZone", event.currentTarget.value); }} />
-        </div>
-
-        <div className="control-row">
-          <label htmlFor="carrier-size">Carrier size</label>
-          <input id="carrier-size" name="carrier-size" type="number" min="320" max="1600" step="16" value={ribbon.carrierSize} onChange={(event) => { setRibbonField("carrierSize", event.currentTarget.value); }} />
-        </div>
-
-        <div className="control-row">
-          <label htmlFor="tint-strength">Tint strength</label>
-          <input id="tint-strength" name="tint-strength" type="range" min="0" max="24" step="1" value={ribbon.tintStrength} onChange={(event) => { setRibbonField("tintStrength", event.currentTarget.value); }} />
-        </div>
-
-        <div className="control-row">
-          <label htmlFor="output-width">Output width</label>
-          <input id="output-width" name="output-width" type="number" min="640" max="4096" step="10" value={ribbon.outputWidth} onChange={(event) => { setRibbonField("outputWidth", event.currentTarget.value); }} />
-        </div>
-
-        <div className="control-row">
-          <label htmlFor="output-height">Output height</label>
-          <input id="output-height" name="output-height" type="number" min="640" max="4096" step="10" value={ribbon.outputHeight} onChange={(event) => { setRibbonField("outputHeight", event.currentTarget.value); }} />
-        </div>
-
-        <div className="control-row">
-          <label htmlFor="carrier-placement">Placement</label>
-          <select id="carrier-placement" name="carrier-placement" value={ribbon.placement} onChange={(event) => { setRibbonField("placement", readPlacement(event.currentTarget.value)); }}>
-            <option value="center">Center</option>
-            <option value="bottom-right">Bottom right</option>
-            <option value="bottom-left">Bottom left</option>
-            <option value="top-right">Top right</option>
-            <option value="top-left">Top left</option>
-          </select>
-        </div>
-
-        <div className="button-row">
-          <button type="submit">Generate</button>
-          <button type="button" id="download-ribbon" disabled={ribbonPngUrl === ""} onClick={() => { downloadURL(ribbonPngUrl, ribbonPngFilename); }}>
-            Download PNG
-          </button>
-        </div>
-      </form>
+    <section className="tool-grid is-active ribbon-tool" data-panel="ribbon" aria-label="Ribbon Image generator">
+      <div className="ribbon-control-stack">
+        <RibbonWorkflowTabs activeTab={ribbonTab} onTabChange={setRibbonTab} />
+        {ribbonTab === "encode" ? (
+          <RibbonEncodePanel
+            ribbon={ribbon}
+            ribbonPngUrl={ribbonPngUrl}
+            setRibbonField={setRibbonField}
+            onCoverChange={onCoverChange}
+            onGenerate={onGenerate}
+          />
+        ) : (
+          <RibbonDecodePanel
+            decodeFileRef={decodeFileRef}
+            decodedWrapper={decodedWrapper}
+            ribbon={ribbon}
+            setRibbonField={setRibbonField}
+            onDecode={onDecode}
+          />
+        )}
+      </div>
 
       <section className="panel preview-panel" aria-label="Ribbon Image preview">
         <canvas id="ribbon-canvas" ref={canvasRef} width="640" height="640" />
         <DiagnosticsView />
-        <div className="decode-controls">
-          <label htmlFor="decode-image">Decode image</label>
-          <input id="decode-image" ref={decodeFileRef} name="decode-image" type="file" accept="image/png,image/jpeg,image/webp" />
-          <button type="button" id="decode-ribbon" onClick={() => void onDecode()}>
-            Decode
-          </button>
-        </div>
-        <textarea id="decoded-wrapper" spellCheck={false} readOnly rows={5} value={decodedWrapper} />
       </section>
     </section>
   );
+}
+
+function RibbonWorkflowTabs(
+  { activeTab, onTabChange }: {
+    readonly activeTab: RibbonTab;
+    readonly onTabChange: (tab: RibbonTab) => void;
+  }
+): React.JSX.Element {
+  return (
+    <div className="ribbon-tabs" role="tablist" aria-label="Ribbon Image workflow">
+      <button
+        type="button"
+        className={`tab${activeTab === "encode" ? " is-active" : ""}`}
+        id="ribbon-tab-encode"
+        role="tab"
+        aria-selected={activeTab === "encode"}
+        aria-controls="ribbon-panel-encode"
+        onClick={() => { onTabChange("encode"); }}
+      >
+        Encode
+      </button>
+      <button
+        type="button"
+        className={`tab${activeTab === "decode" ? " is-active" : ""}`}
+        id="ribbon-tab-decode"
+        role="tab"
+        aria-selected={activeTab === "decode"}
+        aria-controls="ribbon-panel-decode"
+        onClick={() => { onTabChange("decode"); }}
+      >
+        Decode
+      </button>
+    </div>
+  );
+}
+
+function RibbonEncodePanel(
+  { ribbon, ribbonPngUrl, setRibbonField, onCoverChange, onGenerate }: {
+    readonly ribbon: RibbonFormState;
+    readonly ribbonPngUrl: string;
+    readonly setRibbonField: SetRibbonField;
+    readonly onCoverChange: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+    readonly onGenerate: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  }
+): React.JSX.Element {
+  return (
+    <form
+      className="panel control-panel"
+      id="ribbon-panel-encode"
+      data-form-id="ribbon-form"
+      role="tabpanel"
+      aria-labelledby="ribbon-tab-encode"
+      onSubmit={(event) => void onGenerate(event)}
+    >
+      <label htmlFor="branch-wrapper">BRANCH0 wrapper</label>
+      <textarea
+        id="branch-wrapper"
+        name="branch-wrapper"
+        spellCheck={false}
+        rows={9}
+        placeholder={ribbon.wrapper}
+        value={ribbon.wrapper}
+        onChange={(event) => { setRibbonField("wrapper", event.currentTarget.value); }}
+      />
+
+      <div className="control-row">
+        <label htmlFor="cover-image">Cover image</label>
+        <input id="cover-image" name="cover-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onCoverChange(event)} />
+      </div>
+
+      <div className="control-row">
+        <label htmlFor="visual-mode">Visual mode</label>
+        <select id="visual-mode" name="visual-mode" value={ribbon.visualMode} onChange={(event) => { setRibbonField("visualMode", event.currentTarget.value === "seal" ? "seal" : "tint"); }}>
+          <option value="seal">Seal</option>
+          <option value="tint">Tint</option>
+        </select>
+      </div>
+
+      <RibbonGeometryControls idPrefix="" ribbon={ribbon} setRibbonField={setRibbonField} includeOutputSize={true} />
+
+      <div className="control-row">
+        <label htmlFor="tint-strength">Tint strength</label>
+        <input id="tint-strength" name="tint-strength" type="range" min="0" max="24" step="1" value={ribbon.tintStrength} onChange={(event) => { setRibbonField("tintStrength", event.currentTarget.value); }} />
+      </div>
+
+      <div className="button-row">
+        <button type="submit">Generate</button>
+        <button type="button" id="download-ribbon" disabled={ribbonPngUrl === ""} onClick={() => { downloadURL(ribbonPngUrl, ribbonPngFilename); }}>
+          Download PNG
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RibbonDecodePanel(
+  { decodeFileRef, decodedWrapper, ribbon, setRibbonField, onDecode }: {
+    readonly decodeFileRef: React.RefObject<HTMLInputElement | null>;
+    readonly decodedWrapper: string;
+    readonly ribbon: RibbonFormState;
+    readonly setRibbonField: SetRibbonField;
+    readonly onDecode: () => Promise<void>;
+  }
+): React.JSX.Element {
+  return (
+    <section className="panel control-panel" id="ribbon-panel-decode" role="tabpanel" aria-labelledby="ribbon-tab-decode">
+      <div className="decode-controls">
+        <label htmlFor="decode-image">Decode image</label>
+        <input id="decode-image" ref={decodeFileRef} name="decode-image" type="file" accept="image/png,image/jpeg,image/webp" />
+        <button type="button" id="decode-ribbon" onClick={() => void onDecode()}>
+          Decode
+        </button>
+      </div>
+
+      <RibbonGeometryControls idPrefix="decode" ribbon={ribbon} setRibbonField={setRibbonField} includeOutputSize={false} />
+
+      <label htmlFor="decoded-wrapper">Decoded wrapper</label>
+      <textarea id="decoded-wrapper" spellCheck={false} readOnly rows={7} value={decodedWrapper} />
+    </section>
+  );
+}
+
+function RibbonGeometryControls(
+  { idPrefix, ribbon, setRibbonField, includeOutputSize }: {
+    readonly idPrefix: "" | "decode";
+    readonly ribbon: RibbonFormState;
+    readonly setRibbonField: SetRibbonField;
+    readonly includeOutputSize: boolean;
+  }
+): React.JSX.Element {
+  const quietZoneId = controlId(idPrefix, "quiet-zone");
+  const carrierSizeId = controlId(idPrefix, "carrier-size");
+  const placementId = controlId(idPrefix, "carrier-placement");
+
+  return (
+    <>
+      <div className="control-row">
+        <label htmlFor={quietZoneId}>Quiet zone</label>
+        <input id={quietZoneId} name={quietZoneId} type="number" min="4" max="12" step="1" value={ribbon.quietZone} onChange={(event) => { setRibbonField("quietZone", event.currentTarget.value); }} />
+      </div>
+
+      <div className="control-row">
+        <label htmlFor={carrierSizeId}>Carrier size</label>
+        <input id={carrierSizeId} name={carrierSizeId} type="number" min="320" max="1600" step="16" value={ribbon.carrierSize} onChange={(event) => { setRibbonField("carrierSize", event.currentTarget.value); }} />
+      </div>
+
+      {includeOutputSize ? (
+        <>
+          <div className="control-row">
+            <label htmlFor="output-width">Output width</label>
+            <input id="output-width" name="output-width" type="number" min="640" max="4096" step="10" value={ribbon.outputWidth} onChange={(event) => { setRibbonField("outputWidth", event.currentTarget.value); }} />
+          </div>
+
+          <div className="control-row">
+            <label htmlFor="output-height">Output height</label>
+            <input id="output-height" name="output-height" type="number" min="640" max="4096" step="10" value={ribbon.outputHeight} onChange={(event) => { setRibbonField("outputHeight", event.currentTarget.value); }} />
+          </div>
+        </>
+      ) : null}
+
+      <div className="control-row">
+        <label htmlFor={placementId}>Placement</label>
+        <select id={placementId} name={placementId} value={ribbon.placement} onChange={(event) => { setRibbonField("placement", readPlacement(event.currentTarget.value)); }}>
+          <option value="center">Center</option>
+          <option value="bottom-right">Bottom right</option>
+          <option value="bottom-left">Bottom left</option>
+          <option value="top-right">Top right</option>
+          <option value="top-left">Top left</option>
+        </select>
+      </div>
+    </>
+  );
+}
+
+function controlId(prefix: "" | "decode", id: string): string {
+  return prefix === "" ? id : `${prefix}-${id}`;
 }
 
 function diagnosticsFromSymbol(

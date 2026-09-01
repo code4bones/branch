@@ -9,6 +9,7 @@ import type { RibbonPlacement } from "../visual/geometry.js";
 import type { RibbonVisualMode } from "../visual/ribbon-render.js";
 
 export type AdminTab = "ribbon" | "github";
+export type RibbonTab = "encode" | "decode";
 export type StatusClass = "status-good" | "status-warn" | "status-bad";
 
 export interface RibbonFormState {
@@ -52,6 +53,7 @@ export interface GitHubState {
 
 export interface AdminState {
   readonly activeTab: AdminTab;
+  readonly ribbonTab: RibbonTab;
   readonly ribbon: RibbonFormState;
   readonly cover: LoadedCoverState | null;
   readonly ribbonPngUrl: string;
@@ -62,6 +64,7 @@ export interface AdminState {
 
 export interface AdminActions {
   readonly setActiveTab: (tab: AdminTab) => void;
+  readonly setRibbonTab: (tab: RibbonTab) => void;
   readonly setRibbonField: <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
   readonly setCover: (cover: LoadedCoverState | null) => void;
   readonly setRibbonPngUrl: (url: string) => void;
@@ -114,6 +117,7 @@ export function createDiagnostics(status: string, statusClass: StatusClass, patc
 function createAdminStore(): AdminStoreApi {
   return createStore<AdminStore>()((set) => ({
     activeTab: "ribbon",
+    ribbonTab: "encode",
     ribbon: {
       wrapper: defaultBranchWrapper,
       visualMode: "tint",
@@ -137,6 +141,7 @@ function createAdminStore(): AdminStoreApi {
       statusClass: "status-warn"
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
+    setRibbonTab: (tab) => { set({ ribbonTab: tab }); },
     setRibbonField: (field, value) =>
       { set((state) => ({
         ribbon: {
