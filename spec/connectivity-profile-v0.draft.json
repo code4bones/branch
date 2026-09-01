@@ -157,8 +157,8 @@
         "github_repository_description",
         "github_repository_topics"
       ],
-      "topics": ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"],
-      "primary_query": "branchbootstrapv0 in:readme",
+      "topics": ["branchbootstrapv0"],
+      "primary_query": "topic:branchbootstrapv0",
       "fallback_query": "BRANCH0 branch/connectivity/0 branch-bootstrap-v0 in:readme"
     }
   }

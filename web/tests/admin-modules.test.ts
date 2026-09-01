@@ -114,7 +114,7 @@ void test("github publication profile exposes canonical locator metadata", () =>
   assert.match(rootSnippet, /\[!\[B\.R\.A\.N\.C\.H\. Blue Ribbon/);
   assert.doesNotMatch(rootSnippet, /branchbootstrapv0|BRANCH0|branch\/connectivity\/0|branch-bootstrap-v0|carry-the-ribbon/);
   assert.equal(githubRepositoryDescription, "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon");
-  assert.deepEqual(githubRepositoryTopics, ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"]);
+  assert.deepEqual(githubRepositoryTopics, ["branchbootstrapv0"]);
 });
 
 void test("github drop-in live mode accepts signed bootstrap.beacon wrappers", async () => {

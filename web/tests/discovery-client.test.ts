@@ -169,7 +169,7 @@ function acceptedObservation(observationId: string, carrier: string, source: str
     },
     expiresAt: 1_789_000_000,
     relayEndpoint: "wss wss://branch.undoo.ru:443/relay/v0",
-    profileMultihash: "uEiDT2miAcWcvbJ3mm4ihtMdng1nP8Y1VY3Gqp_xZrpzvsA",
+    profileMultihash: "uEiDdmdOZeq5F3-d32wIB0uu0am_58AYZs5x6WSFihQPSlw",
     senderPublicKey: "sender",
     beaconId: "beacon",
     sequence: 1

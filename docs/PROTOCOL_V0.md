@@ -103,7 +103,7 @@ scaffold testing, not the final published deterministic CBOR profile. Its
 current development multihash is:
 
 ```text
-uEiDT2miAcWcvbJ3mm4ihtMdng1nP8Y1VY3Gqp_xZrpzvsA
+uEiDdmdOZeq5F3-d32wIB0uu0am_58AYZs5x6WSFihQPSlw
 ```
 
 The current shared development vector manifest is
@@ -863,18 +863,22 @@ service. The badge link targets a local explanation file such as
 name, describe the independent Blue Ribbon tribute, and avoid implying
 affiliation with or endorsement by the Electronic Frontier Foundation.
 
-Search markers are public text, not authority. A participating repository should
-include at least these terms in README text, topics, package metadata, or another
-indexed public field:
+Search markers are public text, not authority. A participating GitHub
+repository should carry exactly one required repository topic:
+
+- `branchbootstrapv0`.
+
+Other indexed fields such as README text, package metadata, or carrier-specific
+descriptions may also include the legacy protocol and campaign markers:
 
 - `BRANCH0`;
 - `branch/connectivity/0`;
 - `branch-bootstrap-v0`;
 - `carry-the-ribbon`.
 
-A repository topic, when available, should use `branch-bootstrap-v0` or
-`carry-the-ribbon`. Multiple topic names on the same repository do not create
-additional failure domains.
+Additional repository topics such as `carry-the-ribbon` or `branch-protocol`
+are not part of the GitHub publication profile. Multiple topic names on the
+same repository do not create additional failure domains.
 
 The `.branch` directory is a local carrier payload. The baseline layout is:
 
@@ -911,7 +915,7 @@ adapters. It may contain:
   "badge_path": ".branch/ribbon.svg",
   "root_readme_snippet": "optional generated badge markdown for the repository README",
   "github_repository_description": "B.R.A.N.C.H. bootstrap carrier branchbootstrapv0 carry-the-ribbon",
-  "github_repository_topics": ["branchbootstrapv0", "carry-the-ribbon", "branch-protocol"],
+  "github_repository_topics": ["branchbootstrapv0"],
   "generated_at": 0,
   "source_commit": "optional-vcs-commit",
   "tool": "optional-generator"
