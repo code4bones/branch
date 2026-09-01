@@ -1060,9 +1060,12 @@ CRC32C, and then the enclosed `BRIMG0` frame. The locator is optional for this
 profile; the current generator relies on bounded full-image recovery so it does
 not draw a separate visible locator header for `ribbon-block/0.draft`. This
 profile is intended to measure resistance to common service transformations
-such as JPEG/WebP recompression and resize. It is still more visible than a
-true frequency-domain watermark, not a generic-camera barcode, and not accepted
-v0 conformance until the published corpus records its measured limits.
+such as JPEG/WebP recompression and resize. It is a robust visual block carrier,
+not a visually hidden steganographic profile: smooth artwork may show an obvious
+digital texture. A visually unobtrusive service-upload profile must use a later
+watermark-oriented design and publish separate corpus results. `ribbon-block/0.draft`
+is not a generic-camera barcode and is not accepted v0 conformance until the
+published corpus records its measured limits.
 
 `ribbon-watermark/0` is experimental and optional. It may use mid-frequency
 luminance modulation or another transform-resistant mark to help B.R.A.N.C.H.

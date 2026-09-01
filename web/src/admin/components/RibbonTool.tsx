@@ -426,7 +426,7 @@ function RibbonEncodePanel(
         <select id="visual-mode" name="visual-mode" value={ribbon.visualMode} onChange={(event) => { setRibbonField("visualMode", readVisualMode(event.currentTarget.value)); }}>
           <option value="seal">Seal</option>
           <option value="tint">Tint</option>
-          <option value="block">Block</option>
+          <option value="block">Robust block</option>
         </select>
       </div>
 
