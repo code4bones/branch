@@ -167,6 +167,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /setClientDiscoveryResults/);
   assert.match(clientTool, /rateLimitRemaining/);
   assert.match(clientTool, /relayEndpoint/);
+  assert.match(clientTool, /Run carrier-hop PoC/);
+  assert.match(clientTool, /runCarrierHopPoC/);
   assert.doesNotMatch(clientTool, /localStorage|indexedDB|WebSocket|GITHUB_TOKEN|Authorization/);
   assert.match(publicationProfile, /branchBootstrapLocator = "branchbootstrapv0"/);
   assert.match(publicationProfile, /githubPrimaryLocatorQuery/);

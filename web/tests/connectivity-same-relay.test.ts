@@ -7,10 +7,16 @@ import { relayProofDomain } from "../src/protocol/v0/relay-attachment.js";
 import {
   SameRelayTransportClient,
   type BrowserRelaySocket,
+  type BrowserRelaySocketFactory,
   type RelaySocketEvent,
   type RelaySocketEventType,
   type SameRelayTransportEvent
 } from "../src/connectivity/same-relay.js";
+import {
+  routesFromDiscoveryResults,
+  runCarrierHoppingPoC,
+  type RepositoryDiscoveryRouteResult
+} from "../src/connectivity/carrier-hopping-poc.js";
 import { routeFromDiscoveryResults } from "../src/admin/use-same-relay-transport-lab.js";
 import type { GitHubDiscoveryResult } from "../src/discovery/github.js";
 
@@ -110,6 +116,113 @@ void test("client transport route uses validated bootstrap observations only", (
   });
   assert.equal(routeFromDiscoveryResults([{ ...result, records: [{ ...acceptedRecord, validation: "rejected" }] }]), null);
 });
+
+void test("carrier-hopping PoC reports no accepted route", async () => {
+  const rejected = discoveryRouteResult("code4bones/rejected", {
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 1),
+    validation: "rejected"
+  });
+
+  assert.deepEqual(routesFromDiscoveryResults([rejected]), []);
+
+  const report = await runCarrierHoppingPoC({
+    routes: routesFromDiscoveryResults([rejected]),
+    stepTimeoutMs: 250
+  });
+
+  assert.equal(report.status, "failed");
+  assert.equal(report.reason, "no accepted relay route from discovery");
+  assert.equal(report.migrated, false);
+});
+
+void test("carrier-hopping PoC keeps delivery after carrier access stops with one route", async () => {
+  const relay = await FakeRelay.create();
+  const routes = [{
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: relay.publicKey,
+    profileMultihash: developmentProfileMultihash,
+    source: "gitlab/alice/carrier-a"
+  }];
+  const report = await runCarrierHoppingPoC({
+    routes,
+    socketFactory: relay.socketFactory,
+    stepTimeoutMs: 1_000
+  });
+
+  assert.equal(report.status, "degraded");
+  assert.equal(report.migrated, false);
+  assert.equal(report.pendingCount, 0);
+  assert(report.peerReceiptCount >= 1);
+  assert(report.events.some((event) => event.includes("carrier.disabled delivery continued")));
+});
+
+void test("carrier-hopping PoC migrates client-owned pending envelope to a second route", async () => {
+  const relayA = await FakeRelay.create();
+  const relayB = await FakeRelay.create();
+  const routes = [
+    {
+      endpointUri: "wss://relay-a.test:443/relay/v0",
+      relayPublicKey: relayA.publicKey,
+      profileMultihash: developmentProfileMultihash,
+      source: "gitlab/alice/carrier-a"
+    },
+    {
+      endpointUri: "wss://relay-b.test:443/relay/v0",
+      relayPublicKey: relayB.publicKey,
+      profileMultihash: developmentProfileMultihash,
+      source: "gitlab/bob/carrier-b"
+    }
+  ];
+
+  const report = await runCarrierHoppingPoC({
+    routes,
+    socketFactory: multiplexRelays({
+      "relay-a.test": relayA,
+      "relay-b.test": relayB
+    }),
+    stepTimeoutMs: 1_000
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.migrated, true);
+  assert.equal(report.pendingCount, 0);
+  assert.equal(report.unavailableCount, 1);
+  assert(report.relayAckCount >= 2);
+  assert(report.peerReceiptCount >= 2);
+  assert(report.events.some((event) => event.includes("route.unavailable pending=1")));
+  assert(report.events.some((event) => event.includes("route.migration.completed")));
+});
+
+function multiplexRelays(relays: Readonly<Record<string, FakeRelay>>): BrowserRelaySocketFactory {
+  return (url) => {
+    const host = new URL(url).hostname;
+    const relay = relays[host];
+    if (relay === undefined) {
+      throw new Error(`missing fake relay for ${host}`);
+    }
+    return relay.socketFactory(url);
+  };
+}
+
+function discoveryRouteResult(
+  repository: string,
+  options: {
+    readonly endpointUri: string;
+    readonly relayPublicKey: string;
+    readonly validation: "accepted" | "rejected";
+  }
+): RepositoryDiscoveryRouteResult {
+  return {
+    repository,
+    records: [{
+      validation: options.validation,
+      relayEndpoint: `wss ${options.endpointUri}`,
+      senderPublicKey: options.relayPublicKey,
+      profileMultihash: developmentProfileMultihash
+    }]
+  };
+}
 
 class FakeRelay {
   readonly socketFactory = (url: string): BrowserRelaySocket => {

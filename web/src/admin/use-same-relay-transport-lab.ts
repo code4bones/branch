@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
-  parseRelayEndpointDescriptor,
   SameRelayTransportClient,
   type RelayRouteMaterial,
   type SameRelayTransportEvent
 } from "../connectivity/same-relay.js";
+import {
+  routesFromDiscoveryResults,
+  runCarrierHoppingPoC,
+  type RepositoryDiscoveryRouteResult
+} from "../connectivity/carrier-hopping-poc.js";
 import { useAdminStore, type ClientTransportStatePatch } from "./store.js";
 
 export interface SameRelayTransportLab {
@@ -14,23 +18,12 @@ export interface SameRelayTransportLab {
   readonly sendOpaqueEnvelope: () => void;
   readonly disconnectBobAndSend: () => Promise<void>;
   readonly reconnectBobAndRetry: () => Promise<void>;
+  readonly runCarrierHopPoC: () => Promise<void>;
   readonly reset: () => void;
 }
 
 interface MutableCurrent<T> {
   current: T;
-}
-
-interface ValidatedRelayRecord {
-  readonly validation: "accepted" | "rejected";
-  readonly relayEndpoint: string | null;
-  readonly senderPublicKey: string | null;
-  readonly profileMultihash: string | null;
-}
-
-interface RepositoryDiscoveryRouteResult {
-  readonly repository: string;
-  readonly records: readonly ValidatedRelayRecord[];
 }
 
 export function useSameRelayTransportLab(): SameRelayTransportLab {
@@ -198,38 +191,58 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
     }
   }, [setClientTransportState]);
 
+  const runCarrierHopPoC = useCallback(async (): Promise<void> => {
+    reset();
+    const routes = routesFromDiscoveryResults(clientState.discoveryResults);
+    setClientTransportState({
+      transportRunning: true,
+      transportStatus: "running carrier-hop PoC",
+      transportStatusClass: "status-warn",
+      relayEndpointUri: routes[0]?.endpointUri ?? "",
+      relaySource: routes[0]?.source ?? "",
+      relayAckCount: 0,
+      peerReceiptCount: 0,
+      pendingCount: 0,
+      unavailableCount: 0
+    });
+    try {
+      const report = await runCarrierHoppingPoC({
+        routes,
+        onEvent: appendClientTransportEvent
+      });
+      setClientTransportState({
+        transportRunning: false,
+        transportStatus: report.reason,
+        transportStatusClass: report.status === "ok" ? "status-good" : report.status === "degraded" ? "status-warn" : "status-bad",
+        relayEndpointUri: report.migrationRoute ?? report.activeRoute ?? "",
+        relaySource: report.migrationRoute ?? report.activeRoute ?? "",
+        relayAckCount: report.relayAckCount,
+        peerReceiptCount: report.peerReceiptCount,
+        pendingCount: report.pendingCount,
+        unavailableCount: report.unavailableCount
+      });
+    } catch (error) {
+      setClientTransportState({
+        transportRunning: false,
+        transportStatus: errorMessage(error),
+        transportStatusClass: "status-bad"
+      });
+    }
+  }, [appendClientTransportEvent, clientState.discoveryResults, reset, setClientTransportState]);
+
   return {
     route,
     attachPair,
     sendOpaqueEnvelope,
     disconnectBobAndSend,
     reconnectBobAndRetry,
+    runCarrierHopPoC,
     reset
   };
 }
 
 export function routeFromDiscoveryResults(results: readonly RepositoryDiscoveryRouteResult[]): RelayRouteMaterial | null {
-  for (const result of results) {
-    const record = firstAcceptedRecord(result.records);
-    if (record === null || record.relayEndpoint === null || record.senderPublicKey === null || record.profileMultihash === null) {
-      continue;
-    }
-    const endpoint = parseRelayEndpointDescriptor(record.relayEndpoint);
-    if (endpoint === null) {
-      continue;
-    }
-    return {
-      endpointUri: endpoint.uri,
-      relayPublicKey: record.senderPublicKey,
-      profileMultihash: record.profileMultihash,
-      source: result.repository
-    };
-  }
-  return null;
-}
-
-function firstAcceptedRecord(records: readonly ValidatedRelayRecord[]): ValidatedRelayRecord | null {
-  return records.find((record) => record.validation === "accepted") ?? null;
+  return routesFromDiscoveryResults(results)[0] ?? null;
 }
 
 function handleTransportEvent(

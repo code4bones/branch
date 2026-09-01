@@ -160,6 +160,9 @@ export function ClientTool(): React.JSX.Element {
           <button type="button" disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.reconnectBobAndRetry(); }}>
             Reconnect retry
           </button>
+          <button type="button" disabled={client.discoveryRunning || client.transportRunning} onClick={() => { void transport.runCarrierHopPoC(); }}>
+            Run carrier-hop PoC
+          </button>
           <button type="button" onClick={() => { transport.reset(); }}>
             Reset
           </button>

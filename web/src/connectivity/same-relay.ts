@@ -38,6 +38,7 @@ export type BrowserRelaySocketFactory = (url: string) => BrowserRelaySocket;
 export interface SameRelayTransportOptions {
   readonly route: RelayRouteMaterial;
   readonly identity: SameRelayIdentity;
+  readonly pendingEnvelopes?: readonly SameRelayPendingEnvelope[];
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
   readonly now?: () => number;
@@ -87,6 +88,13 @@ interface PendingEnvelope {
   readonly ackRequested: boolean;
 }
 
+export interface SameRelayPendingEnvelope {
+  readonly deliveryId: string;
+  readonly ciphertext: string;
+  readonly streamId: number;
+  readonly ackRequested: boolean;
+}
+
 interface DeferredFrame {
   resolve(record: Record<string, unknown>): void;
   reject(error: Error): void;
@@ -128,6 +136,9 @@ export class SameRelayTransportClient {
     });
     this.maxFrameBytes = Math.min(options.maxFrameBytes ?? defaultMaxFrameBytes, defaultMaxFrameBytes);
     this.handshakeTimeoutMs = Math.min(Math.max(options.handshakeTimeoutMs ?? defaultHandshakeTimeoutMs, 1), 30_000);
+    for (const pending of options.pendingEnvelopes ?? []) {
+      this.pending.set(pending.deliveryId, { ...pending });
+    }
   }
 
   static async createIdentity(cryptoProvider: Crypto = globalThis.crypto): Promise<SameRelayIdentity> {
@@ -155,6 +166,10 @@ export class SameRelayTransportClient {
 
   get pendingCount(): number {
     return this.pending.size;
+  }
+
+  exportPendingEnvelopes(): readonly SameRelayPendingEnvelope[] {
+    return Array.from(this.pending.values(), (pending) => ({ ...pending }));
   }
 
   addEventListener(listener: SameRelayEventListener): () => void {
