@@ -185,14 +185,18 @@ function assertDropInArchivePaths(files: readonly GitHubDropInFile[]): void {
 }
 
 function makeRibbonSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="96" viewBox="0 0 360 96" role="img" aria-labelledby="title desc">
-  <title id="title">Blue Ribbon - Carry the Ribbon</title>
-  <desc id="desc">B.R.A.N.C.H. repository carrier badge</desc>
-  <rect width="360" height="96" rx="8" fill="#07111d"/>
-  <path d="M54 17c15 0 28 11 32 26l-16 8c-1-10-8-18-16-18-9 0-16 8-16 18 0 8 5 15 12 17l-12 12c-11-6-18-17-18-30 0-18 15-33 34-33Z" fill="#64a8ff"/>
-  <path d="M83 43c6 3 10 10 10 18 0 13-11 24-24 24H48l16-16h5c5 0 9-4 9-9 0-4-2-7-5-8l10-9Z" fill="#57d2c6"/>
-  <text x="112" y="38" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="22" font-weight="700">Carry the Ribbon</text>
-  <text x="112" y="64" fill="#9eaaba" font-family="Inter,Arial,sans-serif" font-size="14">branchbootstrapv0 BRANCH0</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="196" height="20" viewBox="0 0 196 20" role="img" aria-labelledby="title desc">
+  <title id="title">B.R.A.N.C.H. - Carry the Ribbon</title>
+  <desc id="desc">Compact B.R.A.N.C.H. Blue Ribbon repository carrier badge</desc>
+  <clipPath id="r"><rect width="196" height="20" rx="3"/></clipPath>
+  <g clip-path="url(#r)">
+    <rect width="82" height="20" fill="#24292f"/>
+    <rect x="82" width="114" height="20" fill="#0969da"/>
+    <path d="M91 4c3.9 0 6.9 2.8 7.7 6.6l-3.5 1.4c-.2-2.5-1.9-4.5-4.2-4.5-2.5 0-4.4 2.2-4.4 4.8 0 2 1.1 3.7 2.8 4.4l-2.4 2.4c-2.4-1.3-4-3.9-4-6.9C83 7.8 86.6 4 91 4Z" fill="#f6f8fa"/>
+    <path d="M98.6 10.6c1.8.9 2.9 2.8 2.9 4.9 0 .2 0 .3-.1.5h-3.8c.1-.2.1-.4.1-.6 0-1-.6-1.9-1.5-2.3l2.4-2.5Z" fill="#f6f8fa"/>
+  </g>
+  <text x="8" y="14" fill="#f6f8fa" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600">B.R.A.N.C.H.</text>
+  <text x="108" y="14" fill="#f6f8fa" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600">carry ribbon</text>
 </svg>
 `;
 }

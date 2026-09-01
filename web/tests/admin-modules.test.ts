@@ -80,6 +80,10 @@ void test("github drop-in archive contains repository paths", async () => {
   assert.match(readZipFileText(archive, ".branch/README.md"), /does not\s+create or replace a root README\.md file/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /Search locator: branchbootstrapv0/);
   assert.match(readZipFileText(archive, ".branch/README.md"), /\[!\[B\.R\.A\.N\.C\.H\. Blue Ribbon/);
+  assert.match(readZipFileText(archive, ".branch/ribbon.svg"), /width="196" height="20"/);
+  assert.match(readZipFileText(archive, ".branch/ribbon.svg"), /B\.R\.A\.N\.C\.H\./);
+  assert.match(readZipFileText(archive, ".branch/ribbon.svg"), /carry ribbon/);
+  assert.doesNotMatch(readZipFileText(archive, ".branch/ribbon.svg"), /width="360" height="96"|Carry the Ribbon<\/text>/);
   assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /drop-in lint/);
   assert.match(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /branchbootstrapv0/);
   assert.doesNotMatch(readZipFileText(archive, ".github/workflows/branch-carry-ribbon.yml"), /schedule|verify-dropin|contents: write/);
