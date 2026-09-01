@@ -195,6 +195,14 @@ label {
   flex: 1 1 132px;
 }
 
+.github-tabs {
+  margin-bottom: 12px;
+}
+
+.github-tabs .tab {
+  flex: 1 1 160px;
+}
+
 .panel {
   min-width: 0;
   border: 1px solid var(--admin-line);
@@ -339,7 +347,7 @@ label {
 
 .github-discovery-results table {
   width: 100%;
-  min-width: 720px;
+  min-width: 1120px;
   border-collapse: collapse;
   background: #0b0f14;
 }
@@ -360,6 +368,19 @@ label {
 
 .github-discovery-results a {
   color: var(--admin-cyan);
+}
+
+.record-validation {
+  margin-top: 6px;
+  font-size: 0.78rem;
+}
+
+.record-validation.is-accepted {
+  color: var(--admin-green);
+}
+
+.record-validation.is-rejected {
+  color: var(--admin-red);
 }
 
 .github-discovery-notes {

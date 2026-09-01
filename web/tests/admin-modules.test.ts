@@ -118,6 +118,8 @@ void test("text carrier extracts bounded BRANCH0 wrappers without normalization"
 
 void test("github discovery searches repositories and reads default-branch drop-in records", async () => {
   const fetched: string[] = [];
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
   const fetcher = (input: string): Promise<Response> => {
     fetched.push(input);
     if (input.startsWith("https://api.github.com/search/repositories")) {
@@ -137,7 +139,7 @@ void test("github discovery searches repositories and reads default-branch drop-
     return Promise.resolve(jsonResponse({
       type: "file",
       encoding: "base64",
-      content: base64Text(`${defaultBranchWrapper}\n`)
+      content: base64Text(`${wrapper}\n`)
     }));
   };
   const report = await discoverGitHubDropIns({
@@ -152,6 +154,11 @@ void test("github discovery searches repositories and reads default-branch drop-
   assert.equal(report.rateLimitRemaining, "9");
   assert.equal(firstResult.repository, "alice/carrier");
   assert.equal(firstResult.wrapperCount, 1);
+  assert.equal(firstResult.acceptedCount, 1);
+  assert.equal(firstResult.rejectedCount, 0);
+  assert.equal(firstResult.records[0]?.validation, "accepted");
+  assert.equal(firstResult.records[0].relayEndpoint, "wss wss://branch.undoo.ru:443/relay/v0");
+  assert.equal(firstResult.records[0].expiresAt, now + 3600);
   assert.match(fetched[0] ?? "", /search\/repositories/);
   assert.match(fetched[1] ?? "", /repos\/alice\/carrier\/contents\/.branch\/records.br0\?ref=main/);
   assert(githubDiscoveryConstraints.some((constraint) => constraint.includes("403/429")));
@@ -179,6 +186,47 @@ void test("github discovery surfaces API rate limits and bounded query construct
   assert.match(url, /page=10/);
   assert.equal(report.status, "rate_limited");
   assert.equal(report.rateLimitRemaining, "0");
+});
+
+void test("github discovery keeps rejected bootstrap records visible", async () => {
+  const stale = await createBootstrapBeaconWrapper({ now: 1_700_000_000, expiresAt: 1_700_000_001 });
+  const fetcher = (input: string): Promise<Response> => {
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 1,
+        incomplete_results: false,
+        items: [{
+          full_name: "alice/stale-carrier",
+          fork: false,
+          html_url: "https://github.com/alice/stale-carrier",
+          default_branch: "main",
+          owner: { login: "alice" },
+          name: "stale-carrier"
+        }]
+      }));
+    }
+    return Promise.resolve(jsonResponse({
+      type: "file",
+      encoding: "base64",
+      content: base64Text(`${stale}\n`)
+    }));
+  };
+  const report = await discoverGitHubDropIns({
+    query: githubDiscoveryDefaultQuery,
+    includeForks: false,
+    perPage: 5,
+    page: 1
+  }, fetcher);
+  const firstResult = report.results[0] ?? failGitHubDiscoveryResult();
+
+  assert.equal(report.status, "empty");
+  assert.equal(firstResult.status, "candidate");
+  assert.equal(firstResult.wrapperCount, 1);
+  assert.equal(firstResult.acceptedCount, 0);
+  assert.equal(firstResult.rejectedCount, 1);
+  assert.equal(firstResult.reason, "records.br0 has no accepted bootstrap.beacon records");
+  assert.equal(firstResult.records[0]?.validation, "rejected");
+  assert.equal(firstResult.records[0].reason, "expired");
 });
 
 void test("ribbon symbol generator emits block-profile visual frames", () => {

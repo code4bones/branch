@@ -1,4 +1,5 @@
 import { extractBranchTextWrappers } from "../protocol/v0/text-carrier.js";
+import { validateBranchTextBootstrapBeacon } from "../protocol/v0/bootstrap-beacon.js";
 import { githubLegacyMarkerQuery, githubPrimaryLocatorQuery } from "./publication-profile.js";
 
 export const githubDiscoveryDefaultQuery = githubPrimaryLocatorQuery;
@@ -27,9 +28,21 @@ export interface GitHubDiscoveryResult {
   readonly htmlUrl: string;
   readonly recordsUrl: string;
   readonly wrapperCount: number;
+  readonly acceptedCount: number;
+  readonly rejectedCount: number;
   readonly firstWrapperPreview: string | null;
+  readonly records: readonly GitHubValidatedRecord[];
   readonly status: "candidate" | "no_records" | "error";
   readonly reason: string | null;
+}
+
+export interface GitHubValidatedRecord {
+  readonly wrapperPreview: string;
+  readonly validation: "accepted" | "rejected";
+  readonly reason: string;
+  readonly expiresAt: number | null;
+  readonly relayEndpoint: string | null;
+  readonly profileMultihash: string | null;
 }
 
 export interface GitHubDiscoveryReport {
@@ -121,7 +134,7 @@ export async function discoverGitHubDropIns(
   }
 
   return {
-    status: results.some((result) => result.status === "candidate") ? "ok" : "empty",
+    status: results.some((result) => result.acceptedCount > 0) ? "ok" : "empty",
     query: normalized.query,
     searchUrl,
     totalCount: searchPayload.total_count,
@@ -129,7 +142,7 @@ export async function discoverGitHubDropIns(
     rateLimitRemaining,
     rateLimitReset,
     results,
-    message: `${String(results.filter((result) => result.status === "candidate").length)} repositories with candidate records`
+    message: `${String(results.reduce((total, result) => total + result.acceptedCount, 0))} accepted records from ${String(results.filter((result) => result.status === "candidate").length)} candidate repositories`
   };
 }
 
@@ -181,29 +194,83 @@ async function readRepositoryRecords(
   const response = await fetcher(recordsUrl, makeGitHubRequestInit(signal));
 
   if (response.status === 404) {
-    return { ...base, wrapperCount: 0, firstWrapperPreview: null, status: "no_records", reason: "no .branch/records.br0 on default branch" };
+    return emptyResult(base, "no_records", "no .branch/records.br0 on default branch");
   }
   if (response.status === 403 || response.status === 429) {
-    return { ...base, wrapperCount: 0, firstWrapperPreview: null, status: "error", reason: `GitHub content rate limited (${String(response.status)})` };
+    return emptyResult(base, "error", `GitHub content rate limited (${String(response.status)})`);
   }
   if (!response.ok) {
-    return { ...base, wrapperCount: 0, firstWrapperPreview: null, status: "error", reason: `GitHub content failed (${String(response.status)})` };
+    return emptyResult(base, "error", `GitHub content failed (${String(response.status)})`);
   }
 
   const payload = await readJson(response);
   const content = readContentFile(payload);
   if (content === null) {
-    return { ...base, wrapperCount: 0, firstWrapperPreview: null, status: "error", reason: "records.br0 response rejected" };
+    return emptyResult(base, "error", "records.br0 response rejected");
   }
   const wrappers = extractBranchTextWrappers(content, 16);
   const firstWrapper = wrappers[0]?.wrapper ?? null;
+  const records = await validateWrappers(wrappers.map((wrapper) => wrapper.wrapper));
+  const acceptedCount = records.filter((record) => record.validation === "accepted").length;
   return {
     ...base,
     wrapperCount: wrappers.length,
+    acceptedCount,
+    rejectedCount: records.length - acceptedCount,
     firstWrapperPreview: firstWrapper === null ? null : previewWrapper(firstWrapper),
+    records,
     status: wrappers.length > 0 ? "candidate" : "no_records",
-    reason: wrappers.length > 0 ? null : "records.br0 has no bounded BRANCH0 wrappers"
+    reason: wrappers.length === 0
+      ? "records.br0 has no bounded BRANCH0 wrappers"
+      : acceptedCount === 0
+        ? "records.br0 has no accepted bootstrap.beacon records"
+        : null
   };
+}
+
+function emptyResult(
+  base: Pick<GitHubDiscoveryResult, "repository" | "defaultBranch" | "fork" | "htmlUrl" | "recordsUrl">,
+  status: GitHubDiscoveryResult["status"],
+  reason: string
+): GitHubDiscoveryResult {
+  return {
+    ...base,
+    wrapperCount: 0,
+    acceptedCount: 0,
+    rejectedCount: 0,
+    firstWrapperPreview: null,
+    records: [],
+    status,
+    reason
+  };
+}
+
+async function validateWrappers(wrappers: readonly string[]): Promise<readonly GitHubValidatedRecord[]> {
+  const records: GitHubValidatedRecord[] = [];
+  for (const wrapper of wrappers) {
+    const result = await validateBranchTextBootstrapBeacon(wrapper);
+    if (!result.accepted || result.beacon === undefined) {
+      records.push({
+        wrapperPreview: previewWrapper(wrapper),
+        validation: "rejected",
+        reason: result.reason,
+        expiresAt: null,
+        relayEndpoint: null,
+        profileMultihash: null
+      });
+      continue;
+    }
+    const endpoint = result.beacon.payload.relayEndpoints[0] ?? null;
+    records.push({
+      wrapperPreview: previewWrapper(wrapper),
+      validation: "accepted",
+      reason: result.reason,
+      expiresAt: result.beacon.payload.expiresAt,
+      relayEndpoint: endpoint === null ? null : `${endpoint.transport} ${endpoint.uri}`,
+      profileMultihash: result.beacon.payload.profileMultihashes[0] ?? null
+    });
+  }
+  return records;
 }
 
 function makeGitHubContentsUrl(owner: string, repo: string, path: string, ref: string): string {

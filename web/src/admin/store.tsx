@@ -11,6 +11,7 @@ import type { LoadedBrowserImage } from "../visual/canvas-image.js";
 
 export type AdminTab = "ribbon" | "github";
 export type RibbonTab = "encode" | "decode";
+export type GitHubTab = "generate" | "check";
 export type StatusClass = "status-good" | "status-warn" | "status-bad";
 
 export interface RibbonFormState {
@@ -67,6 +68,7 @@ export interface TransformLabState {
 export interface AdminState {
   readonly activeTab: AdminTab;
   readonly ribbonTab: RibbonTab;
+  readonly githubTab: GitHubTab;
   readonly ribbon: RibbonFormState;
   readonly cover: LoadedCoverState | null;
   readonly ribbonPngUrl: string;
@@ -79,6 +81,7 @@ export interface AdminState {
 export interface AdminActions {
   readonly setActiveTab: (tab: AdminTab) => void;
   readonly setRibbonTab: (tab: RibbonTab) => void;
+  readonly setGitHubTab: (tab: GitHubTab) => void;
   readonly setRibbonField: <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
   readonly setCover: (cover: LoadedCoverState | null) => void;
   readonly setRibbonPngUrl: (url: string) => void;
@@ -143,6 +146,7 @@ function createAdminStore(): AdminStoreApi {
   return createStore<AdminStore>()((set) => ({
     activeTab: "ribbon",
     ribbonTab: "encode",
+    githubTab: "generate",
     ribbon: {
       wrapper: defaultBranchWrapper,
       outputWidth: "1000",
@@ -182,6 +186,7 @@ function createAdminStore(): AdminStoreApi {
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
     setRibbonTab: (tab) => { set({ ribbonTab: tab }); },
+    setGitHubTab: (tab) => { set({ githubTab: tab }); },
     setRibbonField: (field, value) =>
       { set((state) => ({
         ribbon: {

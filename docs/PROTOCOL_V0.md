@@ -924,6 +924,12 @@ Its paths are local repository hints only. SearchCarrier implementations may use
 it to find candidate bytes more efficiently, then must validate the signed
 records exactly as if they had been found in README text.
 
+The Admin GitHub Check surface may display candidate repository status together
+with local protocol-core validation of extracted `BRANCH0.` wrappers, including
+accepted or rejected reason, expiry, relay endpoint hints, and profile hashes.
+This diagnostic display is not relay liveness, attachment proof, trust
+delegation, or durable discovery state.
+
 A drop-in may carry several signed source records and curator bundles, but it
 must preserve each signed record byte-for-byte. Repository ownership, stars,
 release tags, branch names, commit signatures, package ownership, and CI status

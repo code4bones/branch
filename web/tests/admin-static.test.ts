@@ -53,8 +53,11 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(store, /defaultBranchWrapper/);
   assert.match(store, /githubDiscoveryDefaultQuery/);
   assert.match(store, /export type RibbonTab = "encode" \| "decode"/);
+  assert.match(store, /export type GitHubTab = "generate" \| "check"/);
   assert.match(store, /ribbonTab: "encode"/);
+  assert.match(store, /githubTab: "generate"/);
   assert.match(store, /setRibbonTab/);
+  assert.match(store, /setGitHubTab/);
   assert.match(store, /transformLab/);
   assert.match(store, /progress: null/);
   assert.match(store, /setTransformLabProgress/);
@@ -85,6 +88,10 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="decoded-wrapper"/);
   assert.match(ribbonTool, /className="tool-grid is-active ribbon-tool"/);
   assert.match(githubTool, /id="github-form"/);
+  assert.match(githubTool, /id="github-tab-generate"/);
+  assert.match(githubTool, /id="github-tab-check"/);
+  assert.match(githubTool, /id="github-panel-generate"/);
+  assert.match(githubTool, /id="github-panel-check"/);
   assert.match(githubTool, /id="github-mode"/);
   assert.match(githubTool, /Demo fixture/);
   assert.match(githubTool, /Live publishable/);
@@ -98,6 +105,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /id="github-discovery-query"/);
   assert.match(githubTool, /id="github-discovery-forks"/);
   assert.match(githubTool, /discoverGitHubDropIns/);
+  assert.match(githubTool, /acceptedCount/);
+  assert.match(githubTool, /relayEndpoint/);
+  assert.match(githubTool, /formatUnixSeconds/);
   assert.match(githubTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
   assert.match(publicationProfile, /branchBootstrapLocator = "branchbootstrapv0"/);
