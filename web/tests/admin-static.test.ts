@@ -6,7 +6,13 @@ import assert from "node:assert/strict";
 const adminHtmlPath = resolve(process.cwd(), "public/admin/index.html");
 const adminAppPath = resolve(process.cwd(), "src/admin/App.tsx");
 const adminMainPath = resolve(process.cwd(), "src/admin/main.tsx");
-const adminJsPath = resolve(process.cwd(), "public/admin/admin.js");
+const adminStorePath = resolve(process.cwd(), "src/admin/store.tsx");
+const ribbonToolPath = resolve(process.cwd(), "src/admin/components/RibbonTool.tsx");
+const githubToolPath = resolve(process.cwd(), "src/admin/components/GitHubTool.tsx");
+const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
+const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
+const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
+const ribbonTintPath = resolve(process.cwd(), "src/visual/ribbon-tint.ts");
 const adminCssPath = resolve(process.cwd(), "public/admin/admin.css");
 const buildScriptPath = resolve(process.cwd(), "scripts/build-static.mjs");
 const nginxConfigPath = resolve(process.cwd(), "../deployments/nginx/branch.undoo.ru.conf");
@@ -14,73 +20,63 @@ const nginxConfigPath = resolve(process.cwd(), "../deployments/nginx/branch.undo
 void test("admin surface is static and open", async () => {
   const html = await readFile(adminHtmlPath, "utf8");
 
-  assert.match(html, /\/admin\/admin\.js/);
   assert.match(html, /\/admin\/admin-app\.js/);
-  assert.match(html, /\/vendor\/qrcode-browser\.js/);
-  assert.match(html, /\/vendor\/jsqr\.js/);
   assert.match(html, /id="admin-root"/);
+  assert.doesNotMatch(html, /\/vendor\/qrcode-browser\.js/);
+  assert.doesNotMatch(html, /\/vendor\/jsqr\.js/);
+  assert.doesNotMatch(html, /\/admin\/admin\.js/);
   assert.doesNotMatch(html, /login|password|token/i);
 });
 
 void test("admin surface is scaffolded by React TypeScript source", async () => {
   const app = await readFile(adminAppPath, "utf8");
   const main = await readFile(adminMainPath, "utf8");
+  const store = await readFile(adminStorePath, "utf8");
+  const ribbonTool = await readFile(ribbonToolPath, "utf8");
+  const githubTool = await readFile(githubToolPath, "utf8");
 
   assert.match(main, /createRoot/);
-  assert.match(main, /flushSync/);
-  assert.match(main, /branch:admin-mounted/);
   assert.match(app, /Blue Ribbon Autonomous Network for Carrier Hopping/);
-  assert.match(app, /defaultBranchWrapper/);
-  assert.match(app, /BRANCH0\.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/);
-  assert.match(app, /id="cover-image"/);
-  assert.match(app, /id="visual-mode"/);
-  assert.match(app, /id="tint-strength"/);
-  assert.match(app, /type="range"/);
-  assert.match(app, /min="0"/);
-  assert.match(app, /max="24"/);
-  assert.match(app, /step="1"/);
-  assert.match(app, /defaultValue="0"/);
-  assert.match(app, /id="carrier-placement"/);
-  assert.match(app, /id="decode-image"/);
-  assert.match(app, /id="decoded-wrapper"/);
-  assert.match(app, /id="github-form"/);
-  assert.doesNotMatch(app, /\bfetch\s*\(/);
-  assert.doesNotMatch(app, /XMLHttpRequest|localStorage|indexedDB/);
+  assert.match(app, /AdminStoreProvider/);
+  assert.match(store, /zustand\/vanilla/);
+  assert.match(store, /defaultBranchWrapper/);
+  assert.match(store, /tintStrength: "0"/);
+  assert.match(ribbonTool, /id="cover-image"/);
+  assert.match(ribbonTool, /id="visual-mode"/);
+  assert.match(ribbonTool, /id="tint-strength"/);
+  assert.match(ribbonTool, /min="0"/);
+  assert.match(ribbonTool, /max="24"/);
+  assert.match(ribbonTool, /step="1"/);
+  assert.match(ribbonTool, /id="carrier-placement"/);
+  assert.match(ribbonTool, /id="decode-image"/);
+  assert.match(ribbonTool, /id="decoded-wrapper"/);
+  assert.match(ribbonTool, /className="tool-grid is-active"/);
+  assert.match(githubTool, /id="github-form"/);
+  assert.match(githubTool, /className="tool-grid is-active"/);
+  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}`, /\bfetch\s*\(/);
+  assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}`, /XMLHttpRequest|localStorage|indexedDB/);
 });
 
-void test("admin ribbon generator mirrors ribbon-seal frame constants", async () => {
-  const source = await readFile(adminJsPath, "utf8");
+void test("admin ribbon logic is split into typed visual modules", async () => {
+  const render = await readFile(ribbonRenderPath, "utf8");
+  const decode = await readFile(ribbonDecodePath, "utf8");
+  const tint = await readFile(ribbonTintPath, "utf8");
 
-  assert.match(source, /BRANCH0\./);
-  assert.match(source, /BRIMG0/);
-  assert.match(source, /ribbon-seal\/0/);
-  assert.match(source, /payloadLimit = 768/);
-  assert.match(source, /0x82f63b78/);
-  assert.match(source, /loadLocalImage/);
-  assert.match(source, /FileReader/);
-  assert.match(source, /readAsDataURL/);
-  assert.match(source, /drawCoverImage/);
-  assert.match(source, /drawCoverPreview/);
-  assert.match(source, /cover loaded/);
-  assert.match(source, /clearRibbonDownload/);
-  assert.match(source, /fitCarrierSizeToOutput/);
-  assert.match(source, /preserveCoverPreviewOnError/);
-  assert.match(source, /computePlacement/);
-  assert.match(source, /drawTintQR/);
-  assert.match(source, /tintStrength/);
-  assert.match(source, /visualMode/);
-  assert.match(source, /decodeRibbonImage/);
-  assert.match(source, /decodeTintImage/);
-  assert.match(source, /extractStegoTintCandidates/);
-  assert.match(source, /sampleTintStegoBits/);
-  assert.match(source, /extractTintCandidates/);
-  assert.match(source, /decodeRibbonFrame/);
-  assert.doesNotMatch(source, /\bfetch\s*\(/);
-  assert.doesNotMatch(source, /XMLHttpRequest|localStorage|indexedDB/);
+  assert.match(render, /generateRibbonSymbol/);
+  assert.match(render, /encodeRibbonFrame/);
+  assert.match(render, /drawCoverImage/);
+  assert.match(render, /renderRibbonImage/);
+  assert.match(decode, /decodeRibbonImage/);
+  assert.match(decode, /decodeRibbonFrame/);
+  assert.match(decode, /extractStegoTintCandidates/);
+  assert.match(tint, /drawTintQR/);
+  assert.match(tint, /extractStegoTintCandidates/);
+  assert.match(tint, /extractChromaTintCandidates/);
+  assert.doesNotMatch(`${render}\n${decode}\n${tint}`, /window\.BranchQRCode|window\.jsQR/);
 });
 
 void test("admin github generator stays offline and produces local drop-in paths", async () => {
-  const source = await readFile(adminJsPath, "utf8");
+  const source = await readFile(githubDropInPath, "utf8");
 
   assert.match(source, /\.branch\/records\.br0/);
   assert.match(source, /\.branch\/manifest\.json/);
@@ -100,17 +96,13 @@ void test("admin css remains dark and bounded", async () => {
   assert.doesNotMatch(source, /color-scheme:\s*light/);
 });
 
-void test("static build bundles qrcode from local dependency", async () => {
+void test("static build bundles the React admin app from local dependencies", async () => {
   const source = await readFile(buildScriptPath, "utf8");
 
-  assert.match(source, /node_modules\/qrcode\/lib\/browser\.js/);
-  assert.match(source, /qrcode-browser\.js/);
-  assert.match(source, /node_modules\/jsqr\/dist\/jsQR\.js/);
-  assert.match(source, /vendor\/jsqr\.js/);
   assert.match(source, /src\/admin\/main\.tsx/);
   assert.match(source, /admin-app\.js/);
   assert.match(source, /esbuild/);
-  assert.match(source, /createRequire/);
+  assert.doesNotMatch(source, /qrcode-browser\.js|vendor\/jsqr\.js|createRequire/);
 });
 
 void test("nginx csp permits local cover image object urls", async () => {
