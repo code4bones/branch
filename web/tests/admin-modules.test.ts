@@ -29,6 +29,7 @@ import {
 } from "../src/visual/ribbon-locator.js";
 import { generateRibbonSymbol, symbolSizePixels } from "../src/visual/ribbon-render.js";
 import { extractStegoTintCandidates } from "../src/visual/ribbon-tint.js";
+import { embedWatermarkPayload, extractWatermarkPayload, ribbonWatermarkProfile } from "../src/visual/ribbon-watermark.js";
 import { decodeRibbonSeal, type RibbonImageData } from "../src/visual/ribbon-image.js";
 
 void test("github drop-in module validates exact BRANCH0 records and emits local files", () => {
@@ -253,9 +254,10 @@ void test("transform lab report omits image bytes filenames and raw wrappers", (
     5,
     "webp encoder unsupported"
   );
-  const json = makeTransformLabJson([failed], "2026-09-01T00:00:00.000Z");
+  const json = makeTransformLabJson([failed], "2026-09-01T00:00:00.000Z", ribbonWatermarkProfile);
 
   assert.match(json, /branch\.transform-lab\/0/);
+  assert.match(json, /ribbon-watermark\/0\.draft/);
   assert.match(json, /webp encoder unsupported/);
   assert.doesNotMatch(json, /BRANCH0\.|data:|blob:|source\.png|samples\//);
   assert.doesNotMatch(json, /"data"\s*:/);
@@ -480,6 +482,36 @@ void test("ribbon block profile has bounded default heuristic when locator is st
   assert.equal(decoded.status, "block decoded heuristic");
   assert.equal(decoded.wrapper, defaultBranchWrapper);
   assert.deepEqual(decoded.foundRegion, { x: 0, y: 0, size: 750, width: 750, height: 1125 });
+});
+
+void test("ribbon watermark profile carries exact signed frame bytes without locator", () => {
+  const quietZone = 8;
+  const carrierSize = 720;
+  const placement = "bottom-right";
+  const symbol = generateRibbonSymbol(defaultBranchWrapper, quietZone, carrierSize);
+  const source = makeNoCarrierImage(1000, 1500);
+  const region = {
+    x: 0,
+    y: 0,
+    size: Math.min(source.width, source.height),
+    width: source.width,
+    height: source.height
+  };
+  const watermarked = embedWatermarkPayload(source, symbol.frame, region);
+  const frame = extractWatermarkPayload(watermarked, region);
+  const decoded = decodeRibbonImage(watermarked, {
+    quietZone,
+    carrierSize,
+    placement,
+    maxDirectPixels: 1,
+    maxVersionAttempts: 1,
+    maxTintCandidates: 2
+  });
+
+  assert.deepEqual(frame, symbol.frame);
+  assert.equal(decoded.status, "watermark decoded heuristic");
+  assert.equal(decoded.wrapper, defaultBranchWrapper);
+  assert.deepEqual(decoded.foundRegion, region);
 });
 
 void test("ribbon locator reads legacy browser grid as bounded hint", () => {

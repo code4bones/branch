@@ -9,6 +9,7 @@ import {
 } from "./ribbon-image.js";
 import { readRibbonLocator, type RibbonLocatorHint, type RibbonLocatorRegion } from "./ribbon-locator.js";
 import { extractChromaTintCandidates, extractStegoTintCandidates } from "./ribbon-tint.js";
+import { extractWatermarkPayload } from "./ribbon-watermark.js";
 
 type JSQRDecoder = (
   data: Uint8ClampedArray,
@@ -68,6 +69,10 @@ export function decodeRibbonImage(image: RibbonImageData, options: DecodeRibbonI
   }
 
   const attempts = selectVersionAttempts(image, options);
+  const watermarked = decodeWatermarkImage(image, options);
+  if (watermarked.wrapper !== "") {
+    return watermarked;
+  }
   const blocked = decodeBlockImage(image, options, attempts);
   if (blocked.wrapper !== "") {
     return blocked;
@@ -198,6 +203,30 @@ function decodeDefaultBlockImage(image: RibbonImageData, options: DecodeRibbonIm
     }
   }
   return { status: "block extraction failed", wrapper: "" };
+}
+
+function decodeWatermarkImage(image: RibbonImageData, options: DecodeRibbonImageOptions): DecodedRibbonWrapper {
+  for (const region of makeDefaultWatermarkRegions(image, options)) {
+    const frame = extractWatermarkPayload(image, region);
+    if (frame === null) {
+      continue;
+    }
+    const decoded = decodeRibbonFrame(frame);
+    if (decoded.status !== "beacon_accepted") {
+      continue;
+    }
+    return {
+      status: "watermark decoded heuristic",
+      wrapper: decodePayload(decoded.frame.payload),
+      foundRegion: region
+    };
+  }
+  return { status: "watermark extraction failed", wrapper: "" };
+}
+
+function makeDefaultWatermarkRegions(image: RibbonImageData, options: DecodeRibbonImageOptions): readonly RibbonLocatorRegion[] {
+  void options;
+  return [makeFullImageBlockRegion(image)];
 }
 
 function makeDefaultBlockRegions(image: RibbonImageData, options: DecodeRibbonImageOptions): readonly RibbonLocatorRegion[] {

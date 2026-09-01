@@ -85,6 +85,7 @@ export interface TransformLabResult {
 export interface TransformLabReport {
   readonly format: "branch.transform-lab/0";
   readonly generatedAt: string;
+  readonly sourceProfile: string | null;
   readonly resultCount: number;
   readonly results: readonly TransformLabResult[];
 }
@@ -274,17 +275,22 @@ export function makeFailedTransformLabResult(
   };
 }
 
-export function makeTransformLabReport(results: readonly TransformLabResult[], generatedAt = new Date().toISOString()): TransformLabReport {
+export function makeTransformLabReport(
+  results: readonly TransformLabResult[],
+  generatedAt = new Date().toISOString(),
+  sourceProfile: string | null = null
+): TransformLabReport {
   return {
     format: "branch.transform-lab/0",
     generatedAt,
+    sourceProfile,
     resultCount: results.length,
     results
   };
 }
 
-export function makeTransformLabJson(results: readonly TransformLabResult[], generatedAt?: string): string {
-  return `${JSON.stringify(makeTransformLabReport(results, generatedAt), null, 2)}\n`;
+export function makeTransformLabJson(results: readonly TransformLabResult[], generatedAt?: string, sourceProfile: string | null = null): string {
+  return `${JSON.stringify(makeTransformLabReport(results, generatedAt, sourceProfile), null, 2)}\n`;
 }
 
 function classifyStatus(

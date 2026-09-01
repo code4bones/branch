@@ -1067,10 +1067,32 @@ watermark-oriented design and publish separate corpus results. `ribbon-block/0.d
 is not a generic-camera barcode and is not accepted v0 conformance until the
 published corpus records its measured limits.
 
-`ribbon-watermark/0` is experimental and optional. It may use mid-frequency
-luminance modulation or another transform-resistant mark to help B.R.A.N.C.H.
-clients find candidate artwork, but it is not a standalone authority. A
-watermark that cannot recover exact signed bytes is a discovery hint only.
+`ribbon-watermark/0.draft` is a browser-local stealth experiment. It carries
+the same exact `BRIMG0` visual frame bytes as `ribbon-seal/0`, but distributes a
+low-amplitude balanced luminance watermark across the whole carrier image
+instead of drawing a QR/Data Matrix symbol, locator header, or visible block
+grid. The current draft packet is:
+
+```text
+magic                = "BRWMK0"        ; 6 ASCII bytes encoded in pixels
+watermark_version    = uint8           ; current draft value 0
+frame_len            = uint16 big endian
+frame                = exact BRIMG0 visual frame bytes
+crc32c_frame         = uint32 big endian CRC32C(frame)
+```
+
+Each packet bit is repeated across deterministic full-image cells selected by a
+bounded permutation. A cell applies a zero-mean fine-grain grayscale basis at low
+strength; the decoder reads bounded full-image candidates, validates magic,
+length, CRC32C, and then validates the enclosed `BRIMG0` frame. This profile is
+designed to reduce normal-view visual artifacts, not to maximize service-upload
+survivability. JPEG 95 and resize 75% results are corpus measurements, and
+regressions versus `ribbon-block/0.draft` are acceptable when they are recorded
+explicitly. `ribbon-watermark/0.draft` is not a generic-camera barcode and is
+not accepted v0 conformance.
+
+`ribbon-watermark/0` remains the future stable profile name. A watermark that
+cannot recover exact signed bytes is a discovery hint only.
 
 #### Draft pixel locator
 

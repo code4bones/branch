@@ -15,9 +15,10 @@ import {
   type RibbonLocatorVisualProfile
 } from "./ribbon-locator.js";
 import { drawTintQR } from "./ribbon-tint.js";
+import { drawWatermarkPayload } from "./ribbon-watermark.js";
 import type { LoadedBrowserImage } from "./canvas-image.js";
 
-export type RibbonVisualMode = "seal" | "tint" | "block";
+export type RibbonVisualMode = "seal" | "tint" | "block" | "watermark";
 
 export interface QRModules {
   readonly size: number;
@@ -96,14 +97,19 @@ export function renderRibbonImage(
   const symbolSize = symbolSizePixels(symbol.diagnostics.moduleCount, symbol.diagnostics.quietZone, symbol.diagnostics.modulePitch);
   ensureCarrierFits(symbolSize, options.outputWidth, options.outputHeight);
   const placement = computePlacement(options.placement, options.outputWidth, options.outputHeight, symbolSize);
-  if (options.visualMode === "block") {
-    drawBlockPayload(context, symbol.frame, {
+  if (options.visualMode === "block" || options.visualMode === "watermark") {
+    const payloadRegion = {
       x: 0,
       y: 0,
       size: Math.min(options.outputWidth, options.outputHeight),
       width: options.outputWidth,
       height: options.outputHeight
-    });
+    };
+    if (options.visualMode === "block") {
+      drawBlockPayload(context, symbol.frame, payloadRegion);
+    } else {
+      drawWatermarkPayload(context, symbol.frame, payloadRegion);
+    }
     return;
   }
 

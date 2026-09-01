@@ -16,6 +16,7 @@ const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
 const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
 const ribbonLocatorPath = resolve(process.cwd(), "src/visual/ribbon-locator.ts");
 const ribbonBlockPath = resolve(process.cwd(), "src/visual/ribbon-block.ts");
+const ribbonWatermarkPath = resolve(process.cwd(), "src/visual/ribbon-watermark.ts");
 const ribbonDecodeClientPath = resolve(process.cwd(), "src/admin/ribbon-decode-client.ts");
 const ribbonDecodeWorkerPath = resolve(process.cwd(), "src/admin/ribbon-decode-worker.ts");
 const ribbonAutoDecodePath = resolve(process.cwd(), "src/admin/ribbon-auto-decode.ts");
@@ -78,6 +79,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /drawFoundRegion/);
   assert.match(ribbonTool, /id="cover-image"/);
   assert.match(ribbonTool, /id="visual-mode"/);
+  assert.match(ribbonTool, /value="watermark"/);
   assert.match(ribbonTool, /id="tint-strength"/);
   assert.match(ribbonTool, /min="0"/);
   assert.match(ribbonTool, /max="24"/);
@@ -102,6 +104,7 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   const decode = await readFile(ribbonDecodePath, "utf8");
   const locator = await readFile(ribbonLocatorPath, "utf8");
   const block = await readFile(ribbonBlockPath, "utf8");
+  const watermark = await readFile(ribbonWatermarkPath, "utf8");
   const decodeClient = await readFile(ribbonDecodeClientPath, "utf8");
   const decodeWorker = await readFile(ribbonDecodeWorkerPath, "utf8");
   const autoDecode = await readFile(ribbonAutoDecodePath, "utf8");
@@ -118,6 +121,7 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(decode, /decodeRibbonFrame/);
   assert.match(decode, /readRibbonLocator/);
   assert.match(decode, /extractBlockPayload/);
+  assert.match(decode, /extractWatermarkPayload/);
   assert.match(locator, /ribbon-locator\/0\.draft/);
   assert.match(locator, /BRLOC0/);
   assert.match(locator, /ribbonBlockProfile/);
@@ -126,6 +130,9 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(block, /ribbon-block\/0\.draft/);
   assert.match(block, /BRBLK0/);
   assert.match(block, /blockRepeatCandidates/);
+  assert.match(watermark, /ribbon-watermark\/0\.draft/);
+  assert.match(watermark, /BRWMK0/);
+  assert.match(watermark, /watermarkRepeatCandidates/);
   assert.match(decode, /extractStegoTintCandidates/);
   assert.match(decodeClient, /new Worker/);
   assert.match(decodeClient, /postMessage\(request, \[request\.image\.data\]\)/);
@@ -138,6 +145,7 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(autoDecode, /decodeRibbonImageWithWorker/);
   assert.match(transformLab, /Pinterest-like simulation/);
   assert.match(transformLab, /branch\.transform-lab\/0/);
+  assert.match(transformLab, /sourceProfile/);
   assert.match(transformLab, /foundRegion/);
   assert.match(transformLab, /locatorProfile/);
   assert.match(transformLab, /TransformLabProgress/);
@@ -151,7 +159,7 @@ void test("admin ribbon logic is split into typed visual modules", async () => {
   assert.match(tint, /drawTintQR/);
   assert.match(tint, /extractStegoTintCandidates/);
   assert.match(tint, /extractChromaTintCandidates/);
-  assert.doesNotMatch(`${render}\n${decode}\n${locator}\n${block}\n${decodeClient}\n${decodeWorker}\n${autoDecode}\n${transformLab}\n${transformLabRunner}\n${tint}`, /window\.BranchQRCode|window\.jsQR|fetch\s*\(|XMLHttpRequest|WebSocket/);
+  assert.doesNotMatch(`${render}\n${decode}\n${locator}\n${block}\n${watermark}\n${decodeClient}\n${decodeWorker}\n${autoDecode}\n${transformLab}\n${transformLabRunner}\n${tint}`, /window\.BranchQRCode|window\.jsQR|fetch\s*\(|XMLHttpRequest|WebSocket/);
 });
 
 void test("admin github generator stays offline and produces local drop-in paths", async () => {

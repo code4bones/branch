@@ -39,6 +39,7 @@ import {
   type RibbonVisualMode
 } from "../../visual/ribbon-render.js";
 import { ribbonTintProfile, type RibbonLocatorRegion } from "../../visual/ribbon-locator.js";
+import { ribbonWatermarkProfile } from "../../visual/ribbon-watermark.js";
 import { DiagnosticsView } from "./DiagnosticsView.js";
 
 type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;
@@ -208,7 +209,7 @@ export function RibbonTool(): React.JSX.Element {
         },
         signal: controller.signal
       });
-      const reportJson = makeTransformLabJson(results);
+      const reportJson = makeTransformLabJson(results, new Date().toISOString(), readVisualProfileLabel(ribbon.visualMode, ""));
       setTransformLabResults(results, reportJson);
       const [status, statusClass] = transformLabStatusFromResults(results, controller.signal.aborted);
       setTransformLabStatus(status, statusClass);
@@ -427,6 +428,7 @@ function RibbonEncodePanel(
           <option value="seal">Seal</option>
           <option value="tint">Tint</option>
           <option value="block">Robust block</option>
+          <option value="watermark">Watermark</option>
         </select>
       </div>
 
@@ -448,7 +450,7 @@ function RibbonEncodePanel(
 }
 
 function readVisualMode(value: string): RibbonVisualMode {
-  if (value === "seal" || value === "block") {
+  if (value === "seal" || value === "block" || value === "watermark") {
     return value;
   }
   return "tint";
@@ -738,6 +740,9 @@ function diagnosticsFromSymbol(
 function readVisualProfileLabel(mode: string, fallback: string): string {
   if (mode === "block") {
     return ribbonBlockProfile;
+  }
+  if (mode === "watermark") {
+    return ribbonWatermarkProfile;
   }
   if (mode === "tint") {
     return ribbonTintProfile;
