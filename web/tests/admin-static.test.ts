@@ -34,6 +34,8 @@ void test("admin ribbon generator mirrors ribbon-seal frame constants", async ()
   assert.match(source, /drawCoverPreview/);
   assert.match(source, /cover loaded/);
   assert.match(source, /clearRibbonDownload/);
+  assert.match(source, /fitCarrierSizeToOutput/);
+  assert.match(source, /preserveCoverPreviewOnError/);
   assert.match(source, /computePlacement/);
   assert.doesNotMatch(source, /\bfetch\s*\(/);
   assert.doesNotMatch(source, /XMLHttpRequest|localStorage|indexedDB/);

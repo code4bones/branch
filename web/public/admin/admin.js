@@ -71,8 +71,13 @@
       }
       try {
         state.coverImage = await loadLocalImage(file);
-        elements.outputWidth.value = String(clamp(state.coverImage.width, 640, 4096));
-        elements.outputHeight.value = String(clamp(state.coverImage.height, 640, 4096));
+        elements.outputWidth.value = String(
+          clamp(Math.max(readOptionalInteger(elements.outputWidth.value, 1000), state.coverImage.width), 640, 4096)
+        );
+        elements.outputHeight.value = String(
+          clamp(Math.max(readOptionalInteger(elements.outputHeight.value, 1500), state.coverImage.height), 640, 4096)
+        );
+        fitCarrierSizeToOutput();
         clearRibbonDownload();
         drawCoverPreview(
           state.coverImage,
@@ -93,9 +98,9 @@
       try {
         const wrapper = elements.wrapper.value.trim();
         const quietZone = readBoundedInteger(elements.quietZone.value, 4, 12, "quiet zone");
-        const carrierSize = readBoundedInteger(elements.carrierSize.value, 320, 1600, "carrier size");
         const outputWidth = readBoundedInteger(elements.outputWidth.value, 640, 4096, "output width");
         const outputHeight = readBoundedInteger(elements.outputHeight.value, 640, 4096, "output height");
+        const carrierSize = fitCarrierSizeToOutput(outputWidth, outputHeight);
         const generated = generateRibbonSeal(wrapper, quietZone, carrierSize);
         renderRibbonImage(generated.qr.modules, generated.diagnostics, {
           outputWidth,
@@ -116,20 +121,9 @@
           elements.downloadRibbon.disabled = false;
         }, "image/png");
       } catch (error) {
-        drawIdleCanvas();
+        preserveCoverPreviewOnError();
         elements.downloadRibbon.disabled = true;
-        setRibbonDiagnostics(
-          {
-            profile,
-            sourceSymbolVersion: "-",
-            moduleCount: "-",
-            modulePitch: "-",
-            quietZone: "-",
-            payloadLength: "-"
-          },
-          error instanceof Error ? error.message : "generation failed",
-          "status-bad"
-        );
+        setRibbonDiagnostics(emptyDiagnostics(), error instanceof Error ? error.message : "generation failed", "status-bad");
       }
     });
 
@@ -551,6 +545,31 @@ jobs:
       throw new Error(`${name} outside ${min}-${max}`);
     }
     return number;
+  }
+
+  function readOptionalInteger(value, fallback) {
+    const number = Number(value);
+    return Number.isInteger(number) ? number : fallback;
+  }
+
+  function fitCarrierSizeToOutput(width, height) {
+    const outputWidth = width ?? readBoundedInteger(elements.outputWidth.value, 640, 4096, "output width");
+    const outputHeight = height ?? readBoundedInteger(elements.outputHeight.value, 640, 4096, "output height");
+    const requested = readBoundedInteger(elements.carrierSize.value, 320, 1600, "carrier size");
+    const fitted = clamp(requested, 320, Math.min(1600, outputWidth, outputHeight));
+    elements.carrierSize.value = String(fitted);
+    return fitted;
+  }
+
+  function preserveCoverPreviewOnError() {
+    clearRibbonDownload();
+    if (!state.coverImage) {
+      drawIdleCanvas();
+      return;
+    }
+    const outputWidth = readOptionalInteger(elements.outputWidth.value, elements.canvas.width || 1000);
+    const outputHeight = readOptionalInteger(elements.outputHeight.value, elements.canvas.height || 1500);
+    drawCoverPreview(state.coverImage, clamp(outputWidth, 640, 4096), clamp(outputHeight, 640, 4096));
   }
 
   function loadLocalImage(file) {
