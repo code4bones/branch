@@ -8,6 +8,7 @@ import {
   type GitHubValidatedRecord
 } from "../../discovery/github.js";
 import { useAdminStore } from "../store.js";
+import { useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
 
 export function ClientTool(): React.JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
@@ -15,6 +16,7 @@ export function ClientTool(): React.JSX.Element {
   const setClientDiscoveryRunning = useAdminStore((state) => state.setClientDiscoveryRunning);
   const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
   const setClientDiscoveryStatus = useAdminStore((state) => state.setClientDiscoveryStatus);
+  const transport = useSameRelayTransportLab();
 
   const runDiscovery = useCallback(async (): Promise<void> => {
     abortRef.current?.abort();
@@ -96,6 +98,11 @@ export function ClientTool(): React.JSX.Element {
             <dd>{client.rateLimitRemaining ?? "-"}</dd>
           </div>
         </dl>
+        <div className="client-route">
+          <span>Route</span>
+          <strong>{transport.route?.endpointUri ?? "-"}</strong>
+          <small>{transport.route?.source ?? "no accepted relay route"}</small>
+        </div>
       </section>
 
       <section className="panel output-panel github-discovery-results client-discovery-results" aria-label="Client discovery results">
@@ -134,6 +141,67 @@ export function ClientTool(): React.JSX.Element {
           </tbody>
         </table>
       </section>
+
+      <section className="panel output-panel client-transport-panel" aria-label="Client same-relay transport">
+        <div className="section-heading">
+          <h2>Same-relay transport</h2>
+          <p className={client.transportStatusClass}>{client.transportStatus}</p>
+        </div>
+        <div className="button-row">
+          <button type="button" disabled={transport.route === null || client.transportRunning} onClick={() => { void transport.attachPair(); }}>
+            Attach test pair
+          </button>
+          <button type="button" disabled={client.alicePeerId === "" || client.transportRunning} onClick={() => { transport.sendOpaqueEnvelope(); }}>
+            Send envelope
+          </button>
+          <button type="button" disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.disconnectBobAndSend(); }}>
+            Drop Bob
+          </button>
+          <button type="button" disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.reconnectBobAndRetry(); }}>
+            Reconnect retry
+          </button>
+          <button type="button" onClick={() => { transport.reset(); }}>
+            Reset
+          </button>
+        </div>
+        <dl className="diagnostics client-transport-diagnostics">
+          <div>
+            <dt>Relay ACK</dt>
+            <dd>{String(client.relayAckCount)}</dd>
+          </div>
+          <div>
+            <dt>Peer receipt</dt>
+            <dd>{String(client.peerReceiptCount)}</dd>
+          </div>
+          <div>
+            <dt>Pending</dt>
+            <dd>{String(client.pendingCount)}</dd>
+          </div>
+          <div>
+            <dt>Unavailable</dt>
+            <dd>{String(client.unavailableCount)}</dd>
+          </div>
+        </dl>
+        <dl className="diagnostics client-peer-diagnostics">
+          <div>
+            <dt>Alice</dt>
+            <dd>{client.alicePeerId === "" ? "-" : shortId(client.alicePeerId)}</dd>
+          </div>
+          <div>
+            <dt>Bob</dt>
+            <dd>{client.bobPeerId === "" ? "-" : shortId(client.bobPeerId)}</dd>
+          </div>
+          <div>
+            <dt>Relay</dt>
+            <dd>{client.relayEndpointUri === "" ? "-" : client.relayEndpointUri}</dd>
+          </div>
+        </dl>
+        <ol className="client-event-log" aria-label="Transport events">
+          {client.transportEvents.map((event, index) => (
+            <li key={`${String(index)}-${event}`}>{event}</li>
+          ))}
+        </ol>
+      </section>
     </section>
   );
 }
@@ -155,6 +223,10 @@ function formatUnixSeconds(value: number | null): string {
     return "-";
   }
   return new Date(value * 1000).toISOString();
+}
+
+function shortId(value: string): string {
+  return value.length <= 14 ? value : `${value.slice(0, 14)}...`;
 }
 
 function errorMessage(error: unknown): string {

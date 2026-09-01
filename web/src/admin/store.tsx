@@ -64,7 +64,33 @@ export interface ClientState {
   readonly discoveryResults: readonly GitHubDiscoveryResult[];
   readonly rateLimitRemaining: string | null;
   readonly incompleteResults: boolean;
+  readonly transportStatus: string;
+  readonly transportStatusClass: StatusClass;
+  readonly transportRunning: boolean;
+  readonly relayEndpointUri: string;
+  readonly relaySource: string;
+  readonly alicePeerId: string;
+  readonly bobPeerId: string;
+  readonly relayAckCount: number;
+  readonly peerReceiptCount: number;
+  readonly pendingCount: number;
+  readonly unavailableCount: number;
+  readonly transportEvents: readonly string[];
 }
+
+export type ClientTransportStatePatch = Partial<Pick<ClientState,
+  "transportStatus" |
+  "transportStatusClass" |
+  "transportRunning" |
+  "relayEndpointUri" |
+  "relaySource" |
+  "alicePeerId" |
+  "bobPeerId" |
+  "relayAckCount" |
+  "peerReceiptCount" |
+  "pendingCount" |
+  "unavailableCount"
+>>;
 
 export interface TransformLabState {
   readonly selectedPresetId: string;
@@ -127,6 +153,9 @@ export interface AdminActions {
     incompleteResults: boolean
   ) => void;
   readonly setClientDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
+  readonly setClientTransportState: (patch: ClientTransportStatePatch) => void;
+  readonly appendClientTransportEvent: (event: string) => void;
+  readonly resetClientTransport: () => void;
 }
 
 export type AdminStore = AdminState & AdminActions;
@@ -212,7 +241,19 @@ function createAdminStore(): AdminStoreApi {
       discoveryQuery: githubDiscoveryDefaultQuery,
       discoveryResults: [],
       rateLimitRemaining: null,
-      incompleteResults: false
+      incompleteResults: false,
+      transportStatus: "idle",
+      transportStatusClass: "status-warn",
+      transportRunning: false,
+      relayEndpointUri: "",
+      relaySource: "",
+      alicePeerId: "",
+      bobPeerId: "",
+      relayAckCount: 0,
+      peerReceiptCount: 0,
+      pendingCount: 0,
+      unavailableCount: 0,
+      transportEvents: []
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
     setRibbonTab: (tab) => { set({ ribbonTab: tab }); },
@@ -402,6 +443,38 @@ function createAdminStore(): AdminStoreApi {
           ...state.client,
           discoveryStatus,
           discoveryStatusClass
+        }
+      })); },
+    setClientTransportState: (patch) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          ...patch
+        }
+      })); },
+    appendClientTransportEvent: (event) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          transportEvents: [event, ...state.client.transportEvents].slice(0, 12)
+        }
+      })); },
+    resetClientTransport: () =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          transportStatus: "idle",
+          transportStatusClass: "status-warn",
+          transportRunning: false,
+          relayEndpointUri: "",
+          relaySource: "",
+          alicePeerId: "",
+          bobPeerId: "",
+          relayAckCount: 0,
+          peerReceiptCount: 0,
+          pendingCount: 0,
+          unavailableCount: 0,
+          transportEvents: []
         }
       })); }
   }));
