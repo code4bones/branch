@@ -367,7 +367,15 @@ label {
   grid-template-columns: minmax(280px, 0.36fr) minmax(480px, 1fr);
 }
 
+.relay-monitor-tool {
+  grid-template-columns: minmax(280px, 0.36fr) minmax(520px, 1fr);
+}
+
 .client-summary {
+  align-self: start;
+}
+
+.relay-monitor-summary {
   align-self: start;
 }
 
@@ -407,6 +415,10 @@ label {
   grid-template-columns: minmax(0, 0.24fr) minmax(0, 0.24fr) minmax(0, 0.52fr);
 }
 
+.relay-monitor-diagnostics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .client-event-log {
   display: grid;
   gap: 6px;
@@ -425,7 +437,8 @@ label {
   overflow-x: auto;
 }
 
-.github-discovery-results table {
+.github-discovery-results table,
+.relay-monitor-results table {
   width: 100%;
   min-width: 1120px;
   border-collapse: collapse;
@@ -433,7 +446,9 @@ label {
 }
 
 .github-discovery-results th,
-.github-discovery-results td {
+.github-discovery-results td,
+.relay-monitor-results th,
+.relay-monitor-results td {
   padding: 10px;
   border-bottom: 1px solid var(--admin-line);
   text-align: left;
@@ -442,12 +457,25 @@ label {
   font-size: 0.82rem;
 }
 
-.github-discovery-results th {
+.github-discovery-results th,
+.relay-monitor-results th {
   color: var(--admin-muted);
 }
 
 .github-discovery-results a {
   color: var(--admin-cyan);
+}
+
+.relay-monitor-results {
+  overflow-x: auto;
+}
+
+.relay-monitor-results table {
+  min-width: 980px;
+}
+
+.relay-monitor-results tr.is-missing td {
+  color: var(--admin-muted);
 }
 
 .record-validation {
@@ -563,7 +591,8 @@ label {
   }
 
   .client-transport-diagnostics,
-  .client-peer-diagnostics {
+  .client-peer-diagnostics,
+  .relay-monitor-diagnostics {
     grid-template-columns: 1fr;
   }
 

@@ -4,6 +4,7 @@ import { AdminStoreProvider, useAdminStore } from "./store.js";
 import { ClientTool } from "./components/ClientTool.js";
 import { GitHubTool } from "./components/GitHubTool.js";
 import { GitLabTool } from "./components/GitLabTool.js";
+import { RelayMonitorTool } from "./components/RelayMonitorTool.js";
 import { RibbonTool } from "./components/RibbonTool.js";
 
 export function AdminApp(): React.JSX.Element {
@@ -75,12 +76,15 @@ function AdminShell(): React.JSX.Element {
         <button className={`tab${activeTab === "gitlab" ? " is-active" : ""}`} type="button" data-tab="gitlab" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("gitlab"); }}>
           GitLab
         </button>
+        <button className={`tab${activeTab === "relays" ? " is-active" : ""}`} type="button" data-tab="relays" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("relays"); }}>
+          Relays
+        </button>
         <button className={`tab${activeTab === "client" ? " is-active" : ""}`} type="button" data-tab="client" onClick={() => { window.history.replaceState(null, "", "/admin/#client"); setActiveTab("client"); }}>
           Client
         </button>
       </section>
 
-      {activeTab === "client" ? <ClientTool /> : activeTab === "ribbon" ? <RibbonTool /> : activeTab === "gitlab" ? <GitLabTool /> : <GitHubTool />}
+      {activeTab === "client" ? <ClientTool /> : activeTab === "ribbon" ? <RibbonTool /> : activeTab === "gitlab" ? <GitLabTool /> : activeTab === "relays" ? <RelayMonitorTool /> : <GitHubTool />}
     </main>
   );
 }

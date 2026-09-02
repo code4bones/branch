@@ -7,11 +7,12 @@ import { githubDiscoveryDefaultQuery, type GitHubDiscoveryResult } from "./githu
 import type { GitHubDropInFile } from "./github-dropin.js";
 import { gitLabDiscoveryDefaultQuery, type GitLabDiscoveryResult } from "./gitlab-discovery.js";
 import type { GitLabDropInFile } from "./gitlab-dropin.js";
+import type { RelayMonitorObservation } from "./relay-monitor.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import { defaultBootstrapRelayEndpointUri } from "../protocol/v0/bootstrap-beacon.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
 
-export type AdminTab = "ribbon" | "github" | "gitlab" | "client";
+export type AdminTab = "ribbon" | "github" | "gitlab" | "relays" | "client";
 export type RibbonTab = "encode" | "decode";
 export type GitHubTab = "generate" | "check";
 export type GitLabTab = "generate" | "check";
@@ -104,6 +105,16 @@ export interface ClientState {
   readonly transportEvents: readonly string[];
 }
 
+export interface RelayMonitorState {
+  readonly adminBaseUrl: string;
+  readonly adminToken: string;
+  readonly running: boolean;
+  readonly status: string;
+  readonly statusClass: StatusClass;
+  readonly observations: readonly RelayMonitorObservation[];
+  readonly lastRefreshAt: string | null;
+}
+
 export type ClientTransportStatePatch = Partial<Pick<ClientState,
   "transportStatus" |
   "transportStatusClass" |
@@ -141,6 +152,7 @@ export interface AdminState {
   readonly transformLab: TransformLabState;
   readonly github: GitHubState;
   readonly gitlab: GitLabState;
+  readonly relayMonitor: RelayMonitorState;
   readonly client: ClientState;
 }
 
@@ -193,6 +205,11 @@ export interface AdminActions {
   readonly setGitLabDiscoveryRunning: (running: boolean) => void;
   readonly setGitLabDiscoveryResults: (results: readonly GitLabDiscoveryResult[]) => void;
   readonly setGitLabDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
+  readonly setRelayMonitorAdminBaseUrl: (adminBaseUrl: string) => void;
+  readonly setRelayMonitorAdminToken: (adminToken: string) => void;
+  readonly setRelayMonitorRunning: (running: boolean) => void;
+  readonly setRelayMonitorObservations: (observations: readonly RelayMonitorObservation[], lastRefreshAt: string) => void;
+  readonly setRelayMonitorStatus: (status: string, statusClass: StatusClass) => void;
   readonly setClientDiscoveryRunning: (running: boolean) => void;
   readonly setClientDiscoveryResults: (
     results: readonly GitHubDiscoveryResult[],
@@ -303,6 +320,15 @@ function createAdminStore(): AdminStoreApi {
       statusClass: "status-warn",
       discoveryStatus: "idle",
       discoveryStatusClass: "status-warn"
+    },
+    relayMonitor: {
+      adminBaseUrl: "/node-admin",
+      adminToken: "",
+      running: false,
+      status: "idle",
+      statusClass: "status-warn",
+      observations: [],
+      lastRefreshAt: null
     },
     client: {
       discoveryRunning: false,
@@ -619,6 +645,43 @@ function createAdminStore(): AdminStoreApi {
           ...state.gitlab,
           discoveryStatus,
           discoveryStatusClass
+        }
+      })); },
+    setRelayMonitorAdminBaseUrl: (adminBaseUrl) =>
+      { set((state) => ({
+        relayMonitor: {
+          ...state.relayMonitor,
+          adminBaseUrl
+        }
+      })); },
+    setRelayMonitorAdminToken: (adminToken) =>
+      { set((state) => ({
+        relayMonitor: {
+          ...state.relayMonitor,
+          adminToken
+        }
+      })); },
+    setRelayMonitorRunning: (running) =>
+      { set((state) => ({
+        relayMonitor: {
+          ...state.relayMonitor,
+          running
+        }
+      })); },
+    setRelayMonitorObservations: (observations, lastRefreshAt) =>
+      { set((state) => ({
+        relayMonitor: {
+          ...state.relayMonitor,
+          observations,
+          lastRefreshAt
+        }
+      })); },
+    setRelayMonitorStatus: (status, statusClass) =>
+      { set((state) => ({
+        relayMonitor: {
+          ...state.relayMonitor,
+          status,
+          statusClass
         }
       })); },
     setClientDiscoveryRunning: (discoveryRunning) =>

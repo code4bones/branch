@@ -28,6 +28,7 @@ import {
   ribbonImagePublicationTitle
 } from "../src/admin/publication-profile.js";
 import { fetchRelayBootstrapBeacon, makeRelayBootstrapBeaconUrl } from "../src/admin/relay-bootstrap.js";
+import { fetchRelayMonitorObservations, makeRelayMonitorUrl } from "../src/admin/relay-monitor.js";
 import { makeAutoDecodeBaseOptions, makeAutoDecodeCandidates, maxAutoDecodeCandidates } from "../src/admin/ribbon-auto-decode.js";
 import { handleWorkerMessage } from "../src/admin/ribbon-decode-worker.js";
 import {
@@ -212,6 +213,88 @@ void test("relay bootstrap adapter fetches protected same-origin beacon endpoint
   assert.equal(init.credentials, "omit");
   assert.equal(new Headers(init.headers).get("authorization"), "Bearer operator-token");
   assert.equal(beacon.wrapper, defaultBranchWrapper);
+});
+
+void test("relay monitor adapter fetches protected master inventory endpoint", async () => {
+  const fetched: string[] = [];
+  const inits: RequestInit[] = [];
+  const response = [{
+    relay_id: "relay01",
+    public_endpoint: "wss://relay01.undoo.ru:443/relay/v0",
+    reported_at: "2026-09-02T10:00:00Z",
+    last_seen_at: "2026-09-02T10:00:02Z",
+    expires_at: "2026-09-02T10:05:02Z",
+    stale: false,
+    snapshot: {
+      service_name: "branch-node",
+      service_version: "0.0.0-test",
+      readiness: "ready",
+      protocol_versions: ["branch/connectivity/0"],
+      capabilities: ["relay.forward.live/0"],
+      sessions_active: 2,
+      routes_active: 1,
+      presence_active: 1,
+      queue_depth: 0,
+      exporter_available: false
+    }
+  }];
+  const fetcher = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    fetched.push(fetchInputText(input));
+    if (init !== undefined) {
+      inits.push(init);
+    }
+    return Promise.resolve(jsonResponse(response));
+  };
+
+  const observations = await fetchRelayMonitorObservations({
+    adminBaseUrl: "/node-admin",
+    adminToken: "operator-token",
+    fetcher
+  });
+
+  assert.equal(makeRelayMonitorUrl("/node-admin/"), "/node-admin/relay-monitor/reports");
+  assert.equal(fetched[0], "/node-admin/relay-monitor/reports");
+  const init = inits[0];
+  assert(init !== undefined);
+  assert.equal(init.credentials, "omit");
+  assert.equal(new Headers(init.headers).get("authorization"), "Bearer operator-token");
+  const observation = observations[0];
+  assert(observation !== undefined);
+  assert.equal(observation.relay_id, "relay01");
+  assert.equal(observation.snapshot.sessions_active, 2);
+});
+
+void test("relay monitor adapter rejects forbidden and malformed responses", async () => {
+  await assert.rejects(fetchRelayMonitorObservations({
+    adminBaseUrl: "/node-admin",
+    adminToken: "operator-token",
+    fetcher: () => Promise.resolve(jsonResponse({ status: "forbidden" }, {}, 403))
+  }), /relay monitor failed \(403\)/);
+
+  await assert.rejects(fetchRelayMonitorObservations({
+    adminBaseUrl: "/node-admin",
+    adminToken: "operator-token",
+    fetcher: () => Promise.resolve(jsonResponse([{
+      relay_id: "relay01",
+      public_endpoint: "wss://relay01.undoo.ru:443/relay/v0",
+      reported_at: "2026-09-02T10:00:00Z",
+      last_seen_at: "2026-09-02T10:00:02Z",
+      expires_at: "2026-09-02T10:05:02Z",
+      stale: false,
+      snapshot: {
+        service_name: "branch-node",
+        service_version: "0.0.0-test",
+        readiness: "ready",
+        protocol_versions: ["branch/connectivity/0"],
+        capabilities: ["relay.forward.live/0"],
+        sessions_active: -1,
+        routes_active: 1,
+        presence_active: 1,
+        queue_depth: 0,
+        exporter_available: false
+      }
+    }]))
+  }), /relay monitor response rejected/);
 });
 
 void test("gitlab discovery searches public projects and reads bounded drop-in records", async () => {
