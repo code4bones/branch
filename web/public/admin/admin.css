@@ -399,26 +399,71 @@ body {
   grid-column: 1 / -1;
 }
 
-.client-tool {
-  grid-template-columns: minmax(280px, 0.36fr) minmax(480px, 1fr);
-}
-
-.relay-monitor-tool {
-  grid-template-columns: minmax(280px, 0.36fr) minmax(520px, 1fr);
+.client-layout,
+.relay-monitor-layout {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
 }
 
 .client-summary {
   align-self: start;
 }
 
+.client-discovery-controls {
+  display: grid;
+  grid-template-columns: minmax(520px, 1fr) auto minmax(220px, 0.32fr);
+  align-items: end;
+  gap: 14px;
+}
+
+.client-discovery-controls .control-row {
+  grid-template-columns: max-content minmax(240px, 1fr);
+}
+
+.client-discovery-controls > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.client-discovery-actions {
+  align-self: end;
+}
+
 .relay-monitor-summary {
   align-self: start;
+}
+
+.relay-monitor-controls {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(340px, 0.9fr) auto minmax(160px, 0.4fr);
+  align-items: end;
+  gap: 14px;
+}
+
+.relay-monitor-controls .control-row {
+  grid-template-columns: max-content minmax(180px, 1fr);
+}
+
+.relay-monitor-controls > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.relay-monitor-actions {
+  align-self: end;
+}
+
+.client-route-panel {
+  display: grid;
+  gap: 14px;
 }
 
 .client-route {
   display: grid;
   gap: 5px;
-  margin-top: 14px;
   padding: 12px;
   border: 1px solid var(--admin-line);
   border-radius: 8px;
@@ -439,8 +484,14 @@ body {
 
 .client-route-controls {
   display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 10px;
-  margin-top: 12px;
+}
+
+.client-route-controls .control-row {
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 6px;
 }
 
 .client-route-controls input,
@@ -647,6 +698,17 @@ body {
   color: var(--admin-red);
 }
 
+@media (max-width: 1200px) {
+  .client-discovery-controls,
+  .relay-monitor-controls {
+    grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+  }
+
+  .client-route-controls {
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+  }
+}
+
 @media (max-width: 880px) {
   .admin-layout {
     display: block;
@@ -680,6 +742,16 @@ body {
   .client-transport-diagnostics,
   .client-peer-diagnostics,
   .relay-monitor-diagnostics {
+    grid-template-columns: 1fr;
+  }
+
+  .relay-monitor-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .client-discovery-controls,
+  .client-route-panel,
+  .client-route-controls {
     grid-template-columns: 1fr;
   }
 

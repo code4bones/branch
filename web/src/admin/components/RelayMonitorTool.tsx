@@ -115,36 +115,38 @@ export function RelayMonitorTool(): React.JSX.Element {
   ], []);
 
   return (
-    <section className="tool-grid is-active relay-monitor-tool" data-panel="relays" aria-label="Relay inventory">
+    <section className="relay-monitor-layout" data-panel="relays" aria-label="Relay inventory">
       <section className="panel control-panel relay-monitor-summary" aria-label="Relay inventory controls">
-        <div className="control-row">
-          <label htmlFor="relay-monitor-admin-url">MASTER admin URL</label>
-          <Input
-            id="relay-monitor-admin-url"
-            name="relay-monitor-admin-url"
-            type="text"
-            value={relayMonitor.adminBaseUrl}
-            onChange={(event) => { setRelayMonitorAdminBaseUrl(event.currentTarget.value); }}
-          />
+        <div className="relay-monitor-controls">
+          <div className="control-row">
+            <label htmlFor="relay-monitor-admin-url">MASTER admin URL</label>
+            <Input
+              id="relay-monitor-admin-url"
+              name="relay-monitor-admin-url"
+              type="text"
+              value={relayMonitor.adminBaseUrl}
+              onChange={(event) => { setRelayMonitorAdminBaseUrl(event.currentTarget.value); }}
+            />
+          </div>
+          <div className="control-row">
+            <label htmlFor="relay-monitor-admin-token">Admin token</label>
+            <Input.Password
+              id="relay-monitor-admin-token"
+              name="relay-monitor-admin-token"
+              value={relayMonitor.adminToken}
+              onChange={(event) => { setRelayMonitorAdminToken(event.currentTarget.value); }}
+            />
+          </div>
+          <Space className="relay-monitor-actions" wrap>
+            <Button icon={<ReloadOutlined />} type="primary" disabled={relayMonitor.running} onClick={() => { void refresh(); }}>
+              Refresh
+            </Button>
+            <Button icon={<StopOutlined />} disabled={!relayMonitor.running} onClick={() => { abortRef.current?.abort(); }}>
+              Cancel
+            </Button>
+          </Space>
+          <p className={relayMonitor.statusClass}>{relayMonitor.status}</p>
         </div>
-        <div className="control-row">
-          <label htmlFor="relay-monitor-admin-token">Admin token</label>
-          <Input.Password
-            id="relay-monitor-admin-token"
-            name="relay-monitor-admin-token"
-            value={relayMonitor.adminToken}
-            onChange={(event) => { setRelayMonitorAdminToken(event.currentTarget.value); }}
-          />
-        </div>
-        <Space wrap>
-          <Button icon={<ReloadOutlined />} type="primary" disabled={relayMonitor.running} onClick={() => { void refresh(); }}>
-            Refresh
-          </Button>
-          <Button icon={<StopOutlined />} disabled={!relayMonitor.running} onClick={() => { abortRef.current?.abort(); }}>
-            Cancel
-          </Button>
-        </Space>
-        <p className={relayMonitor.statusClass}>{relayMonitor.status}</p>
         <dl className="diagnostics relay-monitor-diagnostics">
           <div>
             <Statistic title="Observed" value={relayMonitor.observations.length} />

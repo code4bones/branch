@@ -146,21 +146,23 @@ export function ClientTool(): React.JSX.Element {
   ], []);
 
   return (
-    <section className="tool-grid is-active client-tool" data-panel="client" aria-label="Client discovery">
+    <section className="client-layout" data-panel="client" aria-label="Client discovery">
       <section className="panel control-panel client-summary" aria-label="Client GitHub discovery controls">
-        <div className="control-row">
-          <label htmlFor="client-discovery-query">Locator</label>
-          <Input id="client-discovery-query" readOnly type="text" value={client.discoveryQuery} />
+        <div className="client-discovery-controls">
+          <div className="control-row">
+            <label htmlFor="client-discovery-query">Locator</label>
+            <Input id="client-discovery-query" readOnly type="text" value={client.discoveryQuery} />
+          </div>
+          <Space className="client-discovery-actions" wrap>
+            <Button icon={<ReloadOutlined />} type="primary" disabled={client.discoveryRunning} onClick={() => { void runDiscovery(); }}>
+              Refresh
+            </Button>
+            <Button icon={<StopOutlined />} disabled={!client.discoveryRunning} onClick={() => { abortRef.current?.abort(); }}>
+              Cancel
+            </Button>
+          </Space>
+          <p className={client.discoveryStatusClass}>{client.discoveryStatus}</p>
         </div>
-        <Space wrap>
-          <Button icon={<ReloadOutlined />} type="primary" disabled={client.discoveryRunning} onClick={() => { void runDiscovery(); }}>
-            Refresh
-          </Button>
-          <Button icon={<StopOutlined />} disabled={!client.discoveryRunning} onClick={() => { abortRef.current?.abort(); }}>
-            Cancel
-          </Button>
-        </Space>
-        <p className={client.discoveryStatusClass}>{client.discoveryStatus}</p>
         <dl className="diagnostics client-diagnostics">
           <div>
             <Statistic title="Accepted" value={sumResults(client.discoveryResults, "acceptedCount")} />
@@ -172,53 +174,55 @@ export function ClientTool(): React.JSX.Element {
             <Statistic title="Rate" value={client.rateLimitRemaining ?? "-"} />
           </div>
         </dl>
-        <div className="client-route">
-          <span>Route</span>
-          <strong>{transport.route?.endpointUri ?? "-"}</strong>
-          <small>{client.routeMode === "manual" ? "manual route material" : client.relaySource === "" ? "no accepted relay route" : client.relaySource}</small>
-        </div>
-        <div className="client-route-controls">
-          <div className="control-row">
-            <label htmlFor="client-route-mode">Route source</label>
-            <Select
-              id="client-route-mode"
-              value={client.routeMode}
-              options={[
-                { label: "Discovery", value: "discovery" },
-                { label: "Manual", value: "manual" }
-              ]}
-              onChange={(value) => { setClientRouteMode(value); }}
-            />
+        <div className="client-route-panel">
+          <div className="client-route">
+            <span>Route</span>
+            <strong>{transport.route?.endpointUri ?? "-"}</strong>
+            <small>{client.routeMode === "manual" ? "manual route material" : client.relaySource === "" ? "no accepted relay route" : client.relaySource}</small>
           </div>
-          <div className="control-row">
-            <label htmlFor="client-manual-endpoint">Endpoint</label>
-            <Input
-              id="client-manual-endpoint"
-              name="client-manual-endpoint"
-              type="text"
-              value={client.manualRelayEndpointUri}
-              onChange={(event) => { setClientManualRouteField("manualRelayEndpointUri", event.currentTarget.value); }}
-            />
-          </div>
-          <div className="control-row">
-            <label htmlFor="client-manual-relay-key">Relay public key</label>
-            <Input
-              id="client-manual-relay-key"
-              name="client-manual-relay-key"
-              type="text"
-              value={client.manualRelayPublicKey}
-              onChange={(event) => { setClientManualRouteField("manualRelayPublicKey", event.currentTarget.value); }}
-            />
-          </div>
-          <div className="control-row">
-            <label htmlFor="client-manual-profile">Profile</label>
-            <Input
-              id="client-manual-profile"
-              name="client-manual-profile"
-              type="text"
-              value={client.manualProfileMultihash}
-              onChange={(event) => { setClientManualRouteField("manualProfileMultihash", event.currentTarget.value); }}
-            />
+          <div className="client-route-controls">
+            <div className="control-row">
+              <label htmlFor="client-route-mode">Route source</label>
+              <Select
+                id="client-route-mode"
+                value={client.routeMode}
+                options={[
+                  { label: "Discovery", value: "discovery" },
+                  { label: "Manual", value: "manual" }
+                ]}
+                onChange={(value) => { setClientRouteMode(value); }}
+              />
+            </div>
+            <div className="control-row">
+              <label htmlFor="client-manual-endpoint">Endpoint</label>
+              <Input
+                id="client-manual-endpoint"
+                name="client-manual-endpoint"
+                type="text"
+                value={client.manualRelayEndpointUri}
+                onChange={(event) => { setClientManualRouteField("manualRelayEndpointUri", event.currentTarget.value); }}
+              />
+            </div>
+            <div className="control-row">
+              <label htmlFor="client-manual-relay-key">Relay public key</label>
+              <Input
+                id="client-manual-relay-key"
+                name="client-manual-relay-key"
+                type="text"
+                value={client.manualRelayPublicKey}
+                onChange={(event) => { setClientManualRouteField("manualRelayPublicKey", event.currentTarget.value); }}
+              />
+            </div>
+            <div className="control-row">
+              <label htmlFor="client-manual-profile">Profile</label>
+              <Input
+                id="client-manual-profile"
+                name="client-manual-profile"
+                type="text"
+                value={client.manualProfileMultihash}
+                onChange={(event) => { setClientManualRouteField("manualProfileMultihash", event.currentTarget.value); }}
+              />
+            </div>
           </div>
         </div>
       </section>
