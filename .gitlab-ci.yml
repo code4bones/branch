@@ -30,11 +30,6 @@ web:
   script:
     - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src/web -e HOME=/tmp -e npm_config_cache=/src/web/.npm "$BRANCH_NODE_IMAGE" sh -lc 'npm ci --prefer-offline --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=120000 && npm run typecheck && npm run lint && npm test'
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - changes:
-        - web/**/*
-        - web/package-lock.json
-        - web/package.json
     - when: manual
       allow_failure: true
 
