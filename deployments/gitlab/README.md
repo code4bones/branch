@@ -19,17 +19,22 @@ deployment:
 - `branch_lc`: builder VM for Dockerized Go and web test/build jobs;
 - `branch_nd`: relay VPS for Docker Compose deploy and cleanup jobs.
 
-The current CI can run two relay instances on that same host:
+The current CI can deploy relay instances on two hosts:
 
-- `deploy:relay01`: public endpoint `relay01.undoo.ru`, NPM target port
-  `8088`;
-- `deploy:relay02`: public endpoint `relay02.undoo.ru`, NPM target port
-  `8089`.
+- `deploy:relay01`: tag `branch_nd`, public endpoint `relay01.undoo.ru`, NPM
+  target port `8088`;
+- `deploy:relay02`: tag `branch_nd`, public endpoint `relay02.undoo.ru`, NPM
+  target port `8089`;
+- `deploy:relay04`: tag `branch_lc`, public endpoint `relay04.undoo.ru`, NPM
+  target port `8092`;
+- `deploy:relay05`: tag `branch_lc`, public endpoint `relay05.undoo.ru`, NPM
+  target port `8093`.
 
-Two containers on one VPS give separate relay identities and separate live
-processes, but they remain one physical failure domain. The existing local
-`branch.undoo.ru` relay on the development machine can serve as the second
-independent host for beta checks.
+Multiple containers on one host give separate relay identities and separate
+live processes, but they remain one physical failure domain. Using both
+`branch_nd` and `branch_lc` relay deployments gives a better beta approximation
+of independent operator hosts, while the existing local `branch.undoo.ru` relay
+on the development machine can remain another test host.
 
 The deploy jobs run on the target host and operate Docker Compose locally. Test
 and build jobs run on `branch_lc` using `docker run` with `golang:1.25` and
@@ -63,8 +68,12 @@ For the two relay instances, set:
 ~~~text
 BRANCH_RELAY01_PUBLIC_ENDPOINT=wss://relay01.undoo.ru:443/relay/v0
 BRANCH_RELAY02_PUBLIC_ENDPOINT=wss://relay02.undoo.ru:443/relay/v0
+BRANCH_RELAY04_PUBLIC_ENDPOINT=wss://relay04.undoo.ru:443/relay/v0
+BRANCH_RELAY05_PUBLIC_ENDPOINT=wss://relay05.undoo.ru:443/relay/v0
 BRANCH_RELAY01_ADMIN_TOKEN=<masked protected secret>
 BRANCH_RELAY02_ADMIN_TOKEN=<masked protected secret>
+BRANCH_RELAY04_ADMIN_TOKEN=<masked protected secret>
+BRANCH_RELAY05_ADMIN_TOKEN=<masked protected secret>
 ~~~
 
 To enable beta central relay monitoring, set the MASTER node with:
@@ -110,6 +119,26 @@ Websockets Support: enabled
 SSL: existing certificate
 ~~~
 
+Configure NPM for relay04 on the `branch_lc` host:
+
+~~~text
+Domain: relay04.undoo.ru
+Forward Hostname / IP: <builder VM IP or hostname>
+Forward Port: 8092
+Websockets Support: enabled
+SSL: existing certificate
+~~~
+
+Configure NPM for relay05 on the `branch_lc` host:
+
+~~~text
+Domain: relay05.undoo.ru
+Forward Hostname / IP: <builder VM IP or hostname>
+Forward Port: 8093
+Websockets Support: enabled
+SSL: existing certificate
+~~~
+
 If CI fails with Docker socket permission errors, fix the runner host:
 
 ~~~sh
@@ -135,8 +164,12 @@ Set these in GitLab project CI/CD variables:
 | --- | --- | --- |
 | `BRANCH_RELAY01_PUBLIC_ENDPOINT` | `deploy:relay01` | Public relay URL, initially `wss://relay01.undoo.ru:443/relay/v0`. |
 | `BRANCH_RELAY02_PUBLIC_ENDPOINT` | `deploy:relay02` | Public relay URL, initially `wss://relay02.undoo.ru:443/relay/v0`. |
+| `BRANCH_RELAY04_PUBLIC_ENDPOINT` | `deploy:relay04` | Public relay URL, initially `wss://relay04.undoo.ru:443/relay/v0`. |
+| `BRANCH_RELAY05_PUBLIC_ENDPOINT` | `deploy:relay05` | Public relay URL, initially `wss://relay05.undoo.ru:443/relay/v0`. |
 | `BRANCH_RELAY01_ADMIN_TOKEN` | `deploy:relay01` | Masked and protected. Used only against the local admin listener. |
 | `BRANCH_RELAY02_ADMIN_TOKEN` | `deploy:relay02` | Masked and protected. Use a different value from relay01. |
+| `BRANCH_RELAY04_ADMIN_TOKEN` | `deploy:relay04` | Masked and protected. Use a different value from other relays. |
+| `BRANCH_RELAY05_ADMIN_TOKEN` | `deploy:relay05` | Masked and protected. Use a different value from other relays. |
 | `BRANCH_MONITOR_MASTER_URL` | relay monitor | Optional. MASTER webhook URL, usually `https://branch.undoo.ru/node-admin/relay-monitor/reports`. |
 | `BRANCH_MONITOR_PUSH_TOKEN` | relay monitor | Optional. Masked and protected. Must match MASTER `BRANCH_MONITOR_INGEST_TOKEN`. |
 
@@ -148,11 +181,16 @@ Optional variables:
 | `BRANCH_RELAY01_PROXY_BIND`, `BRANCH_RELAY02_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
 | `BRANCH_RELAY01_PROXY_PORT`, `BRANCH_RELAY02_PROXY_PORT` | `8088` / `8089` | Host port NPM forwards to. |
 | `BRANCH_RELAY01_ADMIN_HOST_PORT`, `BRANCH_RELAY02_ADMIN_HOST_PORT` | `18081` / `18082` | Loopback admin ports used by deploy checks. |
+| `BRANCH_RELAY04_GOARCH`, `BRANCH_RELAY05_GOARCH` | `amd64` | Use `arm64` for ARM builder/runtime hosts. |
+| `BRANCH_RELAY04_PROXY_BIND`, `BRANCH_RELAY05_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
+| `BRANCH_RELAY04_PROXY_PORT`, `BRANCH_RELAY05_PROXY_PORT` | `8092` / `8093` | Host port NPM forwards to. |
+| `BRANCH_RELAY04_ADMIN_HOST_PORT`, `BRANCH_RELAY05_ADMIN_HOST_PORT` | `18084` / `18085` | Loopback admin ports used by deploy checks. |
 | `BRANCH_RELAY01_MONITOR_MASTER_URL`, `BRANCH_RELAY02_MONITOR_MASTER_URL` | `BRANCH_MONITOR_MASTER_URL` | Per-relay MASTER webhook override. |
 | `BRANCH_RELAY01_MONITOR_PUSH_TOKEN`, `BRANCH_RELAY02_MONITOR_PUSH_TOKEN` | `BRANCH_MONITOR_PUSH_TOKEN` | Per-relay monitor token override. |
 | `BRANCH_RELAY01_MONITOR_RELAY_ID`, `BRANCH_RELAY02_MONITOR_RELAY_ID` | `relay01` / `relay02` | Per-relay monitor id override. |
 | `BRANCH_RELAY01_MONITOR_PUBLIC_ENDPOINT`, `BRANCH_RELAY02_MONITOR_PUBLIC_ENDPOINT` | relay public endpoint | Per-relay monitor endpoint override. |
 | `BRANCH_RELAY01_MONITOR_INTERVAL`, `BRANCH_RELAY02_MONITOR_INTERVAL` | `30s` | Per-relay monitor push interval. Minimum enforced by the node is `5s`. |
+| `BRANCH_RELAY04_MONITOR_*`, `BRANCH_RELAY05_MONITOR_*` | shared monitor values | Same per-relay monitor override pattern as relay01 and relay02. |
 | `BRANCH_DEPLOY_BASE` | `/opt/branch/relays` with sudo, `$HOME/branch/relays` without sudo | Runtime compose directory base on the deploy runner. |
 | `BRANCH_DOCKER_PRUNE_UNTIL` | `24h` | Manual cleanup age filter. |
 | `BRANCH_DOCKER_PRUNE_ALL` | `0` | Set to `1` only when manual cleanup may remove unused non-dangling images. |

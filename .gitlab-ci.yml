@@ -91,6 +91,30 @@ deploy:relay02:
   environment:
     name: relay/relay02
 
+deploy:relay04:
+  extends: .deploy_branch_node
+  tags:
+    - branch_lc
+  variables:
+    BRANCH_RELAY_NAME: relay04
+    BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY04
+    BRANCH_PROXY_PORT: "8092"
+    BRANCH_ADMIN_HOST_PORT: "18084"
+  environment:
+    name: relay/relay04
+
+deploy:relay05:
+  extends: .deploy_branch_node
+  tags:
+    - branch_lc
+  variables:
+    BRANCH_RELAY_NAME: relay05
+    BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY05
+    BRANCH_PROXY_PORT: "8093"
+    BRANCH_ADMIN_HOST_PORT: "18085"
+  environment:
+    name: relay/relay05
+
 .cleanup_docker:
   stage: cleanup
   script:
@@ -113,3 +137,13 @@ cleanup:relay02:
   extends: .cleanup_docker
   tags:
     - branch_nd
+
+cleanup:relay04:
+  extends: .cleanup_docker
+  tags:
+    - branch_lc
+
+cleanup:relay05:
+  extends: .cleanup_docker
+  tags:
+    - branch_lc
