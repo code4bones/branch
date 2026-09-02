@@ -48,8 +48,11 @@ Relay VPS prerequisites:
 - `curl`.
 - If the runner is not root, the `gitlab-runner` user can reach Docker directly
   through the `docker` group, or it can run passwordless `sudo docker`.
-- If the runner is not root, passwordless sudo for installing files under
-  `/opt/branch/relays`.
+- If the runner is root or has passwordless sudo, runtime files are installed
+  under `/opt/branch/relays` by default.
+- If the runner is not root and has no passwordless sudo, runtime files are
+  installed under `$HOME/branch/relays` by default. Set `BRANCH_DEPLOY_BASE` to
+  a different runner-writable directory if needed.
 - NPM forwards the public host to the per-relay host port with WebSocket support
   enabled.
 - Admin ports bind to loopback only: `127.0.0.1:18081` for relay01 and
@@ -119,6 +122,11 @@ when passwordless sudo allows it, but docker-group access is the simpler steady
 state for relay deploy jobs. The builder runner should use direct Docker access
 and should not host runtime relay containers.
 
+If a deploy job fails with `sudo: a password is required`, either configure
+passwordless sudo for that runner or let the script use its no-sudo default
+runtime directory under `$HOME/branch/relays`. The no-sudo path still starts the
+same Docker Compose stack and publishes the same NPM-facing ports.
+
 ## Required CI/CD variables
 
 Set these in GitLab project CI/CD variables:
@@ -145,6 +153,7 @@ Optional variables:
 | `BRANCH_RELAY01_MONITOR_RELAY_ID`, `BRANCH_RELAY02_MONITOR_RELAY_ID` | `relay01` / `relay02` | Per-relay monitor id override. |
 | `BRANCH_RELAY01_MONITOR_PUBLIC_ENDPOINT`, `BRANCH_RELAY02_MONITOR_PUBLIC_ENDPOINT` | relay public endpoint | Per-relay monitor endpoint override. |
 | `BRANCH_RELAY01_MONITOR_INTERVAL`, `BRANCH_RELAY02_MONITOR_INTERVAL` | `30s` | Per-relay monitor push interval. Minimum enforced by the node is `5s`. |
+| `BRANCH_DEPLOY_BASE` | `/opt/branch/relays` with sudo, `$HOME/branch/relays` without sudo | Runtime compose directory base on the deploy runner. |
 | `BRANCH_DOCKER_PRUNE_UNTIL` | `24h` | Manual cleanup age filter. |
 | `BRANCH_DOCKER_PRUNE_ALL` | `0` | Set to `1` only when manual cleanup may remove unused non-dangling images. |
 
@@ -155,7 +164,7 @@ Optional variables:
 3. `build:branch-node` builds `linux/amd64` and `linux/arm64` binaries on
    `branch_lc` in Docker and keeps artifacts for one day.
 4. Run `deploy:relay01` manually on `branch_nd`.
-5. The deploy job writes `/opt/branch/relays/<relay>/`, starts the compose
+5. The deploy job writes `<deploy-base>/<relay>/`, starts the compose
    project, checks `/readyz`, and creates relay beacon artifacts.
 6. Publish the generated `relay-artifacts/*-records.br0` content through the
    chosen carrier repository.

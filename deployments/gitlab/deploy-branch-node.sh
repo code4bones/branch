@@ -22,10 +22,13 @@ require_command curl
 require_command docker
 if [ "$(id -u)" = "0" ]; then
   SUDO=()
-else
-  require_command sudo
-  sudo -n true
+  INSTALL_OWNER_ARGS=(-o root -g root)
+elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
   SUDO=(sudo)
+  INSTALL_OWNER_ARGS=(-o root -g root)
+else
+  SUDO=()
+  INSTALL_OWNER_ARGS=()
 fi
 
 if docker info >/dev/null 2>&1; then
@@ -88,7 +91,13 @@ require_var BRANCH_ADMIN_TOKEN
 
 BRANCH_GOARCH="${BRANCH_GOARCH:-amd64}"
 BRANCH_PROXY_BIND="${BRANCH_PROXY_BIND:-0.0.0.0}"
-BRANCH_DEPLOY_BASE="${BRANCH_DEPLOY_BASE:-/opt/branch/relays}"
+if [ -z "${BRANCH_DEPLOY_BASE:-}" ]; then
+  if [ "${#SUDO[@]}" -gt 0 ] || [ "$(id -u)" = "0" ]; then
+    BRANCH_DEPLOY_BASE="/opt/branch/relays"
+  else
+    BRANCH_DEPLOY_BASE="${HOME}/branch/relays"
+  fi
+fi
 BRANCH_DEPLOY_DIR="${BRANCH_DEPLOY_DIR:-${BRANCH_DEPLOY_BASE}/${BRANCH_RELAY_NAME}}"
 BRANCH_COMPOSE_PROJECT="${BRANCH_COMPOSE_PROJECT:-branch-${BRANCH_RELAY_NAME//_/-}}"
 BRANCH_IMAGE_NAME="${BRANCH_IMAGE_NAME:-branch-node:${BRANCH_RELAY_NAME}-${CI_COMMIT_SHORT_SHA:-local}}"
@@ -133,11 +142,11 @@ if [ ! -x "$binary" ]; then
   exit 2
 fi
 
-"${SUDO[@]}" install -d -m 0755 -o root -g root "$BRANCH_DEPLOY_DIR"
-"${SUDO[@]}" install -m 0755 -o root -g root "$binary" "${BRANCH_DEPLOY_DIR}/branch-node"
-"${SUDO[@]}" install -m 0644 -o root -g root deployments/docker/branch-node.Dockerfile "${BRANCH_DEPLOY_DIR}/branch-node.Dockerfile"
-"${SUDO[@]}" install -m 0644 -o root -g root deployments/docker/compose.yml "${BRANCH_DEPLOY_DIR}/compose.yml"
-"${SUDO[@]}" install -m 0644 -o root -g root deployments/docker/nginx.conf "${BRANCH_DEPLOY_DIR}/nginx.conf"
+"${SUDO[@]}" install -d -m 0755 "${INSTALL_OWNER_ARGS[@]}" "$BRANCH_DEPLOY_DIR"
+"${SUDO[@]}" install -m 0755 "${INSTALL_OWNER_ARGS[@]}" "$binary" "${BRANCH_DEPLOY_DIR}/branch-node"
+"${SUDO[@]}" install -m 0644 "${INSTALL_OWNER_ARGS[@]}" deployments/docker/branch-node.Dockerfile "${BRANCH_DEPLOY_DIR}/branch-node.Dockerfile"
+"${SUDO[@]}" install -m 0644 "${INSTALL_OWNER_ARGS[@]}" deployments/docker/compose.yml "${BRANCH_DEPLOY_DIR}/compose.yml"
+"${SUDO[@]}" install -m 0644 "${INSTALL_OWNER_ARGS[@]}" deployments/docker/nginx.conf "${BRANCH_DEPLOY_DIR}/nginx.conf"
 
 compose_env_file="$(mktemp)"
 trap 'rm -f "$compose_env_file"' EXIT
@@ -154,7 +163,7 @@ chmod 0600 "$compose_env_file"
   printf 'BRANCH_MONITOR_PUSH_TOKEN=%s\n' "$BRANCH_MONITOR_PUSH_TOKEN"
   printf 'BRANCH_MONITOR_INTERVAL=%s\n' "$BRANCH_MONITOR_INTERVAL"
 } >"$compose_env_file"
-"${SUDO[@]}" install -m 0600 -o root -g root "$compose_env_file" "${BRANCH_DEPLOY_DIR}/compose.env"
+"${SUDO[@]}" install -m 0600 "${INSTALL_OWNER_ARGS[@]}" "$compose_env_file" "${BRANCH_DEPLOY_DIR}/compose.env"
 
 "${COMPOSE[@]}" --env-file "${BRANCH_DEPLOY_DIR}/compose.env" -p "$BRANCH_COMPOSE_PROJECT" -f "${BRANCH_DEPLOY_DIR}/compose.yml" up -d --build --remove-orphans
 
