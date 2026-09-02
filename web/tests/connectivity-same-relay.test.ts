@@ -15,6 +15,7 @@ import {
 import {
   runCarrierHoppingPoC
 } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
+import { runEchoRoundTrip } from "@code4bones/branch-core/connectivity/echo-client.js";
 import {
   EchoTestService,
   MultiRouteEchoTestService,
@@ -346,6 +347,93 @@ void test("multi-route echo keeps answering when one route fails", async () => {
     caller.disconnect();
     echo.stop();
   }
+});
+
+void test("client echo round trip addresses Echo contact through the first responding relay route", async () => {
+  const relayA = await FakeRelay.create();
+  const relayB = await FakeRelay.create();
+  const routeA = {
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: relayA.publicKey,
+    profileMultihash: developmentProfileMultihash
+  };
+  const routeB = {
+    endpointUri: "wss://relay-b.test:443/relay/v0",
+    relayPublicKey: relayB.publicKey,
+    profileMultihash: developmentProfileMultihash
+  };
+  const missingRoute = {
+    endpointUri: "wss://relay-missing.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 42),
+    profileMultihash: developmentProfileMultihash
+  };
+  const [echoIdentity, echoPayloadKey] = await Promise.all([
+    SameRelayTransportClient.createIdentity(),
+    createBetaPayloadKeyPair()
+  ]);
+  const contact = {
+    id: "branch.echo/0.draft",
+    label: "B.R.A.N.C.H. Echo",
+    peerId: echoIdentity.peerId,
+    hpkePublicKey: echoPayloadKey.publicKey
+  } as const;
+  const echo = new MultiRouteEchoTestService({
+    routes: [routeA, routeB],
+    keys: {
+      identity: echoIdentity,
+      payloadKey: echoPayloadKey
+    },
+    socketFactory: multiplexRelays({
+      "relay-a.test": relayA,
+      "relay-b.test": relayB
+    }),
+    heartbeatIntervalMs: 1_000
+  });
+
+  try {
+    const started = await echo.start();
+    assert.equal(started.startedRoutes.length, 2);
+
+    const report = await runEchoRoundTrip({
+      routes: [missingRoute, routeB, routeA],
+      contact,
+      body: "nearest relay echo",
+      socketFactory: multiplexRelays({
+        "relay-a.test": relayA,
+        "relay-b.test": relayB
+      }),
+      perRouteTimeoutMs: 1_000
+    });
+
+    assert.equal(report.status, "ok");
+    assert.equal(report.body, "nearest relay echo");
+    assert(["wss://relay-a.test:443/relay/v0", "wss://relay-b.test:443/relay/v0"].includes(report.route.endpointUri));
+    assert(report.latencyMs >= 0);
+  } finally {
+    echo.stop();
+  }
+});
+
+void test("client echo round trip bounds route candidates", async () => {
+  assert.deepEqual(await runEchoRoundTrip({
+    routes: [],
+    body: "hello"
+  }), {
+    status: "failed",
+    reason: "no_routes",
+    attempts: []
+  });
+  await assert.rejects(
+    runEchoRoundTrip({
+      routes: Array.from({ length: 9 }, (_, index) => ({
+        endpointUri: `wss://relay-${String(index)}.test:443/relay/v0`,
+        relayPublicKey: fixedToken(32, index + 1),
+        profileMultihash: developmentProfileMultihash
+      })),
+      body: "hello"
+    }),
+    /too many echo routes/u
+  );
 });
 
 void test("client transport route uses validated bootstrap observations only", () => {

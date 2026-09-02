@@ -21,6 +21,22 @@ Public contact:
 The same public record is served by the web build at
 `/.well-known/branch/echo.json`.
 
+Client-side beta check:
+
+```ts
+import { runEchoRoundTrip } from "@code4bones/branch-core";
+
+const report = await runEchoRoundTrip({
+  routes,
+  body: "hello Echo"
+});
+```
+
+The client supplies validated relay routes from normal discovery/transport
+policy. The helper races bounded route attempts and returns the first route that
+actually echoes the message, which is the current beta meaning of "nearest"
+without introducing a relay directory or global location service.
+
 Runtime private material is operator-local and must not be committed. The local
 development key file is `.runtime/branch-echo.local.json`.
 
