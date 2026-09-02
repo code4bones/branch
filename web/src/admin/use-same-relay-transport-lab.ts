@@ -46,6 +46,8 @@ interface AdminDiscoveryRouteResult {
   readonly records: readonly AdminDiscoveryRouteRecord[];
 }
 
+const liveRelayPropagationWaitMs = 500;
+
 export function useSameRelayTransportLab(): SameRelayTransportLab {
   const clientState = useAdminStore((state) => state.client);
   const setClientTransportState = useAdminStore((state) => state.setClientTransportState);
@@ -140,6 +142,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
       await Promise.all([alice.attach(), bob.attach()]);
       bob.announcePresence();
       bob.heartbeat();
+      await sleep(liveRelayPropagationWaitMs);
       alice.lookup(bob.peerId);
       alice.rendezvous(bob.peerId);
       setClientTransportState({
@@ -214,6 +217,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
       await bob.reconnect();
       bob.announcePresence();
       bob.heartbeat();
+      await sleep(liveRelayPropagationWaitMs);
       alice.rendezvous(bob.peerId);
       alice.retryPending();
       setClientTransportState({
