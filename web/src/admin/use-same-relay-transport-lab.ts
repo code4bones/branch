@@ -279,7 +279,15 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
         relayAckCount: report.transport.relayAckCount,
         peerReceiptCount: report.transport.peerReceiptCount,
         pendingCount: report.transport.pendingCount,
-        unavailableCount: report.transport.unavailableCount
+        unavailableCount: report.transport.unavailableCount,
+        federationTrace: {
+          events: report.transport.trace,
+          routeSnapshot: report.routeSnapshot.map((routeSnapshot) => routeSnapshot.endpointUri),
+          routeHints: report.routeHintsSnapshot.map((routeHint) => routeHint.uri),
+          activeRoute: report.transport.activeRoute,
+          migrationRoute: report.transport.migrationRoute,
+          migrated: report.transport.migrated
+        }
       });
     } catch (error) {
       setClientTransportState({

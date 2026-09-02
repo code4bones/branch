@@ -209,6 +209,10 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /className="client-layout"/);
   assert.match(clientTool, /className="client-discovery-controls"/);
   assert.match(clientTool, /className="client-route-panel"/);
+  assert.match(clientTool, /className="federation-trace"/);
+  assert.match(clientTool, /Federation trace/);
+  assert.match(clientTool, /traceColumns/);
+  assert.match(store, /federationTrace/);
   assert.doesNotMatch(clientTool, /className="tool-grid is-active client-tool"/);
   assert.match(clientTool, /id="client-discovery-query"/);
   assert.match(clientTool, /discoverClientBootstrapBeacons/);

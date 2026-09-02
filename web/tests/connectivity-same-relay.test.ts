@@ -553,6 +553,7 @@ void test("carrier-hopping PoC reports no accepted route", async () => {
   assert.equal(report.status, "failed");
   assert.equal(report.reason, "no accepted relay route from discovery");
   assert.equal(report.migrated, false);
+  assert.equal(report.trace.length, 0);
 });
 
 void test("carrier-hopping PoC keeps delivery after carrier access stops with one route", async () => {
@@ -573,6 +574,8 @@ void test("carrier-hopping PoC keeps delivery after carrier access stops with on
   assert.equal(report.pendingCount, 0);
   assert(report.peerReceiptCount >= 1);
   assert(report.events.some((event) => event.includes("carrier.disabled delivery continued")));
+  assert(report.trace.some((event) => event.kind === "discovery" && event.label === "Primary route selected"));
+  assert(report.trace.some((event) => event.kind === "delivery" && event.label === "Carrier-off delivery completed"));
 });
 
 void test("carrier-hopping PoC migrates client-owned pending envelope to a second route", async () => {
@@ -608,6 +611,8 @@ void test("carrier-hopping PoC migrates client-owned pending envelope to a secon
   assert(report.peerReceiptCount >= 2);
   assert(report.events.some((event) => event.includes("route.unavailable pending=1")));
   assert(report.events.some((event) => event.includes("route.migration.completed")));
+  assert(report.trace.some((event) => event.kind === "unavailable" && event.pendingCount === 1));
+  assert(report.trace.some((event) => event.kind === "migration" && event.status === "ok"));
 });
 
 void test("carrier-hopping PoC uses route hints for live relay federation before migration", async () => {
@@ -648,6 +653,8 @@ void test("carrier-hopping PoC uses route hints for live relay federation before
   assert(report.peerReceiptCount >= 3);
   assert(report.events.some((event) => event.includes("route.federation.delivery completed")));
   assert(report.events.some((event) => event.includes("rendezvous") && event.includes("hints=1")));
+  assert(report.trace.some((event) => event.kind === "federation" && event.label === "Federation bridge requested"));
+  assert(report.trace.some((event) => event.kind === "federation" && event.status === "ok" && event.routeHintCount === 1));
 });
 
 void test("discovered carrier-hop runner snapshots generic observations before transport", async () => {
@@ -706,6 +713,8 @@ void test("discovered carrier-hop runner snapshots generic observations before t
   assert.equal(report.transport.migrated, true);
   assert.equal(report.transport.unavailableCount, 1);
   assert(report.transport.events.some((event) => event.includes("route.federation.delivery completed")));
+  assert(report.transport.trace.some((event) => event.kind === "federation" && event.status === "ok"));
+  assert(report.transport.trace.some((event) => event.kind === "migration" && event.status === "ok"));
 });
 
 void test("beacon observation route snapshot dedupes without carrier-specific result shapes", () => {

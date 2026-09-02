@@ -9,6 +9,7 @@ import { gitLabDiscoveryDefaultQuery, type GitLabDiscoveryResult } from "./gitla
 import type { GitLabDropInFile } from "./gitlab-dropin.js";
 import type { RelayMonitorObservation } from "./relay-monitor.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
+import type { CarrierHoppingTraceEvent } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
 import { defaultBootstrapRelayEndpointUri } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
 import { developmentProfileMultihash } from "@code4bones/branch-core/protocol/v0/profile.js";
 import type { LoadedBrowserImage } from "@code4bones/branch-core/visual/canvas-image.js";
@@ -108,6 +109,16 @@ export interface ClientState {
   readonly pendingCount: number;
   readonly unavailableCount: number;
   readonly transportEvents: readonly string[];
+  readonly federationTrace: ClientFederationTraceState;
+}
+
+export interface ClientFederationTraceState {
+  readonly events: readonly CarrierHoppingTraceEvent[];
+  readonly routeSnapshot: readonly string[];
+  readonly routeHints: readonly string[];
+  readonly activeRoute: string | null;
+  readonly migrationRoute: string | null;
+  readonly migrated: boolean;
 }
 
 export interface RelayMonitorState {
@@ -131,7 +142,8 @@ export type ClientTransportStatePatch = Partial<Pick<ClientState,
   "relayAckCount" |
   "peerReceiptCount" |
   "pendingCount" |
-  "unavailableCount"
+  "unavailableCount" |
+  "federationTrace"
 >>;
 
 export interface TransformLabState {
@@ -363,7 +375,15 @@ function createAdminStore(): AdminStoreApi {
       peerReceiptCount: 0,
       pendingCount: 0,
       unavailableCount: 0,
-      transportEvents: []
+      transportEvents: [],
+      federationTrace: {
+        events: [],
+        routeSnapshot: [],
+        routeHints: [],
+        activeRoute: null,
+        migrationRoute: null,
+        migrated: false
+      }
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
     setRibbonTab: (tab) => { set({ ribbonTab: tab }); },
@@ -765,7 +785,15 @@ function createAdminStore(): AdminStoreApi {
           peerReceiptCount: 0,
           pendingCount: 0,
           unavailableCount: 0,
-          transportEvents: []
+          transportEvents: [],
+          federationTrace: {
+            events: [],
+            routeSnapshot: [],
+            routeHints: [],
+            activeRoute: null,
+            migrationRoute: null,
+            migrated: false
+          }
         }
       })); }
   }));

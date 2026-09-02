@@ -3,6 +3,7 @@ import { Button, Input, Select, Space, Statistic, Table, Tag, type TableColumnsT
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discovery/client.js";
+import type { CarrierHoppingTraceEvent, CarrierHoppingTraceStatus } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
 import {
   createGitHubSearchCarrier,
   gitHubReportsFromCarrierReports,
@@ -16,6 +17,7 @@ import { useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
 export function ClientTool(): React.JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
   const [resultSearch, setResultSearch] = useState("");
+  const [traceSearch, setTraceSearch] = useState("");
   const client = useAdminStore((state) => state.client);
   const setClientDiscoveryRunning = useAdminStore((state) => state.setClientDiscoveryRunning);
   const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
@@ -75,6 +77,74 @@ export function ClientTool(): React.JSX.Element {
   }, [runDiscovery]);
 
   const discoveryRows = useMemo(() => filterDiscoveryResults(client.discoveryResults, resultSearch), [client.discoveryResults, resultSearch]);
+  const traceRows = useMemo(() => filterTraceEvents(client.federationTrace.events, traceSearch), [client.federationTrace.events, traceSearch]);
+  const traceAlice = useMemo(() => tracePeerPreview(client.federationTrace.events, "Alice", client.alicePeerId), [client.alicePeerId, client.federationTrace.events]);
+  const traceBob = useMemo(() => tracePeerPreview(client.federationTrace.events, "Bob", client.bobPeerId), [client.bobPeerId, client.federationTrace.events]);
+  const traceColumns = useMemo<TableColumnsType<CarrierHoppingTraceEvent>>(() => [
+    {
+      title: "Time",
+      dataIndex: "atMs",
+      key: "atMs",
+      width: 86,
+      sorter: (left, right) => left.atMs - right.atMs,
+      render: (value: number) => `${String(value)} ms`
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      width: 96,
+      sorter: (left, right) => left.status.localeCompare(right.status),
+      render: (value: CarrierHoppingTraceStatus) => <Tag color={traceStatusColor(value)}>{value}</Tag>
+    },
+    {
+      title: "Step",
+      dataIndex: "label",
+      key: "label",
+      sorter: (left, right) => left.label.localeCompare(right.label),
+      render: (value: string, event) => (
+        <Space direction="vertical" size={2}>
+          <span>{value}</span>
+          <span className="table-muted">{event.kind}{event.side === undefined ? "" : ` / ${event.side}`}</span>
+        </Space>
+      )
+    },
+    {
+      title: "Route",
+      dataIndex: "route",
+      key: "route",
+      sorter: (left, right) => (left.route ?? "").localeCompare(right.route ?? ""),
+      render: (value: string | undefined) => <span className="mono-cell">{value ?? "-"}</span>
+    },
+    {
+      title: "Ids",
+      key: "ids",
+      render: (_, event) => (
+        <Space direction="vertical" size={2}>
+          <span className="mono-cell">peer {event.peerIdPreview ?? "-"}</span>
+          <span className="mono-cell">route {event.routeIdPreview ?? "-"}</span>
+          <span className="mono-cell">delivery {event.deliveryIdPreview ?? "-"}</span>
+        </Space>
+      )
+    },
+    {
+      title: "Counters",
+      key: "counters",
+      width: 130,
+      render: (_, event) => (
+        <Space direction="vertical" size={2}>
+          <span>hints {String(event.routeHintCount ?? 0)}</span>
+          <span>pending {String(event.pendingCount ?? 0)}</span>
+        </Space>
+      )
+    },
+    {
+      title: "Detail",
+      dataIndex: "detail",
+      key: "detail",
+      render: (value: string | undefined) => <span className="table-muted">{value ?? "-"}</span>
+    }
+  ], []);
   const discoveryColumns = useMemo<TableColumnsType<GitHubDiscoveryResult>>(() => [
     {
       title: "Repository",
@@ -301,6 +371,51 @@ export function ClientTool(): React.JSX.Element {
             <dd>{client.relayEndpointUri === "" ? "-" : client.relayEndpointUri}</dd>
           </div>
         </dl>
+
+        <section className="federation-trace" aria-label="Federation trace">
+          <div className="section-heading">
+            <h2>Federation trace</h2>
+            <p className={client.federationTrace.migrated ? "status-good" : "status-warn"}>
+              {federationTraceStatus(client.federationTrace.migrated, client.federationTrace.events.length)}
+            </p>
+          </div>
+          <div className="federation-path" aria-label="Current relay path">
+            <TraceNode label="Alice" value={traceAlice} tone="client" />
+            <TraceEdge label="attach" />
+            <TraceNode label="Active relay" value={client.federationTrace.activeRoute ?? client.relayEndpointUri} tone="relay" />
+            <TraceEdge label={client.federationTrace.migrated ? "migrate" : "bridge"} />
+            <TraceNode label="Next relay" value={client.federationTrace.migrationRoute ?? "-"} tone={client.federationTrace.migrated ? "relay" : "muted"} />
+            <TraceEdge label="deliver" />
+            <TraceNode label="Bob" value={traceBob} tone="client" />
+          </div>
+          <div className="federation-route-tags" aria-label="Validated relay routes">
+            {client.federationTrace.routeSnapshot.length === 0 ? <Tag>No route snapshot</Tag> : client.federationTrace.routeSnapshot.map((route) => (
+              <Tag className="route-tag" color={route === client.federationTrace.activeRoute || route === client.federationTrace.migrationRoute ? "blue" : "default"} key={route}>
+                {route}
+              </Tag>
+            ))}
+            {client.federationTrace.routeHints.length === 0 ? <Tag>No route hints</Tag> : client.federationTrace.routeHints.map((routeHint, index) => (
+              <Tag className="route-tag" color="purple" key={`hint-${String(index)}-${routeHint}`}>
+                hint {routeHint}
+              </Tag>
+            ))}
+          </div>
+          <Input.Search
+            allowClear
+            className="trace-search"
+            placeholder="Search trace"
+            value={traceSearch}
+            onChange={(event) => { setTraceSearch(event.currentTarget.value); }}
+          />
+          <Table
+            columns={traceColumns}
+            dataSource={traceRows}
+            pagination={{ pageSize: 8, showSizeChanger: true }}
+            rowKey="id"
+            scroll={{ x: 1040 }}
+            size="small"
+          />
+        </section>
         <ol className="client-event-log" aria-label="Transport events">
           {client.transportEvents.map((event, index) => (
             <li key={`${String(index)}-${event}`}>{event}</li>
@@ -308,6 +423,25 @@ export function ClientTool(): React.JSX.Element {
         </ol>
       </section>
     </section>
+  );
+}
+
+type TraceNodeTone = "client" | "relay" | "muted";
+
+function TraceNode({ label, value, tone }: { readonly label: string; readonly value: string; readonly tone: TraceNodeTone }): React.JSX.Element {
+  return (
+    <div className={`federation-node is-${tone}`}>
+      <span>{label}</span>
+      <strong>{value === "" ? "-" : value}</strong>
+    </div>
+  );
+}
+
+function TraceEdge({ label }: { readonly label: string }): React.JSX.Element {
+  return (
+    <div className="federation-edge">
+      <span>{label}</span>
+    </div>
   );
 }
 
@@ -329,6 +463,52 @@ function filterDiscoveryResults(results: readonly GitHubDiscoveryResult[], query
     firstAcceptedValue(result.records, "profileMultihash") ?? "",
     ...result.records.map((record) => `${record.validation} ${record.reason} ${record.wrapperPreview}`)
   ].some((value) => value.toLowerCase().includes(needle)));
+}
+
+function filterTraceEvents(events: readonly CarrierHoppingTraceEvent[], query: string): readonly CarrierHoppingTraceEvent[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return events;
+  }
+  return events.filter((event) => [
+    event.kind,
+    event.status,
+    event.label,
+    event.side ?? "",
+    event.route ?? "",
+    event.routeIdPreview ?? "",
+    event.peerIdPreview ?? "",
+    event.deliveryIdPreview ?? "",
+    event.detail ?? ""
+  ].some((value) => value.toLowerCase().includes(needle)));
+}
+
+function tracePeerPreview(events: readonly CarrierHoppingTraceEvent[], side: "Alice" | "Bob", fallbackPeerId: string): string {
+  if (fallbackPeerId !== "") {
+    return shortId(fallbackPeerId);
+  }
+  const peerEvent = events.find((event) => event.side === side && event.peerIdPreview !== undefined);
+  return peerEvent?.peerIdPreview ?? "-";
+}
+
+function traceStatusColor(status: CarrierHoppingTraceStatus): string {
+  switch (status) {
+    case "ok":
+      return "green";
+    case "pending":
+      return "gold";
+    case "warn":
+      return "orange";
+    case "failed":
+      return "red";
+  }
+}
+
+function federationTraceStatus(migrated: boolean, eventCount: number): string {
+  if (eventCount === 0) {
+    return "no trace yet";
+  }
+  return migrated ? "migration observed" : "route observed";
 }
 
 function textValue(result: GitHubDiscoveryResult, key: "relayEndpoint" | "profileMultihash" | "senderPublicKey"): string {

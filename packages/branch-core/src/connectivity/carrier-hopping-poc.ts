@@ -25,11 +25,44 @@ export interface CarrierHoppingPoCReport {
   readonly activeRoute: string | null;
   readonly migrationRoute: string | null;
   readonly migrated: boolean;
+  readonly trace: readonly CarrierHoppingTraceEvent[];
   readonly relayAckCount: number;
   readonly peerReceiptCount: number;
   readonly unavailableCount: number;
   readonly pendingCount: number;
   readonly events: readonly string[];
+}
+
+export type CarrierHoppingTraceKind =
+  | "discovery"
+  | "attach"
+  | "presence"
+  | "rendezvous"
+  | "federation"
+  | "delivery"
+  | "ack"
+  | "unavailable"
+  | "retry"
+  | "migration"
+  | "disconnect"
+  | "error";
+
+export type CarrierHoppingTraceStatus = "pending" | "ok" | "warn" | "failed";
+
+export interface CarrierHoppingTraceEvent {
+  readonly id: string;
+  readonly atMs: number;
+  readonly kind: CarrierHoppingTraceKind;
+  readonly status: CarrierHoppingTraceStatus;
+  readonly label: string;
+  readonly side?: "Alice" | "Bob";
+  readonly route?: string;
+  readonly routeIdPreview?: string;
+  readonly peerIdPreview?: string;
+  readonly deliveryIdPreview?: string;
+  readonly routeHintCount?: number;
+  readonly pendingCount?: number;
+  readonly detail?: string;
 }
 
 export interface CarrierHoppingPoCOptions {
@@ -57,6 +90,7 @@ interface CarrierHoppingCounters {
 
 const maxRoutes = 4;
 const maxEventCount = 32;
+const maxTraceEventCount = 96;
 const defaultStepTimeoutMs = 3_000;
 const defaultRelayPropagationWaitMs = 250;
 const defaultStreamID = 0;
@@ -65,6 +99,9 @@ const defaultPathEpoch = 0;
 export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): Promise<CarrierHoppingPoCReport> {
   const routes = options.routes.slice(0, maxRoutes);
   const events: string[] = [];
+  const trace: CarrierHoppingTraceEvent[] = [];
+  const startedAt = Date.now();
+  let traceSequence = 0;
   const counters: CarrierHoppingCounters = {
     relayAckCount: 0,
     peerReceiptCount: 0,
@@ -77,13 +114,23 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
     }
     options.onEvent?.(event);
   };
+  const recordTrace = (event: Omit<CarrierHoppingTraceEvent, "id" | "atMs">): void => {
+    trace.push({
+      id: `trace-${String(++traceSequence)}`,
+      atMs: Date.now() - startedAt,
+      ...event
+    });
+    if (trace.length > maxTraceEventCount) {
+      trace.shift();
+    }
+  };
 
   if (routes.length === 0) {
-    return makeReport("failed", "no accepted relay route from discovery", null, null, false, counters, 0, events);
+    return makeReport("failed", "no accepted relay route from discovery", null, null, false, trace, counters, 0, events);
   }
   const primaryRoute = routes[0];
   if (primaryRoute === undefined) {
-    return makeReport("failed", "no accepted relay route from discovery", null, null, false, counters, 0, events);
+    return makeReport("failed", "no accepted relay route from discovery", null, null, false, trace, counters, 0, events);
   }
   const routeHints = options.routeHints ?? [];
 
@@ -99,11 +146,32 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
 
   try {
     record(`route.selected ${routeLabel(primaryRoute)}`);
-    activePair = await attachPair(primaryRoute, undefined, [], [], aliceIdentity, bobIdentity, bobPayloadKey, options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
+    recordTrace({
+      kind: "discovery",
+      status: "ok",
+      label: "Primary route selected",
+      route: routeLabel(primaryRoute),
+      detail: `${String(routes.length)} route candidates, ${String(routeHints.length)} route hints`
+    });
+    activePair = await attachPair(primaryRoute, undefined, [], [], aliceIdentity, bobIdentity, bobPayloadKey, options.socketFactory, options.crypto, relayPropagationWaitMs, record, recordTrace, counters);
     record("carrier.disabled discovery snapshot retained");
+    recordTrace({
+      kind: "discovery",
+      status: "ok",
+      label: "Carrier disabled",
+      route: routeLabel(primaryRoute),
+      detail: "Transport continues from the retained validated route snapshot"
+    });
     const carrierOffDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "carrier disabled opaque payload", options.crypto);
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === carrierOffDeliveryId, timeoutMs);
     record("carrier.disabled delivery continued");
+    recordTrace({
+      kind: "delivery",
+      status: "ok",
+      label: "Carrier-off delivery completed",
+      route: routeLabel(primaryRoute),
+      deliveryIdPreview: shortId(carrierOffDeliveryId)
+    });
 
     if (routes.length < 2) {
       return makeReport(
@@ -112,6 +180,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
         routeLabel(primaryRoute),
         null,
         false,
+        trace,
         counters,
         activePair.alice.pendingCount,
         events
@@ -125,6 +194,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
         routeLabel(primaryRoute),
         null,
         false,
+        trace,
         counters,
         activePair.alice.pendingCount,
         events
@@ -137,6 +207,13 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
       activePair.alice.disconnect();
       activePair.bob.disconnect();
       record(`route.federation.started ${routeLabel(primaryRoute)} -> ${routeLabel(secondaryRoute)}`);
+      recordTrace({
+        kind: "federation",
+        status: "pending",
+        label: "Federation bridge requested",
+        route: `${routeLabel(primaryRoute)} -> ${routeLabel(secondaryRoute)}`,
+        routeHintCount: federatedRouteHints.length
+      });
       activePair = await attachPair(
         primaryRoute,
         secondaryRoute,
@@ -149,11 +226,20 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
         options.crypto,
         relayPropagationWaitMs,
         record,
+        recordTrace,
         counters
       );
       const federatedDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "route-hinted federation opaque payload", options.crypto);
       await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === federatedDeliveryId, timeoutMs);
       record("route.federation.delivery completed");
+      recordTrace({
+        kind: "federation",
+        status: "ok",
+        label: "Federated delivery completed",
+        route: `${routeLabel(primaryRoute)} -> ${routeLabel(secondaryRoute)}`,
+        deliveryIdPreview: shortId(federatedDeliveryId),
+        routeHintCount: federatedRouteHints.length
+      });
     }
 
     activePair.bob.disconnect();
@@ -162,15 +248,39 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
     await waitForEvent(activePair.events, (event) => event.type === "peer_unavailable", timeoutMs);
     pendingAfterUnavailable = activePair.alice.exportPendingEnvelopes();
     record(`route.unavailable pending=${String(pendingAfterUnavailable.length)}`);
+    recordTrace({
+      kind: "unavailable",
+      status: "warn",
+      label: "Active route unavailable",
+      route: routeLabel(primaryRoute),
+      deliveryIdPreview: shortId(migrationDeliveryId),
+      pendingCount: pendingAfterUnavailable.length,
+      detail: "Sender kept retry state locally"
+    });
     activePair.unsubscribe();
     activePair.alice.disconnect();
     activePair.bob.disconnect();
 
     record(`route.migration.started ${routeLabel(secondaryRoute)}`);
-    activePair = await attachPair(secondaryRoute, undefined, [], pendingAfterUnavailable, aliceIdentity, bobIdentity, bobPayloadKey, options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
+    recordTrace({
+      kind: "migration",
+      status: "pending",
+      label: "Migration started",
+      route: routeLabel(secondaryRoute),
+      pendingCount: pendingAfterUnavailable.length
+    });
+    activePair = await attachPair(secondaryRoute, undefined, [], pendingAfterUnavailable, aliceIdentity, bobIdentity, bobPayloadKey, options.socketFactory, options.crypto, relayPropagationWaitMs, record, recordTrace, counters);
     activePair.alice.retryPending();
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === migrationDeliveryId, timeoutMs);
     record("route.migration.completed");
+    recordTrace({
+      kind: "migration",
+      status: "ok",
+      label: "Migration completed",
+      route: routeLabel(secondaryRoute),
+      deliveryIdPreview: shortId(migrationDeliveryId),
+      pendingCount: activePair.alice.pendingCount
+    });
 
     return makeReport(
       "ok",
@@ -178,18 +288,27 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
       routeLabel(primaryRoute),
       routeLabel(secondaryRoute),
       true,
+      trace,
       counters,
       activePair.alice.pendingCount,
       events
     );
   } catch (error) {
     const secondaryRoute = routes[1];
+    recordTrace({
+      kind: "error",
+      status: "failed",
+      label: "Carrier-hop failed",
+      route: routeLabel(primaryRoute),
+      detail: errorMessage(error)
+    });
     return makeReport(
       "failed",
       errorMessage(error),
       routeLabel(primaryRoute),
       secondaryRoute === undefined ? null : routeLabel(secondaryRoute),
       false,
+      trace,
       counters,
       pendingAfterUnavailable.length,
       events
@@ -213,6 +332,7 @@ async function attachPair(
   crypto: Crypto | undefined,
   relayPropagationWaitMs: number,
   record: (event: string) => void,
+  recordTrace: (event: Omit<CarrierHoppingTraceEvent, "id" | "atMs">) => void,
   counters: CarrierHoppingCounters
 ): Promise<TransportPair> {
   const alice = new SameRelayTransportClient({
@@ -232,7 +352,7 @@ async function attachPair(
   const subscriptions = [
     alice.addEventListener((event) => {
       events.push(event);
-      recordTransportEvent("Alice", event, record, counters);
+      recordTransportEvent("Alice", event, record, recordTrace, counters);
     }),
     bob.addEventListener((event) => {
       events.push(event);
@@ -245,9 +365,17 @@ async function attachPair(
           alice.markPeerReceipt(event.deliveryId);
         }).catch((error: unknown) => {
           record(`Bob: payload rejected ${errorMessage(error)}`);
+          recordTrace({
+            kind: "error",
+            status: "failed",
+            label: "Bob rejected payload",
+            side: "Bob",
+            deliveryIdPreview: shortId(event.deliveryId),
+            detail: errorMessage(error)
+          });
         });
       }
-      recordTransportEvent("Bob", event, record, counters);
+      recordTransportEvent("Bob", event, record, recordTrace, counters);
     })
   ];
   await Promise.all([alice.attach(), bob.attach()]);
@@ -306,50 +434,141 @@ function recordTransportEvent(
   side: "Alice" | "Bob",
   event: SameRelayTransportEvent,
   record: (event: string) => void,
+  recordTrace: (event: Omit<CarrierHoppingTraceEvent, "id" | "atMs">) => void,
   counters: CarrierHoppingCounters
 ): void {
   switch (event.type) {
     case "relay_ack":
       counters.relayAckCount += 1;
       record(`${side}: relay ${event.ackType} ${shortId(event.deliveryId)}`);
+      recordTrace({
+        kind: "ack",
+        status: "ok",
+        label: event.ackType,
+        side,
+        deliveryIdPreview: shortId(event.deliveryId)
+      });
       return;
     case "peer_receipt":
       counters.peerReceiptCount += 1;
       record(`${side}: peer.received ${shortId(event.deliveryId)}`);
+      recordTrace({
+        kind: "delivery",
+        status: "ok",
+        label: "Peer receipt",
+        side,
+        deliveryIdPreview: shortId(event.deliveryId)
+      });
       return;
     case "peer_unavailable":
       counters.unavailableCount += 1;
       record(`${side}: peer_unavailable pending=${String(event.pendingCount)}`);
+      recordTrace({
+        kind: "unavailable",
+        status: "warn",
+        label: "Peer unavailable",
+        side,
+        pendingCount: event.pendingCount
+      });
       return;
     case "attached":
       record(`${side}: attached ${shortId(event.sessionId)}`);
+      recordTrace({
+        kind: "attach",
+        status: "ok",
+        label: `${side} attached`,
+        side,
+        route: event.endpointUri,
+        routeIdPreview: shortId(event.routeId)
+      });
       return;
     case "presence_announced":
       record(`${side}: presence ${shortId(event.peerId)}`);
+      recordTrace({
+        kind: "presence",
+        status: "ok",
+        label: `${side} presence`,
+        side,
+        peerIdPreview: shortId(event.peerId)
+      });
       return;
     case "heartbeat_sent":
       record(`${side}: heartbeat #${String(event.sequence)}`);
       return;
     case "lookup_requested":
       record(`${side}: lookup ${shortId(event.peerId)}`);
+      recordTrace({
+        kind: "rendezvous",
+        status: "pending",
+        label: `${side} lookup`,
+        side,
+        peerIdPreview: shortId(event.peerId)
+      });
       return;
     case "rendezvous_ready":
       record(`${side}: rendezvous ${shortId(event.routeId)}${event.routeHintCount > 0 ? ` hints=${String(event.routeHintCount)}` : ""}`);
+      recordTrace({
+        kind: event.routeHintCount > 0 ? "federation" : "rendezvous",
+        status: "ok",
+        label: event.routeHintCount > 0 ? "Rendezvous with route hints" : `${side} rendezvous`,
+        side,
+        routeIdPreview: shortId(event.routeId),
+        peerIdPreview: shortId(event.peerId),
+        routeHintCount: event.routeHintCount
+      });
       return;
     case "envelope_sent":
       record(`${side}: envelope ${shortId(event.deliveryId)}`);
+      recordTrace({
+        kind: "delivery",
+        status: "pending",
+        label: `${side} envelope sent`,
+        side,
+        routeIdPreview: shortId(event.routeId),
+        deliveryIdPreview: shortId(event.deliveryId)
+      });
       return;
     case "envelope_received":
       record(`${side}: envelope received ${shortId(event.deliveryId)}`);
+      recordTrace({
+        kind: "delivery",
+        status: "ok",
+        label: `${side} envelope received`,
+        side,
+        routeIdPreview: shortId(event.routeId),
+        ...(event.senderPeerId === null ? {} : { peerIdPreview: shortId(event.senderPeerId) }),
+        deliveryIdPreview: shortId(event.deliveryId)
+      });
       return;
     case "pending_retried":
       record(`${side}: retried ${String(event.count)}`);
+      recordTrace({
+        kind: "retry",
+        status: event.count > 0 ? "ok" : "warn",
+        label: `${side} retried pending`,
+        side,
+        pendingCount: event.count
+      });
       return;
     case "disconnected":
       record(`${side}: disconnected pending=${String(event.pendingCount)}`);
+      recordTrace({
+        kind: "disconnect",
+        status: event.pendingCount > 0 ? "warn" : "ok",
+        label: `${side} disconnected`,
+        side,
+        pendingCount: event.pendingCount
+      });
       return;
     case "error":
       record(`${side}: error ${event.message}`);
+      recordTrace({
+        kind: "error",
+        status: "failed",
+        label: `${side} transport error`,
+        side,
+        detail: event.message
+      });
       return;
   }
 }
@@ -375,6 +594,7 @@ function makeReport(
   activeRoute: string | null,
   migrationRoute: string | null,
   migrated: boolean,
+  trace: readonly CarrierHoppingTraceEvent[],
   counters: CarrierHoppingCounters,
   pendingCount: number,
   events: readonly string[]
@@ -385,6 +605,7 @@ function makeReport(
     activeRoute,
     migrationRoute,
     migrated,
+    trace,
     relayAckCount: counters.relayAckCount,
     peerReceiptCount: counters.peerReceiptCount,
     unavailableCount: counters.unavailableCount,

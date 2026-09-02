@@ -582,6 +582,98 @@ body {
   font-size: 0.84rem;
 }
 
+.federation-trace {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.federation-path {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) 76px minmax(190px, 1.2fr) 82px minmax(190px, 1.2fr) 76px minmax(120px, 0.7fr);
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+.federation-node {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  background: #0b0f14;
+}
+
+.federation-node.is-client {
+  border-color: rgba(76, 201, 240, 0.38);
+}
+
+.federation-node.is-relay {
+  border-color: rgba(112, 214, 148, 0.38);
+}
+
+.federation-node.is-muted {
+  opacity: 0.68;
+}
+
+.federation-node span,
+.federation-edge span {
+  color: var(--admin-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.federation-node strong {
+  overflow-wrap: anywhere;
+  color: var(--admin-ink);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.federation-edge {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  border-top: 1px solid var(--admin-line);
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.federation-edge::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--admin-blue), transparent);
+}
+
+.federation-edge span {
+  margin-top: 6px;
+  color: var(--admin-blue);
+}
+
+.federation-route-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.federation-route-tags .route-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-search {
+  max-width: 420px;
+}
+
 .github-discovery-results {
   overflow-x: auto;
 }
@@ -812,8 +904,15 @@ body {
   .github-discovery-controls,
   .client-discovery-controls,
   .client-route-panel,
-  .client-route-controls {
+  .client-route-controls,
+  .federation-path {
     grid-template-columns: 1fr;
+  }
+
+  .federation-edge {
+    min-height: 44px;
+    border: 0;
+    border-left: 1px solid var(--admin-line);
   }
 
   .decode-controls {
