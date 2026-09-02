@@ -171,7 +171,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /data-panel="client"/);
   assert.match(clientTool, /id="client-discovery-query"/);
   assert.match(clientTool, /discoverClientBootstrapBeacons/);
-  assert.match(clientTool, /createGitLabSearchCarrier/);
+  assert.match(clientTool, /createGitHubSearchCarrier/);
+  assert.doesNotMatch(clientTool, /createGitLabSearchCarrier|Client GitLab discovery|searching GitLab project locator/);
   assert.match(clientTool, /runCarrierHopPoC/);
   assert.match(carrierHopClient, /SearchCarrier/);
   assert.match(carrierHopClient, /BeaconObservation/);
@@ -185,6 +186,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /relayEndpoint/);
   assert.match(clientTool, /Run carrier-hop PoC/);
   assert.doesNotMatch(clientTool, /localStorage|indexedDB|WebSocket|GITHUB_TOKEN|Authorization/);
+  assert.match(transportLab, /createGitHubSearchCarrier/);
+  assert.doesNotMatch(transportLab, /createGitLabSearchCarrier|discovering GitLab route snapshot/);
   assert.match(transportLab, /createBetaPayloadKeyPair/);
   assert.match(transportLab, /sealBetaPayload/);
   assert.match(transportLab, /openBetaPayload/);

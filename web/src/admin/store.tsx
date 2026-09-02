@@ -87,7 +87,7 @@ export interface ClientState {
   readonly discoveryStatus: string;
   readonly discoveryStatusClass: StatusClass;
   readonly discoveryQuery: string;
-  readonly discoveryResults: readonly GitLabDiscoveryResult[];
+  readonly discoveryResults: readonly GitHubDiscoveryResult[];
   readonly rateLimitRemaining: string | null;
   readonly incompleteResults: boolean;
   readonly transportStatus: string;
@@ -195,7 +195,7 @@ export interface AdminActions {
   readonly setGitLabDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
   readonly setClientDiscoveryRunning: (running: boolean) => void;
   readonly setClientDiscoveryResults: (
-    results: readonly GitLabDiscoveryResult[],
+    results: readonly GitHubDiscoveryResult[],
     rateLimitRemaining: string | null,
     incompleteResults: boolean
   ) => void;
@@ -308,7 +308,7 @@ function createAdminStore(): AdminStoreApi {
       discoveryRunning: false,
       discoveryStatus: "idle",
       discoveryStatusClass: "status-warn",
-      discoveryQuery: gitLabDiscoveryDefaultQuery,
+      discoveryQuery: githubDiscoveryDefaultQuery,
       discoveryResults: [],
       rateLimitRemaining: null,
       incompleteResults: false,

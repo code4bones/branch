@@ -14,7 +14,7 @@ import {
 } from "../connectivity/payload-crypto.js";
 import { runDiscoveredCarrierHopPoC, routesFromBeaconObservations } from "../discovery/carrier-hop-client.js";
 import type { BeaconObservation } from "../discovery/client.js";
-import { createGitLabSearchCarrier, gitLabReportsFromCarrierReports, mergeGitLabDiscoveryReports } from "../discovery/gitlab.js";
+import { createGitHubSearchCarrier, gitHubReportsFromCarrierReports, mergeGitHubDiscoveryReports } from "../discovery/github.js";
 import { encodeBase64URL } from "../protocol/v0/base64url.js";
 import { protocolID } from "../protocol/v0/envelope.js";
 import { useAdminStore, type ClientTransportStatePatch } from "./store.js";
@@ -230,7 +230,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
     reset();
     setClientTransportState({
       transportRunning: true,
-      transportStatus: "discovering GitLab route snapshot",
+      transportStatus: "discovering GitHub route snapshot",
       transportStatusClass: "status-warn",
       relayEndpointUri: "",
       relaySource: "",
@@ -241,7 +241,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
     });
     try {
       const report = await runDiscoveredCarrierHopPoC({
-        carrier: createGitLabSearchCarrier(),
+        carrier: createGitHubSearchCarrier(),
         primaryQuery: clientState.discoveryQuery,
         fallbackQuery: null,
         includeFallback: false,
@@ -249,8 +249,8 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
         perPage: 5,
         page: 1,
         onDiscoveryReport: (discovery) => {
-          const gitLabReport = mergeGitLabDiscoveryReports(gitLabReportsFromCarrierReports(discovery.carrierReports));
-          setClientDiscoveryResults(gitLabReport.results, gitLabReport.rateLimitRemaining, gitLabReport.incompleteResults);
+          const gitHubReport = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
+          setClientDiscoveryResults(gitHubReport.results, gitHubReport.rateLimitRemaining, gitHubReport.incompleteResults);
           setClientDiscoveryStatus(
             `${discovery.message}; route snapshot ${String(routesFromBeaconObservations(discovery.observations).length)}`,
             discovery.status === "ok" || discovery.status === "partial" ? "status-good" : "status-warn"
