@@ -38,6 +38,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
+    "echo": "npm run build && node scripts/run-echo-service.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

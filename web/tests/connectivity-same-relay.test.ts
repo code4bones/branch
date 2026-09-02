@@ -16,6 +16,12 @@ import {
   runCarrierHoppingPoC
 } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
 import {
+  EchoTestService,
+  betaEchoRequestType,
+  encodeEchoRequestPayload,
+  makeEchoPayloadAAD
+} from "@code4bones/branch-core/connectivity/echo-service.js";
+import {
   routeHintsFromBeaconObservations,
   routesFromBeaconObservations,
   runDiscoveredCarrierHopPoC
@@ -118,6 +124,92 @@ void test("beta HPKE payload envelope seals, opens, and rejects wrong AAD", asyn
       aad: makePayloadTestAAD("delivery-b")
     })
   );
+});
+
+void test("echo service returns the same HPKE plaintext to the attributed sender", async () => {
+  const relay = await FakeRelay.create();
+  const route = {
+    endpointUri: "wss://relay.test:443/relay/v0",
+    relayPublicKey: relay.publicKey,
+    profileMultihash: developmentProfileMultihash
+  };
+  const [callerIdentity, echoIdentity, callerPayloadKey, echoPayloadKey] = await Promise.all([
+    SameRelayTransportClient.createIdentity(),
+    SameRelayTransportClient.createIdentity(),
+    createBetaPayloadKeyPair(),
+    createBetaPayloadKeyPair()
+  ]);
+  const echoEvents: unknown[] = [];
+  const echo = new EchoTestService({
+    route,
+    keys: {
+      identity: echoIdentity,
+      payloadKey: echoPayloadKey
+    },
+    socketFactory: relay.socketFactory,
+    heartbeatIntervalMs: 1_000,
+    onEvent: (event) => {
+      echoEvents.push(event);
+    }
+  });
+  const caller = new SameRelayTransportClient({ route, identity: callerIdentity, socketFactory: relay.socketFactory });
+  const echoedPayloads: Uint8Array[] = [];
+  caller.addEventListener((event) => {
+    if (event.type !== "envelope_received") {
+      return;
+    }
+    assert.equal(event.senderPeerId, echoIdentity.peerId);
+    void openBetaPayload({
+      recipientPrivateKey: callerPayloadKey.privateKey,
+      sealedPayload: event.ciphertext,
+      aad: makeEchoPayloadAAD({
+        route,
+        senderPeerId: echoIdentity.peerId,
+        recipientPeerId: caller.peerId,
+        deliveryId: event.deliveryId
+      })
+    }).then((plaintext) => {
+      echoedPayloads.push(plaintext);
+      caller.markPeerReceipt(event.deliveryId);
+    });
+  });
+
+  try {
+    await echo.start();
+    await caller.attach();
+    caller.announcePresence();
+    caller.heartbeat();
+    await settle();
+    caller.lookup(echoIdentity.peerId);
+    caller.rendezvous(echoIdentity.peerId);
+    const plaintext = encodeEchoRequestPayload({
+      type: betaEchoRequestType,
+      replyHpkePublicKey: callerPayloadKey.publicKey,
+      body: "hello echo"
+    });
+    const deliveryId = fixedToken(16, 13);
+    const sealed = await sealBetaPayload({
+      recipientPublicKey: echoPayloadKey.publicKey,
+      plaintext,
+      aad: makeEchoPayloadAAD({
+        route,
+        senderPeerId: caller.peerId,
+        recipientPeerId: echoIdentity.peerId,
+        deliveryId
+      })
+    });
+    caller.sendSealedEnvelope(sealed, { deliveryId });
+
+    await waitFor(() => echoedPayloads.length === 1);
+
+    assert.equal(new TextDecoder().decode(echoedPayloads[0]), new TextDecoder().decode(plaintext));
+    assert(echoEvents.some((event) => isEventType(event, "request_received")));
+    assert(echoEvents.some((event) => isEventType(event, "response_sent")));
+    assert(!JSON.stringify(echoEvents).includes("hello echo"));
+  } finally {
+    caller.disconnect();
+    echo.stop();
+  }
 });
 
 void test("client transport route uses validated bootstrap observations only", () => {
@@ -802,4 +894,19 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) {
+      return;
+    }
+    await settle();
+  }
+  throw new Error("condition timed out");
+}
+
+function isEventType(value: unknown, type: string): boolean {
+  return isRecord(value) && value["type"] === type;
 }

@@ -28,6 +28,11 @@ export interface SameRelayIdentity {
   readonly privateKey: CryptoKey;
 }
 
+export interface SameRelayIdentityExport {
+  readonly publicKey: string;
+  readonly privateKeyJwk: JsonWebKey;
+}
+
 export type RelaySocketEventType = "open" | "message" | "error" | "close";
 export type RelaySocketEvent = Event | MessageEvent<unknown>;
 
@@ -155,6 +160,29 @@ export class SameRelayTransportClient {
       peerId: encodeBase64URL(publicKeyBytes),
       publicKey: encodeBase64URL(publicKeyBytes),
       privateKey: keyPair.privateKey
+    };
+  }
+
+  static async importIdentity(exported: SameRelayIdentityExport, cryptoProvider: Crypto = globalThis.crypto): Promise<SameRelayIdentity> {
+    const publicKeyBytes = decodeBase64URL(exported.publicKey);
+    if (publicKeyBytes.byteLength !== 32) {
+      throw new Error("invalid same-relay identity public key");
+    }
+    const privateKeyJwk = { ...exported.privateKeyJwk };
+    if (privateKeyJwk.kty !== "OKP" || privateKeyJwk.crv !== "Ed25519" || privateKeyJwk.x !== exported.publicKey) {
+      throw new Error("invalid same-relay identity private key");
+    }
+    const privateKey = await cryptoProvider.subtle.importKey(
+      "jwk",
+      privateKeyJwk,
+      "Ed25519",
+      false,
+      ["sign"]
+    );
+    return {
+      peerId: exported.publicKey,
+      publicKey: exported.publicKey,
+      privateKey
     };
   }
 

@@ -1,0 +1,7 @@
+{
+  "id": "branch.echo/0.draft",
+  "label": "B.R.A.N.C.H. Echo",
+  "peer_id": "UEfNJ9Ty0YZOSsIvr6zzdMrEThX7wegv2fy_epiVKYQ",
+  "hpke_public_key": "Yn2kTy3rAzZGh_93cc6QR0lN1f9vEwdSkJWc_Z8OhBE",
+  "payload_type": "branch.echo.request/0.draft"
+}

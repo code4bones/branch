@@ -11,6 +11,11 @@ export interface BetaPayloadKeyPair {
   readonly privateKey: CryptoKey;
 }
 
+export interface BetaPayloadKeyExport {
+  readonly publicKey: string;
+  readonly privateKey: string;
+}
+
 export interface SealBetaPayloadOptions {
   readonly recipientPublicKey: string;
   readonly plaintext: string | Uint8Array;
@@ -47,6 +52,21 @@ export async function createBetaPayloadKeyPair(): Promise<BetaPayloadKeyPair> {
   return {
     publicKey: encodeBase64URL(new Uint8Array(publicKey)),
     privateKey: keyPair.privateKey
+  };
+}
+
+export async function exportBetaPayloadKeyPair(keyPair: BetaPayloadKeyPair): Promise<BetaPayloadKeyExport> {
+  const privateKey = await suite.kem.serializePrivateKey(keyPair.privateKey);
+  return {
+    publicKey: keyPair.publicKey,
+    privateKey: encodeBase64URL(new Uint8Array(privateKey))
+  };
+}
+
+export async function importBetaPayloadKeyPair(keyPair: BetaPayloadKeyExport): Promise<BetaPayloadKeyPair> {
+  return {
+    publicKey: keyPair.publicKey,
+    privateKey: await suite.kem.deserializePrivateKey(decodeBase64URL(keyPair.privateKey))
   };
 }
 
