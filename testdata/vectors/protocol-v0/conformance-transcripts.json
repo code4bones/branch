@@ -63,6 +63,18 @@
       ]
     },
     {
+      "name": "relay-attach-replayed-or-expired-challenge",
+      "kind": "relay_attachment_transcript",
+      "expect": "reject",
+      "selected_error": "frame_replayed",
+      "steps": [
+        "client opens WSS /relay/v0 and sends HELLO with accepted version, profile and live-forward capability",
+        "relay emits CHALLENGE with client_nonce, relay_nonce, issued_at, expires_at and transcript_hash",
+        "client reuses a stale or already consumed challenge window while sending AUTH",
+        "relay rejects before READY and creates no presence, route, mailbox, delivery queue, or message state"
+      ]
+    },
+    {
       "name": "relay-envelope-peer-unavailable",
       "kind": "relay_attachment_transcript",
       "expect": "reject",

@@ -128,10 +128,13 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	}
 	transcriptHash := challengeTranscriptHash(helloRaw, hello.SelectedOffer, hello.ClientNonce, relayNonce, handler.identity.PublicKey())
 	relayProof := handler.identity.Sign(proofInput(transcriptHash))
+	issuedAt := handler.now().Unix()
 	challenge := map[string]any{
 		"type":             "CHALLENGE",
 		"client_nonce":     base64URL(hello.ClientNonce),
 		"relay_nonce":      base64URL(relayNonce),
+		"issued_at":        issuedAt,
+		"expires_at":       issuedAt + 60,
 		"relay_public_key": handler.identity.PublicKeyString(),
 		"selected":         hello.SelectedOffer,
 		"transcript_hash":  base64URL(transcriptHash),

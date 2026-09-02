@@ -149,13 +149,24 @@ func validateHelloFrame(frame map[string]json.RawMessage) error {
 }
 
 func validateChallengeFrame(frame map[string]json.RawMessage) error {
-	if err := rejectUnknownRawKeys(frame, "type", "client_nonce", "relay_nonce", "relay_public_key", "selected", "transcript_hash", "relay_proof"); err != nil {
+	if err := rejectUnknownRawKeys(frame, "type", "client_nonce", "relay_nonce", "issued_at", "expires_at", "relay_public_key", "selected", "transcript_hash", "relay_proof"); err != nil {
 		return err
 	}
 	for _, key := range []string{"client_nonce", "relay_nonce", "transcript_hash"} {
 		if err := readBase64Field(frame, key, 32); err != nil {
 			return err
 		}
+	}
+	issuedAt, err := readTimestampField(frame, "issued_at")
+	if err != nil {
+		return err
+	}
+	expiresAt, err := readTimestampField(frame, "expires_at")
+	if err != nil {
+		return err
+	}
+	if expiresAt <= issuedAt || expiresAt-issuedAt > 60 {
+		return fmt.Errorf("%w: frame_replayed", ErrInvalidRelayAttachmentFrame)
 	}
 	if err := readBase64Field(frame, "relay_public_key", 32); err != nil {
 		return err
@@ -370,15 +381,15 @@ func validateVersionOffer(offer map[string]json.RawMessage) error {
 	if err := rejectUnknownRawKeys(offer, "wire_version", "protocol", "profile_multihash", "capabilities", "required_capabilities", "extensions", "required_extensions"); err != nil {
 		return err
 	}
-	if value, err := readBoundedUintField(offer, "wire_version", 0, 0); err != nil {
+	if value, err := readBoundedUintField(offer, "wire_version", 0, MaxDraftTimestamp); err != nil {
 		return err
 	} else if value != 0 {
-		return fmt.Errorf("%w: unsupported wire_version", ErrInvalidRelayAttachmentFrame)
+		return fmt.Errorf("%w: unsupported_version", ErrInvalidRelayAttachmentFrame)
 	}
 	if protocol, err := readStringField(offer, "protocol"); err != nil {
 		return err
 	} else if protocol != ProtocolID {
-		return fmt.Errorf("%w: unsupported protocol", ErrInvalidRelayAttachmentFrame)
+		return fmt.Errorf("%w: unsupported_protocol", ErrInvalidRelayAttachmentFrame)
 	}
 	profileMultihash, err := readStringField(offer, "profile_multihash")
 	if err != nil {

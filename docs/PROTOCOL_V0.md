@@ -263,11 +263,14 @@ rejects unsupported versions, unaccepted profile hashes, and missing
 `relay.forward.live/0` before creating presence, route, mailbox, or message
 state.
 
-`CHALLENGE` contains the original `client_nonce`, a fresh `relay_nonce`, the
-relay Ed25519 public key, the selected offer, `transcript_hash`, and
-`relay_proof`. The relay public key must match the Ed25519 `sender.public_key`
-from the validated BootstrapBeacon used to choose this endpoint. TLS protects
-the transport, but it is not the B.R.A.N.C.H. relay identity.
+`CHALLENGE` contains the original `client_nonce`, a fresh `relay_nonce`,
+`issued_at`, `expires_at`, the relay Ed25519 public key, the selected offer,
+`transcript_hash`, and `relay_proof`. The relay public key must match the
+Ed25519 `sender.public_key` from the validated BootstrapBeacon used to choose
+this endpoint. TLS protects the transport, but it is not the B.R.A.N.C.H. relay
+identity. The challenge freshness window is bounded to at most 60 seconds in
+the executable draft fixtures; an expired, zero-length, or overlong challenge
+window is rejected before AUTH state is accepted.
 
 The relay proof input is domain separated:
 
@@ -284,7 +287,9 @@ same transcript once the final canonical bytes are accepted.
 
 `AUTH` mirrors the nonce and transcript binding from the client side. It does
 not authorize offline delivery, durable retry, global presence publication, or
-carrier scraping.
+carrier scraping. A client AUTH that references a mismatched, expired, replayed,
+or unknown challenge fails with an authentication or replay error and creates no
+presence, route, mailbox, or message state.
 
 `READY` returns `session_id`, `route_id`, `presence_ttl_seconds`,
 `heartbeat_interval_seconds`, and `accepted_limits`. Accepted limits include

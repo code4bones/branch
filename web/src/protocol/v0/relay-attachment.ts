@@ -129,9 +129,14 @@ function validateHello(record: Record<string, unknown>): void {
 }
 
 function validateChallenge(record: Record<string, unknown>): void {
-  rejectUnknownKeys(record, ["type", "client_nonce", "relay_nonce", "relay_public_key", "selected", "transcript_hash", "relay_proof"]);
+  rejectUnknownKeys(record, ["type", "client_nonce", "relay_nonce", "issued_at", "expires_at", "relay_public_key", "selected", "transcript_hash", "relay_proof"]);
   readBase64URLBytes(record, "client_nonce", 32);
   readBase64URLBytes(record, "relay_nonce", 32);
+  const issuedAt = readInteger(record, "issued_at");
+  const expiresAt = readInteger(record, "expires_at");
+  if (expiresAt <= issuedAt || expiresAt - issuedAt > 60) {
+    throw new RelayAttachmentError("frame_replayed");
+  }
   readBase64URLBytes(record, "relay_public_key", 32);
   readVersionOffer(readObject(record, "selected"));
   readBase64URLBytes(record, "transcript_hash", 32);
@@ -278,8 +283,12 @@ function readVersionOffer(value: unknown): void {
     throw new RelayAttachmentError("invalid version offer");
   }
   rejectUnknownKeys(value, ["wire_version", "protocol", "profile_multihash", "capabilities", "required_capabilities", "extensions", "required_extensions"]);
-  readBoundedInteger(value, "wire_version", 0, 0);
-  readLiteral(value, "protocol", protocolID);
+  if (readBoundedInteger(value, "wire_version", 0, maxDraftTimestamp) !== 0) {
+    throw new RelayAttachmentError("unsupported_version");
+  }
+  if (readString(value, "protocol") !== protocolID) {
+    throw new RelayAttachmentError("unsupported_protocol");
+  }
   if (readString(value, "profile_multihash") !== developmentProfileMultihash) {
     throw new RelayAttachmentError("profile_hash_mismatch");
   }

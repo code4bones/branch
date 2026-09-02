@@ -451,6 +451,8 @@ class FakeRelay {
       type: "CHALLENGE",
       client_nonce: clientNonce,
       relay_nonce: relayNonce,
+      issued_at: 1_789_000_001,
+      expires_at: 1_789_000_061,
       relay_public_key: this.publicKey,
       selected,
       transcript_hash: state.expected.transcriptHash,

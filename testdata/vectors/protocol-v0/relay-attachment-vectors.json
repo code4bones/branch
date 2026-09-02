@@ -39,6 +39,8 @@
         "type": "CHALLENGE",
         "client_nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         "relay_nonce": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+        "issued_at": 1789000001,
+        "expires_at": 1789000031,
         "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
         "selected": {
           "wire_version": 0,
@@ -164,6 +166,52 @@
   ],
   "invalid": [
     {
+      "name": "hello-rejects-unsupported-wire-version",
+      "expect": "reject",
+      "reason": "unsupported_version",
+      "frame": {
+        "type": "HELLO",
+        "client_nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "client_time": 1789000000,
+        "requested_role": "relay.forward.live/0",
+        "max_frame_bytes": 49152,
+        "offers": [
+          {
+            "wire_version": 1,
+            "protocol": "branch/connectivity/0",
+            "profile_multihash": "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw",
+            "capabilities": ["relay.forward.live/0", "route.relay.wss/0"],
+            "required_capabilities": ["relay.forward.live/0"],
+            "extensions": [],
+            "required_extensions": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "hello-rejects-unsupported-protocol",
+      "expect": "reject",
+      "reason": "unsupported_protocol",
+      "frame": {
+        "type": "HELLO",
+        "client_nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "client_time": 1789000000,
+        "requested_role": "relay.forward.live/0",
+        "max_frame_bytes": 49152,
+        "offers": [
+          {
+            "wire_version": 0,
+            "protocol": "branch/connectivity/9",
+            "profile_multihash": "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw",
+            "capabilities": ["relay.forward.live/0", "route.relay.wss/0"],
+            "required_capabilities": ["relay.forward.live/0"],
+            "extensions": [],
+            "required_extensions": []
+          }
+        ]
+      }
+    },
+    {
       "name": "hello-rejects-unsupported-profile",
       "expect": "reject",
       "reason": "profile_hash_mismatch",
@@ -217,6 +265,8 @@
         "type": "CHALLENGE",
         "client_nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         "relay_nonce": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+        "issued_at": 1789000001,
+        "expires_at": 1789000031,
         "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
         "selected": {
           "wire_version": 0,
@@ -229,6 +279,30 @@
         },
         "transcript_hash": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         "relay_proof": "AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    {
+      "name": "challenge-rejects-expired-replay-window",
+      "expect": "reject",
+      "reason": "frame_replayed",
+      "frame": {
+        "type": "CHALLENGE",
+        "client_nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "relay_nonce": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+        "issued_at": 1789000001,
+        "expires_at": 1789000001,
+        "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+        "selected": {
+          "wire_version": 0,
+          "protocol": "branch/connectivity/0",
+          "profile_multihash": "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw",
+          "capabilities": ["relay.forward.live/0", "route.relay.wss/0"],
+          "required_capabilities": ["relay.forward.live/0"],
+          "extensions": [],
+          "required_extensions": []
+        },
+        "transcript_hash": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "relay_proof": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-Pw"
       }
     },
     {

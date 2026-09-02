@@ -57,9 +57,12 @@
       "ERROR"
     ],
     "required_invalid_reasons": [
+      "unsupported_version",
+      "unsupported_protocol",
       "profile_hash_mismatch",
       "capability_required",
       "authentication_failed",
+      "frame_replayed",
       "frame_malformed"
     ]
   },
