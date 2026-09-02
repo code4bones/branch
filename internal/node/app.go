@@ -82,6 +82,13 @@ func New(config Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create relay federation router: %w", err)
 	}
+	identityLookup, err := discovery.NewIdentityContactLookup(discovery.IdentityContactLookupConfig{
+		Cache:   identityContactCache,
+		Sources: []discovery.IdentityContactLookupSource{peerRouter},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create identity contact lookup: %w", err)
+	}
 	relayHandler, err := wss.NewHandler(wss.Config{
 		Hub:              hub,
 		Identity:         nodeIdentity,
@@ -113,6 +120,7 @@ func New(config Config) (*App, error) {
 		admin.NewHandler(
 			statusProvider,
 			admin.WithBootstrapBeaconProvider(bootstrapProvider),
+			admin.WithIdentityContactLookupProvider(identityLookup),
 			admin.WithRelayMonitorRegistry(relayMonitorRegistry),
 		),
 		admin.AuthorizerFunc(func(request *http.Request) bool {

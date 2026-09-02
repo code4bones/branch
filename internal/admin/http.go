@@ -106,6 +106,13 @@ func (handler *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *htt
 			return
 		}
 		writeResponse(response, handler.handler.BootstrapBeacon(bootstrapRequest))
+	case IdentityContactLookupPath:
+		lookupRequest, err := ParseIdentityContactLookupRequest(request.URL.Query())
+		if err != nil {
+			writeResponse(response, jsonResponse(http.StatusBadRequest, map[string]string{"error": err.Error()}))
+			return
+		}
+		writeResponse(response, handler.handler.IdentityContactLookup(request.Context(), lookupRequest))
 	case RelayMonitorReportsPath:
 		writeResponse(response, handler.handler.RelayMonitorReports(handler.now()))
 	default:

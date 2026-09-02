@@ -7,6 +7,7 @@ import { githubDiscoveryDefaultQuery, type GitHubDiscoveryResult } from "./githu
 import type { GitHubDropInFile } from "./github-dropin.js";
 import { gitLabDiscoveryDefaultQuery, type GitLabDiscoveryResult } from "./gitlab-discovery.js";
 import type { GitLabDropInFile } from "./gitlab-dropin.js";
+import type { IdentityContactLookupResponse } from "./identity-lookup.js";
 import type { RelayMonitorObservation } from "./relay-monitor.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import type { CarrierHoppingTraceEvent } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
@@ -110,6 +111,17 @@ export interface ClientState {
   readonly unavailableCount: number;
   readonly transportEvents: readonly string[];
   readonly federationTrace: ClientFederationTraceState;
+  readonly identityLookup: IdentityLookupState;
+}
+
+export interface IdentityLookupState {
+  readonly adminBaseUrl: string;
+  readonly adminToken: string;
+  readonly branchID: string;
+  readonly running: boolean;
+  readonly status: string;
+  readonly statusClass: StatusClass;
+  readonly result: IdentityContactLookupResponse | null;
 }
 
 export interface ClientFederationTraceState {
@@ -240,6 +252,13 @@ export interface AdminActions {
     value: ClientState[K]
   ) => void;
   readonly setClientTransportState: (patch: ClientTransportStatePatch) => void;
+  readonly setClientIdentityLookupField: <K extends "adminBaseUrl" | "adminToken" | "branchID">(
+    field: K,
+    value: IdentityLookupState[K]
+  ) => void;
+  readonly setClientIdentityLookupRunning: (running: boolean) => void;
+  readonly setClientIdentityLookupResult: (result: IdentityContactLookupResponse | null) => void;
+  readonly setClientIdentityLookupStatus: (status: string, statusClass: StatusClass) => void;
   readonly appendClientTransportEvent: (event: string) => void;
   readonly resetClientTransport: () => void;
 }
@@ -383,6 +402,15 @@ function createAdminStore(): AdminStoreApi {
         activeRoute: null,
         migrationRoute: null,
         migrated: false
+      },
+      identityLookup: {
+        adminBaseUrl: "/node-admin",
+        adminToken: "",
+        branchID: "",
+        running: false,
+        status: "idle",
+        statusClass: "status-warn",
+        result: null
       }
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
@@ -763,6 +791,47 @@ function createAdminStore(): AdminStoreApi {
           ...patch
         }
       })); },
+    setClientIdentityLookupField: (field, value) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          identityLookup: {
+            ...state.client.identityLookup,
+            [field]: value
+          }
+        }
+      })); },
+    setClientIdentityLookupRunning: (running) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          identityLookup: {
+            ...state.client.identityLookup,
+            running
+          }
+        }
+      })); },
+    setClientIdentityLookupResult: (result) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          identityLookup: {
+            ...state.client.identityLookup,
+            result
+          }
+        }
+      })); },
+    setClientIdentityLookupStatus: (status, statusClass) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          identityLookup: {
+            ...state.client.identityLookup,
+            status,
+            statusClass
+          }
+        }
+      })); },
     appendClientTransportEvent: (event) =>
       { set((state) => ({
         client: {
@@ -793,7 +862,8 @@ function createAdminStore(): AdminStoreApi {
             activeRoute: null,
             migrationRoute: null,
             migrated: false
-          }
+          },
+          identityLookup: state.client.identityLookup
         }
       })); }
   }));

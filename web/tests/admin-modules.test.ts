@@ -16,6 +16,7 @@ import {
   makeGitLabProjectsUrl
 } from "../src/admin/gitlab-discovery.js";
 import { makeGitLabArchive, makeGitLabBundle, makeGitLabFiles, parseGitLabRecords } from "../src/admin/gitlab-dropin.js";
+import { fetchIdentityContactLookup, makeIdentityContactLookupUrl } from "../src/admin/identity-lookup.js";
 import {
   branchBootstrapLocator,
   gitLabProjectDescription,
@@ -309,6 +310,112 @@ void test("relay monitor adapter rejects forbidden and malformed responses", asy
       }
     }]))
   }), /relay monitor response rejected/);
+});
+
+void test("identity lookup adapter fetches protected exact BranchID trace", async () => {
+  const branchID = "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw";
+  const fetched: string[] = [];
+  const inits: RequestInit[] = [];
+  const response = {
+    branch_id: branchID,
+    accepted: true,
+    observation: {
+      branch_id: branchID,
+      sequence: 4,
+      issued_at: 1_789_000_000,
+      expires_at: 1_789_003_600,
+      last_observed_at: 1_789_000_010,
+      source: "relay_mesh:wss://relay02.undoo.ru:443/relay/v0",
+      wrapper_preview: "BRANCH0.AAAAAAAAAAAAA...",
+      wrapper_bytes: 512,
+      protocol_versions: ["branch/connectivity/0"],
+      profile_multihashes: ["uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw"],
+      route_hints: [{
+        transport: "wss",
+        uri: "wss://relay02.undoo.ru:443/relay/v0",
+        relay_public_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        profile_multihash: "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw",
+        priority: 0
+      }]
+    },
+    trace: [{
+      source: "local_cache",
+      step: "lookup",
+      accepted: false,
+      reason: "miss"
+    }, {
+      source: "relay_mesh",
+      step: "candidate",
+      accepted: true,
+      reason: "accepted",
+      candidate: 1
+    }]
+  };
+  const fetcher = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    fetched.push(fetchInputText(input));
+    if (init !== undefined) {
+      inits.push(init);
+    }
+    return Promise.resolve(jsonResponse(response));
+  };
+
+  const lookup = await fetchIdentityContactLookup({
+    adminBaseUrl: "/node-admin/",
+    adminToken: "operator-token",
+    branchID,
+    fetcher
+  });
+
+  assert.equal(makeIdentityContactLookupUrl("/node-admin/", branchID), `/node-admin/identity/lookup?branch_id=${branchID}`);
+  assert.equal(fetched[0], `/node-admin/identity/lookup?branch_id=${branchID}`);
+  const init = inits[0];
+  assert(init !== undefined);
+  assert.equal(init.credentials, "omit");
+  assert.equal(new Headers(init.headers).get("authorization"), "Bearer operator-token");
+  assert.equal(lookup.accepted, true);
+  assert.equal(lookup.observation?.route_hints[0]?.uri, "wss://relay02.undoo.ru:443/relay/v0");
+  assert.equal(lookup.trace[1]?.source, "relay_mesh");
+});
+
+void test("identity lookup adapter rejects forbidden malformed and non-BranchID responses", async () => {
+  const branchID = "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw";
+  await assert.rejects(fetchIdentityContactLookup({
+    adminBaseUrl: "/node-admin",
+    adminToken: "operator-token",
+    branchID,
+    fetcher: () => Promise.resolve(jsonResponse({ status: "forbidden" }, {}, 403))
+  }), /identity lookup failed \(403\)/);
+
+  await assert.rejects(fetchIdentityContactLookup({
+    adminBaseUrl: "/node-admin",
+    adminToken: "operator-token",
+    branchID,
+    fetcher: () => Promise.resolve(jsonResponse({
+      branch_id: "alice",
+      accepted: true,
+      observation: {
+        branch_id: "alice",
+        sequence: 1,
+        issued_at: 1,
+        expires_at: 2,
+        last_observed_at: 1,
+        source: "relay_mesh",
+        wrapper_preview: "BRANCH0.A",
+        wrapper_bytes: 1,
+        protocol_versions: [],
+        profile_multihashes: [],
+        route_hints: []
+      },
+      trace: []
+    }))
+  }), /identity lookup response rejected/);
+
+  await assert.rejects(fetchIdentityContactLookup({
+    adminBaseUrl: "/node-admin",
+    adminToken: "operator-token",
+    branchID: "alice",
+    fetcher: () => Promise.resolve(jsonResponse({}))
+  }), /invalid_branch_id/);
 });
 
 void test("gitlab discovery searches public projects and reads bounded drop-in records", async () => {

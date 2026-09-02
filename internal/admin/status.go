@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -57,6 +58,7 @@ type Handler struct {
 	diagnosticsProvider DiagnosticsSnapshotProvider
 	metricsProvider     MetricsProvider
 	bootstrapProvider   BootstrapBeaconProvider
+	identityLookup      IdentityContactLookupProvider
 	relayMonitor        *RelayMonitorRegistry
 }
 
@@ -82,6 +84,14 @@ func WithMetricsProvider(provider MetricsProvider) HandlerOption {
 func WithBootstrapBeaconProvider(provider BootstrapBeaconProvider) HandlerOption {
 	return func(handler *Handler) {
 		handler.bootstrapProvider = provider
+	}
+}
+
+// WithIdentityContactLookupProvider attaches a protected exact BranchID lookup
+// trace surface.
+func WithIdentityContactLookupProvider(provider IdentityContactLookupProvider) HandlerOption {
+	return func(handler *Handler) {
+		handler.identityLookup = provider
 	}
 }
 
@@ -142,6 +152,15 @@ func (handler *Handler) BootstrapBeacon(request BootstrapBeaconRequest) Response
 		return jsonResponse(400, map[string]string{"error": err.Error()})
 	}
 	return jsonResponse(StatusOK, response)
+}
+
+// IdentityContactLookup returns a redacted bounded trace for one exact BranchID
+// lookup through volatile local and relay-assisted observations.
+func (handler *Handler) IdentityContactLookup(ctx context.Context, request IdentityContactLookupRequest) Response {
+	if handler.identityLookup == nil {
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	return jsonResponse(StatusOK, identityContactLookupResponse(handler.identityLookup.Lookup(ctx, request.BranchID)))
 }
 
 // RelayMonitorReports returns the current non-expired relay monitor

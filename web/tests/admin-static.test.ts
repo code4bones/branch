@@ -14,6 +14,7 @@ const relayMonitorToolPath = resolve(process.cwd(), "src/admin/components/RelayM
 const clientToolPath = resolve(process.cwd(), "src/admin/components/ClientTool.tsx");
 const githubDiscoveryPath = resolve(process.cwd(), "src/admin/github-discovery.ts");
 const gitLabDiscoveryPath = resolve(process.cwd(), "src/admin/gitlab-discovery.ts");
+const identityLookupPath = resolve(process.cwd(), "src/admin/identity-lookup.ts");
 const branchCorePath = resolve(process.cwd(), "../packages/branch-core/src");
 const discoveryGitHubPath = resolve(branchCorePath, "discovery/github.ts");
 const discoveryGitLabPath = resolve(branchCorePath, "discovery/gitlab.ts");
@@ -59,6 +60,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const gitLabTool = await readFile(gitLabToolPath, "utf8");
   const relayMonitorTool = await readFile(relayMonitorToolPath, "utf8");
   const clientTool = await readFile(clientToolPath, "utf8");
+  const identityLookup = await readFile(identityLookupPath, "utf8");
   const transportLab = await readFile(resolve(process.cwd(), "src/admin/use-same-relay-transport-lab.ts"), "utf8");
   const carrierHopClient = await readFile(discoveryCarrierHopClientPath, "utf8");
   const publicationProfile = await readFile(publicationProfilePath, "utf8");
@@ -102,6 +104,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(store, /client:/);
   assert.match(store, /setClientDiscoveryResults/);
   assert.match(store, /setClientDiscoveryStatus/);
+  assert.match(store, /identityLookup/);
+  assert.match(store, /setClientIdentityLookupField/);
+  assert.match(store, /setClientIdentityLookupResult/);
   assert.match(store, /setRibbonTab/);
   assert.match(store, /setGitHubTab/);
   assert.match(store, /setGitLabTab/);
@@ -209,6 +214,11 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /className="client-layout"/);
   assert.match(clientTool, /className="client-discovery-controls"/);
   assert.match(clientTool, /className="client-route-panel"/);
+  assert.match(clientTool, /className="panel output-panel client-identity-lookup-panel"/);
+  assert.match(clientTool, /BranchID lookup/);
+  assert.match(clientTool, /id="client-identity-branch-id"/);
+  assert.match(clientTool, /fetchIdentityContactLookup/);
+  assert.match(clientTool, /identityLookupTraceColumns/);
   assert.match(clientTool, /className="federation-trace"/);
   assert.match(clientTool, /Federation trace/);
   assert.match(clientTool, /traceColumns/);
@@ -219,6 +229,11 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /createGitHubSearchCarrier/);
   assert.doesNotMatch(clientTool, /createGitLabSearchCarrier|Client GitLab discovery|searching GitLab project locator/);
   assert.match(clientTool, /runCarrierHopPoC/);
+  assert.match(identityLookup, /\/identity\/lookup/);
+  assert.match(identityLookup, /parseBranchID/);
+  assert.match(identityLookup, /credentials: "omit"/);
+  assert.match(identityLookup, /Bearer/);
+  assert.doesNotMatch(identityLookup, /localStorage|indexedDB|WebSocket|GITHUB_TOKEN/);
   assert.match(carrierHopClient, /SearchCarrier/);
   assert.match(carrierHopClient, /BeaconObservation/);
   assert.match(carrierHopClient, /runDiscoveredCarrierHopPoC/);

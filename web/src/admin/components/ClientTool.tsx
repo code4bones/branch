@@ -1,4 +1,4 @@
-import { ApiOutlined, BranchesOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined, SyncOutlined } from "@ant-design/icons";
+import { ApiOutlined, BranchesOutlined, PlayCircleOutlined, ReloadOutlined, SearchOutlined, StopOutlined, SyncOutlined } from "@ant-design/icons";
 import { Button, Input, Select, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -11,17 +11,29 @@ import {
   type GitHubDiscoveryResult,
   type GitHubValidatedRecord
 } from "@code4bones/branch-core/discovery/github.js";
+import {
+  fetchIdentityContactLookup,
+  type IdentityContactLookupObservation,
+  type IdentityContactLookupTrace,
+  type IdentityContactRouteHint
+} from "../identity-lookup.js";
 import { useAdminStore } from "../store.js";
 import { useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
 
 export function ClientTool(): React.JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
+  const identityLookupAbortRef = useRef<AbortController | null>(null);
   const [resultSearch, setResultSearch] = useState("");
   const [traceSearch, setTraceSearch] = useState("");
+  const [identityTraceSearch, setIdentityTraceSearch] = useState("");
   const client = useAdminStore((state) => state.client);
   const setClientDiscoveryRunning = useAdminStore((state) => state.setClientDiscoveryRunning);
   const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
   const setClientDiscoveryStatus = useAdminStore((state) => state.setClientDiscoveryStatus);
+  const setClientIdentityLookupField = useAdminStore((state) => state.setClientIdentityLookupField);
+  const setClientIdentityLookupResult = useAdminStore((state) => state.setClientIdentityLookupResult);
+  const setClientIdentityLookupRunning = useAdminStore((state) => state.setClientIdentityLookupRunning);
+  const setClientIdentityLookupStatus = useAdminStore((state) => state.setClientIdentityLookupStatus);
   const setClientManualRouteField = useAdminStore((state) => state.setClientManualRouteField);
   const setClientRouteMode = useAdminStore((state) => state.setClientRouteMode);
   const transport = useSameRelayTransportLab();
@@ -69,17 +81,124 @@ export function ClientTool(): React.JSX.Element {
     }
   }, [client.discoveryQuery, setClientDiscoveryResults, setClientDiscoveryRunning, setClientDiscoveryStatus]);
 
+  const runIdentityLookup = useCallback(async (): Promise<void> => {
+    identityLookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    identityLookupAbortRef.current = controller;
+    setClientIdentityLookupRunning(true);
+    setClientIdentityLookupResult(null);
+    setClientIdentityLookupStatus("querying exact BranchID through relay mesh", "status-warn");
+    try {
+      const result = await fetchIdentityContactLookup({
+        adminBaseUrl: client.identityLookup.adminBaseUrl,
+        adminToken: client.identityLookup.adminToken,
+        branchID: client.identityLookup.branchID,
+        fetcher: (input, init) => fetch(input, { ...init, signal: controller.signal })
+      });
+      if (identityLookupAbortRef.current !== controller) {
+        return;
+      }
+      setClientIdentityLookupResult(result);
+      setClientIdentityLookupStatus(identityLookupStatusText(result.accepted, result.trace.length), result.accepted ? "status-good" : "status-warn");
+    } catch (error) {
+      if (identityLookupAbortRef.current !== controller) {
+        return;
+      }
+      setClientIdentityLookupStatus(controller.signal.aborted ? "cancelled" : errorMessage(error), controller.signal.aborted ? "status-warn" : "status-bad");
+    } finally {
+      if (identityLookupAbortRef.current === controller) {
+        setClientIdentityLookupRunning(false);
+      }
+    }
+  }, [
+    client.identityLookup.adminBaseUrl,
+    client.identityLookup.adminToken,
+    client.identityLookup.branchID,
+    setClientIdentityLookupResult,
+    setClientIdentityLookupRunning,
+    setClientIdentityLookupStatus
+  ]);
+
   useEffect(() => {
     void runDiscovery();
     return () => {
       abortRef.current?.abort();
+      identityLookupAbortRef.current?.abort();
     };
   }, [runDiscovery]);
 
   const discoveryRows = useMemo(() => filterDiscoveryResults(client.discoveryResults, resultSearch), [client.discoveryResults, resultSearch]);
   const traceRows = useMemo(() => filterTraceEvents(client.federationTrace.events, traceSearch), [client.federationTrace.events, traceSearch]);
+  const identityTraceRows = useMemo(
+    () => filterIdentityLookupTrace(client.identityLookup.result?.trace ?? [], identityTraceSearch),
+    [client.identityLookup.result?.trace, identityTraceSearch]
+  );
   const traceAlice = useMemo(() => tracePeerPreview(client.federationTrace.events, "Alice", client.alicePeerId), [client.alicePeerId, client.federationTrace.events]);
   const traceBob = useMemo(() => tracePeerPreview(client.federationTrace.events, "Bob", client.bobPeerId), [client.bobPeerId, client.federationTrace.events]);
+  const identityLookupTraceColumns = useMemo<TableColumnsType<IdentityContactLookupTrace>>(() => [
+    {
+      title: "Source",
+      dataIndex: "source",
+      key: "source",
+      sorter: (left, right) => left.source.localeCompare(right.source),
+      render: (value: string) => <span className="mono-cell">{value}</span>
+    },
+    {
+      title: "Step",
+      dataIndex: "step",
+      key: "step",
+      sorter: (left, right) => left.step.localeCompare(right.step)
+    },
+    {
+      title: "Result",
+      key: "result",
+      sorter: (left, right) => Number(left.accepted) - Number(right.accepted) || left.reason.localeCompare(right.reason),
+      render: (_, item) => (
+        <Space direction="vertical" size={2}>
+          <Tag color={item.accepted ? "green" : "orange"}>{item.accepted ? "accepted" : "candidate"}</Tag>
+          <span className="table-muted">{item.reason}</span>
+        </Space>
+      )
+    },
+    {
+      title: "Candidate",
+      dataIndex: "candidate",
+      key: "candidate",
+      width: 112,
+      sorter: (left, right) => (left.candidate ?? 0) - (right.candidate ?? 0),
+      render: (value: number | undefined) => value ?? "-"
+    }
+  ], []);
+  const identityRouteHintColumns = useMemo<TableColumnsType<IdentityContactRouteHint>>(() => [
+    {
+      title: "Priority",
+      dataIndex: "priority",
+      key: "priority",
+      width: 96,
+      sorter: (left, right) => left.priority - right.priority
+    },
+    {
+      title: "Transport",
+      dataIndex: "transport",
+      key: "transport",
+      width: 104,
+      render: (value: string) => <Tag color="blue">{value}</Tag>
+    },
+    {
+      title: "URI",
+      dataIndex: "uri",
+      key: "uri",
+      sorter: (left, right) => left.uri.localeCompare(right.uri),
+      render: (value: string) => <span className="mono-cell">{value}</span>
+    },
+    {
+      title: "Profile",
+      dataIndex: "profile_multihash",
+      key: "profile_multihash",
+      sorter: (left, right) => left.profile_multihash.localeCompare(right.profile_multihash),
+      render: (value: string) => <span className="mono-cell">{value}</span>
+    }
+  ], []);
   const traceColumns = useMemo<TableColumnsType<CarrierHoppingTraceEvent>>(() => [
     {
       title: "Time",
@@ -297,6 +416,75 @@ export function ClientTool(): React.JSX.Element {
         </div>
       </section>
 
+      <section className="panel output-panel client-identity-lookup-panel" aria-label="BranchID identity lookup">
+        <div className="section-heading">
+          <h2>BranchID lookup</h2>
+          <p className={client.identityLookup.statusClass}>{client.identityLookup.status}</p>
+        </div>
+        <div className="client-identity-lookup-controls">
+          <div className="control-row">
+            <label htmlFor="client-identity-branch-id">BranchID</label>
+            <Input
+              id="client-identity-branch-id"
+              name="client-identity-branch-id"
+              placeholder="br1..."
+              value={client.identityLookup.branchID}
+              onChange={(event) => { setClientIdentityLookupField("branchID", event.currentTarget.value); }}
+            />
+          </div>
+          <div className="control-row">
+            <label htmlFor="client-identity-admin-url">MASTER admin URL</label>
+            <Input
+              id="client-identity-admin-url"
+              name="client-identity-admin-url"
+              value={client.identityLookup.adminBaseUrl}
+              onChange={(event) => { setClientIdentityLookupField("adminBaseUrl", event.currentTarget.value); }}
+            />
+          </div>
+          <div className="control-row">
+            <label htmlFor="client-identity-admin-token">Admin token</label>
+            <Input.Password
+              id="client-identity-admin-token"
+              name="client-identity-admin-token"
+              value={client.identityLookup.adminToken}
+              onChange={(event) => { setClientIdentityLookupField("adminToken", event.currentTarget.value); }}
+            />
+          </div>
+          <Space className="client-identity-lookup-actions" wrap>
+            <Button icon={<SearchOutlined />} type="primary" disabled={client.identityLookup.running} onClick={() => { void runIdentityLookup(); }}>
+              Lookup
+            </Button>
+            <Button icon={<StopOutlined />} disabled={!client.identityLookup.running} onClick={() => { identityLookupAbortRef.current?.abort(); }}>
+              Cancel
+            </Button>
+          </Space>
+        </div>
+        <IdentityLookupObservationCard observation={client.identityLookup.result?.observation ?? null} />
+        <Input.Search
+          allowClear
+          className="trace-search"
+          placeholder="Search BranchID trace"
+          value={identityTraceSearch}
+          onChange={(event) => { setIdentityTraceSearch(event.currentTarget.value); }}
+        />
+        <Table
+          columns={identityLookupTraceColumns}
+          dataSource={identityTraceRows}
+          pagination={{ pageSize: 6, showSizeChanger: true }}
+          rowKey={(item) => `${item.source}-${item.step}-${item.reason}-${String(item.candidate ?? 0)}`}
+          scroll={{ x: 760 }}
+          size="small"
+        />
+        <Table
+          columns={identityRouteHintColumns}
+          dataSource={client.identityLookup.result?.observation?.route_hints ?? []}
+          pagination={false}
+          rowKey={(item) => `${item.uri}-${String(item.priority)}`}
+          scroll={{ x: 900 }}
+          size="small"
+        />
+      </section>
+
       <section className="panel output-panel github-discovery-results client-discovery-results" aria-label="Client GitHub discovery results">
         <Input.Search
           allowClear
@@ -428,6 +616,55 @@ export function ClientTool(): React.JSX.Element {
 
 type TraceNodeTone = "client" | "relay" | "muted";
 
+function IdentityLookupObservationCard({ observation }: { readonly observation: IdentityContactLookupObservation | null }): React.JSX.Element {
+  if (observation === null) {
+    return (
+      <dl className="diagnostics client-identity-diagnostics">
+        <div>
+          <dt>Observation</dt>
+          <dd>-</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>-</dd>
+        </div>
+        <div>
+          <dt>Route hints</dt>
+          <dd>0</dd>
+        </div>
+      </dl>
+    );
+  }
+  return (
+    <dl className="diagnostics client-identity-diagnostics">
+      <div>
+        <dt>Observation</dt>
+        <dd>{`seq ${String(observation.sequence)} / ${formatUnixSeconds(observation.expires_at)}`}</dd>
+      </div>
+      <div>
+        <dt>Source</dt>
+        <dd className="mono-cell">{observation.source}</dd>
+      </div>
+      <div>
+        <dt>Signed record</dt>
+        <dd className="mono-cell">{`${observation.wrapper_preview} (${String(observation.wrapper_bytes)} bytes)`}</dd>
+      </div>
+      <div>
+        <dt>BranchID</dt>
+        <dd className="mono-cell">{observation.branch_id}</dd>
+      </div>
+      <div>
+        <dt>Profiles</dt>
+        <dd className="mono-cell">{observation.profile_multihashes.join(", ") || "-"}</dd>
+      </div>
+      <div>
+        <dt>Route hints</dt>
+        <dd>{String(observation.route_hints.length)}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function TraceNode({ label, value, tone }: { readonly label: string; readonly value: string; readonly tone: TraceNodeTone }): React.JSX.Element {
   return (
     <div className={`federation-node is-${tone}`}>
@@ -480,6 +717,19 @@ function filterTraceEvents(events: readonly CarrierHoppingTraceEvent[], query: s
     event.peerIdPreview ?? "",
     event.deliveryIdPreview ?? "",
     event.detail ?? ""
+  ].some((value) => value.toLowerCase().includes(needle)));
+}
+
+function filterIdentityLookupTrace(events: readonly IdentityContactLookupTrace[], query: string): readonly IdentityContactLookupTrace[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return events;
+  }
+  return events.filter((event) => [
+    event.source,
+    event.step,
+    event.reason,
+    String(event.candidate ?? "")
   ].some((value) => value.toLowerCase().includes(needle)));
 }
 
@@ -542,6 +792,10 @@ function routeSourceLabel(routeMode: "discovery" | "manual", endpointUri: string
     return relaySource;
   }
   return endpointUri === null ? "no accepted relay route" : "discovery route selected";
+}
+
+function identityLookupStatusText(accepted: boolean, traceCount: number): string {
+  return accepted ? `accepted signed observation across ${String(traceCount)} trace steps` : `no signed observation across ${String(traceCount)} trace steps`;
 }
 
 function errorMessage(error: unknown): string {

@@ -112,6 +112,11 @@ func NewStaticPeerRouter(config StaticPeerRouterConfig) (*StaticPeerRouter, erro
 	}, nil
 }
 
+// ID returns the bounded source identifier used in operator lookup traces.
+func (router *StaticPeerRouter) ID() string {
+	return "relay_mesh"
+}
+
 // LookupFederatedPeer probes configured peers for one currently reachable peer.
 func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) (relay.FederatedForwarder, bool) {
 	var candidates []federationCandidate
