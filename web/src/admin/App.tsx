@@ -1,13 +1,37 @@
+import {
+  ApiOutlined,
+  BranchesOutlined,
+  GithubOutlined,
+  GitlabOutlined,
+  HomeOutlined,
+  PictureOutlined,
+  RadarChartOutlined
+} from "@ant-design/icons";
+import { ConfigProvider, Layout, Menu, Typography, theme, type MenuProps } from "antd";
 import { useEffect } from "react";
-import { ApiOutlined, BranchesOutlined, GithubOutlined, GitlabOutlined, PictureOutlined, RadarChartOutlined } from "@ant-design/icons";
-import { ConfigProvider, Layout, Tabs, Typography, theme, type TabsProps } from "antd";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
-import { AdminStoreProvider, useAdminStore } from "./store.js";
+import { AdminStoreProvider, type AdminTab, useAdminStore } from "./store.js";
 import { ClientTool } from "./components/ClientTool.js";
 import { GitHubTool } from "./components/GitHubTool.js";
 import { GitLabTool } from "./components/GitLabTool.js";
 import { RelayMonitorTool } from "./components/RelayMonitorTool.js";
 import { RibbonTool } from "./components/RibbonTool.js";
+
+type AdminRoute = Exclude<AdminTab, never>;
+
+const routeItems: readonly {
+  readonly key: AdminRoute;
+  readonly path: string;
+  readonly label: string;
+  readonly icon: React.ReactNode;
+}[] = [
+  { key: "ribbon", path: "/ribbon", label: "Ribbon Image", icon: <PictureOutlined /> },
+  { key: "github", path: "/github", label: "GitHub", icon: <GithubOutlined /> },
+  { key: "gitlab", path: "/gitlab", label: "GitLab", icon: <GitlabOutlined /> },
+  { key: "relays", path: "/relays", label: "Relays", icon: <RadarChartOutlined /> },
+  { key: "client", path: "/client", label: "Client", icon: <ApiOutlined /> }
+];
 
 export function AdminApp(): React.JSX.Element {
   return (
@@ -25,7 +49,14 @@ export function AdminApp(): React.JSX.Element {
         components: {
           Layout: {
             bodyBg: "#0a0d11",
-            headerBg: "#0a0d11"
+            headerBg: "#0a0d11",
+            siderBg: "#0f141a"
+          },
+          Menu: {
+            darkItemBg: "#0f141a",
+            darkSubMenuItemBg: "#0f141a",
+            darkItemSelectedBg: "#164b48",
+            darkItemSelectedColor: "#f4f7fb"
           },
           Table: {
             headerBg: "#18202a",
@@ -35,101 +66,94 @@ export function AdminApp(): React.JSX.Element {
       }}
     >
       <AdminStoreProvider>
-        <AdminShell />
+        <BrowserRouter basename="/admin">
+          <AdminShell />
+        </BrowserRouter>
       </AdminStoreProvider>
     </ConfigProvider>
   );
 }
 
 function AdminShell(): React.JSX.Element {
-  const activeTab = useAdminStore((state) => state.activeTab);
+  const location = useLocation();
+  const navigate = useNavigate();
   const setActiveTab = useAdminStore((state) => state.setActiveTab);
+  const activeRoute = routeFromPath(location.pathname);
 
   useEffect(() => {
-    function syncHashTab(): void {
-      if (window.location.hash === "#client") {
-        setActiveTab("client");
-      }
+    if (location.pathname === "/" && location.hash === "#client") {
+      void navigate("/client", { replace: true });
+      return;
     }
-    syncHashTab();
-    window.addEventListener("hashchange", syncHashTab);
-    return () => {
-      window.removeEventListener("hashchange", syncHashTab);
-    };
-  }, [setActiveTab]);
+    setActiveTab(activeRoute);
+  }, [activeRoute, location.hash, location.pathname, navigate, setActiveTab]);
 
-  const items: TabsProps["items"] = [
-    {
-      key: "ribbon",
-      label: "Ribbon Image",
-      icon: <PictureOutlined />,
-      children: <RibbonTool />
-    },
-    {
-      key: "github",
-      label: "GitHub",
-      icon: <GithubOutlined />,
-      children: <GitHubTool />
-    },
-    {
-      key: "gitlab",
-      label: "GitLab",
-      icon: <GitlabOutlined />,
-      children: <GitLabTool />
-    },
-    {
-      key: "relays",
-      label: "Relays",
-      icon: <RadarChartOutlined />,
-      children: <RelayMonitorTool />
-    },
-    {
-      key: "client",
-      label: "Client",
-      icon: <ApiOutlined />,
-      children: <ClientTool />
-    }
-  ];
+  const menuItems: MenuProps["items"] = routeItems.map((item) => ({
+    key: item.key,
+    icon: item.icon,
+    label: <Link to={item.path}>{item.label}</Link>
+  }));
 
   return (
     <Layout className="admin-layout">
-      <main className="admin-shell" aria-labelledby="admin-title">
-        <header className="admin-header">
+      <Layout.Sider breakpoint="lg" className="admin-sider" collapsedWidth={0} width={248}>
+        <div className="admin-brand">
+          <BranchesOutlined aria-hidden="true" />
           <div>
             <Typography.Text className="kicker">Blue Ribbon Autonomous Network for Carrier Hopping</Typography.Text>
-            <Typography.Title id="admin-title" level={1}>Admin</Typography.Title>
+            <Typography.Title level={1}>Admin</Typography.Title>
+          </div>
+        </div>
+        <Menu
+          className="admin-side-menu"
+          items={menuItems}
+          mode="inline"
+          selectedKeys={[activeRoute]}
+          theme="dark"
+        />
+      </Layout.Sider>
+
+      <Layout className="admin-main">
+        <Layout.Header className="admin-header">
+          <div>
+            <Typography.Text className="kicker">B.R.A.N.C.H. operator console</Typography.Text>
+            <Typography.Title id="admin-title" level={2}>{titleForRoute(activeRoute)}</Typography.Title>
           </div>
           <nav className="admin-nav" aria-label="Admin navigation">
-            <a href="/">Status</a>
-            <a href="/admin/" aria-current="page">Admin</a>
+            <a href="/"><HomeOutlined /> Status</a>
+            <a href="/admin/ribbon" aria-current="page">Admin</a>
           </nav>
-        </header>
+        </Layout.Header>
 
-        <Tabs
-          activeKey={activeTab}
-          className="admin-workspace-tabs"
-          destroyOnHidden={false}
-          items={items}
-          onChange={(key) => {
-            const tab = normalizeTab(key);
-            window.history.replaceState(null, "", tab === "client" ? "/admin/#client" : "/admin/");
-            setActiveTab(tab);
-          }}
-          tabBarExtraContent={<BranchesOutlined aria-hidden="true" className="admin-tab-mark" />}
-        />
-      </main>
+        <Layout.Content className="admin-workspace" aria-labelledby="admin-title">
+          <Routes>
+            <Route index element={<Navigate replace to="/ribbon" />} />
+            <Route path="ribbon" element={<RibbonTool />} />
+            <Route path="github" element={<GitHubTool />} />
+            <Route path="gitlab" element={<GitLabTool />} />
+            <Route path="relays" element={<RelayMonitorTool />} />
+            <Route path="client" element={<ClientTool />} />
+            <Route path="*" element={<Navigate replace to="/ribbon" />} />
+          </Routes>
+        </Layout.Content>
+      </Layout>
     </Layout>
   );
 }
 
-function normalizeTab(value: string): "ribbon" | "github" | "gitlab" | "relays" | "client" {
-  switch (value) {
+function routeFromPath(pathname: string): AdminRoute {
+  const firstSegment = pathname.split("/").filter(Boolean)[0];
+  switch (firstSegment) {
     case "github":
     case "gitlab":
     case "relays":
     case "client":
-      return value;
+      return firstSegment;
     default:
       return "ribbon";
   }
+}
+
+function titleForRoute(route: AdminRoute): string {
+  return routeItems.find((item) => item.key === route)?.label ?? "Ribbon Image";
 }

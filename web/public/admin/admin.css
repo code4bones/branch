@@ -103,11 +103,54 @@ label {
   background: #0a0d11;
 }
 
-.admin-shell {
-  width: min(100% - 40px, 1480px);
+.admin-sider {
   min-height: 100svh;
+  border-right: 1px solid var(--admin-line);
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 88px;
+  padding: 18px;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.admin-brand > .anticon {
+  color: var(--admin-cyan);
+  font-size: 1.4rem;
+}
+
+.admin-brand h1 {
+  margin: 0;
+  color: var(--admin-ink);
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.admin-side-menu {
+  padding: 10px;
+}
+
+.admin-side-menu .ant-menu-item {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+
+.admin-main {
+  min-width: 0;
+  min-height: 100svh;
+  background: #0a0d11;
+}
+
+.admin-workspace {
+  min-width: 0;
+  width: 100%;
+  max-width: 1520px;
   margin: 0 auto;
-  padding: 24px 0 44px;
+  padding: 0 24px 44px;
 }
 
 .admin-header {
@@ -115,13 +158,21 @@ label {
   align-items: end;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 24px;
+  min-height: 88px;
+  height: auto;
+  margin: 0 auto 18px;
+  padding: 18px 24px;
+  width: 100%;
+  max-width: 1520px;
+  border-bottom: 1px solid var(--admin-line);
+  background: #0a0d11;
 }
 
-.admin-header h1 {
+.admin-header h2 {
   margin: 0;
-  font-size: 2.6rem;
-  line-height: 0.95;
+  color: var(--admin-ink);
+  font-size: 1.9rem;
+  line-height: 1.08;
 }
 
 .admin-nav {
@@ -134,6 +185,7 @@ label {
   min-height: 38px;
   display: inline-flex;
   align-items: center;
+  gap: 7px;
   border: 1px solid var(--admin-line);
   border-radius: 8px;
   padding: 0 14px;
@@ -632,18 +684,18 @@ label {
 }
 
 @media (max-width: 880px) {
-  .admin-shell {
-    width: min(100% - 28px, 1180px);
-    padding-top: 26px;
+  .admin-workspace {
+    padding: 0 14px 32px;
   }
 
   .admin-header {
     align-items: start;
     flex-direction: column;
+    padding: 16px 14px;
   }
 
-  .admin-header h1 {
-    font-size: 2.8rem;
+  .admin-header h2 {
+    font-size: 1.6rem;
   }
 
   .tool-grid {

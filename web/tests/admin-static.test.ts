@@ -59,6 +59,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const carrierHopClient = await readFile(discoveryCarrierHopClientPath, "utf8");
   const publicationProfile = await readFile(publicationProfilePath, "utf8");
   const defaults = await readFile(defaultsPath, "utf8");
+  const nginx = await readFile(nginxConfigPath, "utf8");
 
   assert.match(main, /createRoot/);
   assert.match(app, /Blue Ribbon Autonomous Network for Carrier Hopping/);
@@ -66,14 +67,20 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(app, /ClientTool/);
   assert.match(app, /GitLabTool/);
   assert.match(app, /ConfigProvider/);
-  assert.match(app, /Tabs/);
+  assert.match(app, /BrowserRouter basename="\/admin"/);
+  assert.match(app, /Menu/);
+  assert.match(app, /Routes/);
+  assert.match(app, /Navigate/);
   assert.match(app, /darkAlgorithm/);
   assert.match(app, /useEffect/);
-  assert.match(app, /window\.location\.hash === "#client"/);
-  assert.match(app, /\/admin\/#client/);
-  assert.match(app, /normalizeTab/);
+  assert.match(app, /location\.hash === "#client"/);
+  assert.match(app, /void navigate\("\/client", \{ replace: true \}\)/);
   assert.match(app, /key: "client"/);
   assert.match(app, /key: "gitlab"/);
+  assert.match(app, /path="client"/);
+  assert.match(app, /path="gitlab"/);
+  assert.match(nginx, /location \/admin\/ \{/);
+  assert.match(nginx, /try_files \$uri \$uri\/ \/admin\/index\.html;/);
   assert.match(store, /zustand\/vanilla/);
   assert.match(store, /defaultBranchWrapper/);
   assert.match(store, /githubDiscoveryDefaultQuery/);
