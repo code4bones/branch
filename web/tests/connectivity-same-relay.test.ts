@@ -414,6 +414,41 @@ void test("client echo round trip addresses Echo contact through the first respo
   }
 });
 
+void test("client echo round trip loops back through a relay without a standing Echo peer", async () => {
+  const relayA = await FakeRelay.create();
+  const relayB = await FakeRelay.create();
+  const routeA = {
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: relayA.publicKey,
+    profileMultihash: developmentProfileMultihash
+  };
+  const routeB = {
+    endpointUri: "wss://relay-b.test:443/relay/v0",
+    relayPublicKey: relayB.publicKey,
+    profileMultihash: developmentProfileMultihash
+  };
+  const missingRoute = {
+    endpointUri: "wss://relay-missing.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 43),
+    profileMultihash: developmentProfileMultihash
+  };
+
+  const report = await runEchoRoundTrip({
+    routes: [missingRoute, routeB, routeA],
+    body: "self-addressed echo",
+    socketFactory: multiplexRelays({
+      "relay-a.test": relayA,
+      "relay-b.test": relayB
+    }),
+    perRouteTimeoutMs: 1_000
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.body, "self-addressed echo");
+  assert(["wss://relay-a.test:443/relay/v0", "wss://relay-b.test:443/relay/v0"].includes(report.route.endpointUri));
+  assert(report.latencyMs >= 0);
+});
+
 void test("client echo round trip bounds route candidates", async () => {
   assert.deepEqual(await runEchoRoundTrip({
     routes: [],

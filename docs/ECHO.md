@@ -1,25 +1,17 @@
 # B.R.A.N.C.H. Echo
 
-Status: beta test contact.
+Status: beta self-addressed transport probe.
 
-Echo is a standing test peer for the current relay transport beta. A client can
-send it an HPKE-sealed `branch.echo.request/0.draft` payload and receive the
-same plaintext bytes sealed back to the caller's advertised reply HPKE key.
+The default Echo check is a self-addressed relay loopback probe. A client sends
+an HPKE-sealed `branch.echo.request/0.draft` payload to its own peer id through
+one or more validated relay routes, receives the same live envelope back from
+the first working route, opens it with its own HPKE key, and verifies that the
+body matches.
 
-Public contact:
-
-```json
-{
-  "id": "branch.echo/0.draft",
-  "label": "B.R.A.N.C.H. Echo",
-  "peer_id": "UEfNJ9Ty0YZOSsIvr6zzdMrEThX7wegv2fy_epiVKYQ",
-  "hpke_public_key": "Yn2kTy3rAzZGh_93cc6QR0lN1f9vEwdSkJWc_Z8OhBE",
-  "payload_type": "branch.echo.request/0.draft"
-}
-```
-
-The same public record is served by the web build at
-`/.well-known/branch/echo.json`.
+This proves the beta client can attach, authenticate, rendezvous, forward,
+receive sender-attributed envelopes, and decrypt payloads through a relay. It
+does not require a project-operated Echo account, a daemon, a relay directory,
+or any durable relay state.
 
 Client-side beta check:
 
@@ -34,15 +26,34 @@ const report = await runEchoRoundTrip({
 
 The client supplies validated relay routes from normal discovery/transport
 policy. The helper races bounded route attempts and returns the first route that
-actually echoes the message, which is the current beta meaning of "nearest"
+actually loops the message back, which is the current beta meaning of "nearest"
 without introducing a relay directory or global location service.
+
+Optional standing-peer contact:
+
+```json
+{
+  "id": "branch.echo/0.draft",
+  "label": "B.R.A.N.C.H. Echo",
+  "peer_id": "UEfNJ9Ty0YZOSsIvr6zzdMrEThX7wegv2fy_epiVKYQ",
+  "hpke_public_key": "Yn2kTy3rAzZGh_93cc6QR0lN1f9vEwdSkJWc_Z8OhBE",
+  "payload_type": "branch.echo.request/0.draft"
+}
+```
+
+The same public record is served by the web build at
+`/.well-known/branch/echo.json`.
+
+That fixed contact is an explicit interop experiment for testing a separate
+online peer. It is not the default PWA Echo behaviour. To address it, pass the
+contact explicitly to `runEchoRoundTrip`.
 
 Runtime private material is operator-local and must not be committed. The local
 development key file is `.runtime/branch-echo.local.json`.
 
 The standalone runner starts Echo as one fixed peer across one or more relay
-routes. Clients address the Echo contact above; relay selection remains normal
-transport/discovery machinery.
+routes. It is optional and exists to test separate-peer interop; relay selection
+still remains normal transport/discovery machinery.
 
 The runner reads:
 

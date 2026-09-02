@@ -185,6 +185,45 @@ func TestHubPresenceHeartbeatLookupAndRendezvousAreEphemeral(t *testing.T) {
 	}
 }
 
+func TestHubRendezvousCanLoopBackToSameLivePeer(t *testing.T) {
+	hub := newTestHub(t, Config{
+		MaxSessions:         1,
+		MaxQueueDepth:       2,
+		MaxFrameBytes:       16,
+		MaxFramesPerSession: 4,
+		MaxBytesPerSession:  64,
+		PresenceTTL:         10 * time.Second,
+	})
+	now := time.Unix(1_789_000_000, 0)
+	alice := attach(t, hub, "alice-session")
+
+	if err := alice.AnnouncePresence("alice-peer", now); err != nil {
+		t.Fatalf("announce presence: %v", err)
+	}
+	if err := alice.Rendezvous("route-loopback", "alice-peer", now); err != nil {
+		t.Fatalf("self rendezvous: %v", err)
+	}
+	if err := alice.Send(context.Background(), "route-loopback", []byte("self echo")); err != nil {
+		t.Fatalf("send loopback: %v", err)
+	}
+
+	frame := receive(t, alice)
+	if frame.RouteID != "route-loopback" {
+		t.Fatalf("route id = %q", frame.RouteID)
+	}
+	if frame.SenderPeerID != "alice-peer" {
+		t.Fatalf("sender peer id = %q", frame.SenderPeerID)
+	}
+	if string(frame.Payload) != "self echo" {
+		t.Fatalf("payload = %q", frame.Payload)
+	}
+
+	snapshot := hub.Snapshot()
+	if snapshot.SessionsActive != 1 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 1 || snapshot.ForwardedFrames != 1 {
+		t.Fatalf("unexpected snapshot: %+v", snapshot)
+	}
+}
+
 func TestHubFederatedPresenceForwardsAcrossLiveRelays(t *testing.T) {
 	now := time.Unix(1_789_000_000, 0)
 	leftHub := newTestHub(t, Config{

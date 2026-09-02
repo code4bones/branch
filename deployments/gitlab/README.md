@@ -201,13 +201,16 @@ Optional variables:
 ## Deploy flow
 
 1. Push to `main`.
-2. `go` and optional `web` run on `branch_lc`.
+2. `go` runs on `branch_lc`; `web` remains an optional manual check because
+   relay deployment ships only the Go node.
 3. `build:branch-node` builds `linux/amd64` and `linux/arm64` binaries on
    `branch_lc` in Docker and keeps artifacts for one day.
-4. Run `deploy:relay01` manually on `branch_nd`.
-5. The deploy job writes `<deploy-base>/<relay>/`, starts the compose
+4. `deploy:relay01`, `deploy:relay02`, `deploy:relay04`, and `deploy:relay05`
+   run automatically on the configured runner tags.
+5. Each deploy job writes `<deploy-base>/<relay>/`, starts the compose
    project, checks `/readyz`, and creates relay beacon artifacts.
-6. Publish the generated `relay-artifacts/*-records.br0` content through the
+6. Cleanup jobs run automatically after deploy on each runner host.
+7. Publish the generated `relay-artifacts/*-records.br0` content through the
    chosen carrier repository.
 
 ## Disk cleanup
@@ -215,11 +218,11 @@ Optional variables:
 GitLab build artifacts expire after one day. Test and build containers are
 started with `--rm`. Runtime relay images are labelled
 `org.branch.role=relay-node`; each deploy prunes older unused relay-node images.
-The manual cleanup jobs prune stopped containers, old builder cache, and
-dangling images on the runner host. Set `BRANCH_DOCKER_PRUNE_ALL=1` only when
-the VPS can safely remove all unused images older than the configured age.
+The cleanup jobs prune stopped containers, old builder cache, and dangling
+images on the runner host. Set `BRANCH_DOCKER_PRUNE_ALL=1` only when the VPS can
+safely remove all unused images older than the configured age.
 On a host with around 7.6 GB free, keep `BRANCH_DOCKER_PRUNE_UNTIL=24h` and run
-the cleanup job after successful deploys if free space drops below roughly 2 GB.
+the cleanup job again manually only if free space drops below roughly 2 GB.
 
 Container logs remain in Docker logs. Relay runtime state on disk is limited to
 the named volume containing `/var/lib/branch/node-identity.json`; deploy config

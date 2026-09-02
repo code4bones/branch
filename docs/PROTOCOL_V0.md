@@ -313,7 +313,9 @@ offered. Limits are live connection limits, not storage quotas.
 currently reachable only until disconnect, close, quota exhaustion, relay
 shutdown, or TTL expiry. Presence is not a searchable directory, social graph,
 mailbox, or delivery receipt. `LOOKUP` and `RENDEZVOUS` can only return live
-routes currently permitted by local policy.
+routes currently permitted by local policy. A relay may bind `RENDEZVOUS` to the
+requester's own live peer id for bounded loopback diagnostics; this still
+creates only an in-memory route and never authorizes durable delivery.
 
 `RENDEZVOUS.route_hints`, when present in the executable beta JSON profile, is
 an ordered bounded array of at most eight candidate objects. Each object

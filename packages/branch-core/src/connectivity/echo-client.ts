@@ -8,7 +8,6 @@ import {
 import {
   betaEchoRequestType,
   decodeEchoRequestPayload,
-  defaultBetaEchoContact,
   encodeEchoRequestPayload,
   makeEchoPayloadAAD,
   type BetaEchoContact
@@ -57,7 +56,6 @@ export async function runEchoRoundTrip(options: EchoRoundTripOptions): Promise<E
   if (routes.length === 0) {
     return { status: "failed", reason: "no_routes", attempts: [] };
   }
-  const contact = options.contact ?? defaultBetaEchoContact;
   const attempts = new Map<string, MutableEchoRouteAttempt>();
   const controllers: EchoAttemptController[] = [];
 
@@ -73,7 +71,7 @@ export async function runEchoRoundTrip(options: EchoRoundTripOptions): Promise<E
     controllers.push(controller);
     return controller.run({
       body: options.body,
-      contact,
+      contact: options.contact ?? null,
       timeoutMs: boundedTimeout(options.perRouteTimeoutMs ?? defaultEchoRoundTripTimeoutMs),
       attempt,
       ...(options.socketFactory === undefined ? {} : { socketFactory: options.socketFactory }),
@@ -84,9 +82,7 @@ export async function runEchoRoundTrip(options: EchoRoundTripOptions): Promise<E
   try {
     const result = await firstResolved(attemptPromises);
     for (const controller of controllers) {
-      if (controller.route.endpointUri !== result.route.endpointUri) {
-        controller.stop();
-      }
+      controller.stop();
     }
     return {
       status: "ok",
@@ -113,6 +109,11 @@ interface EchoAttemptSuccess {
   readonly latencyMs: number;
 }
 
+interface EchoResponseWaiter {
+  readonly promise: Promise<string>;
+  cancel(): void;
+}
+
 interface MutableEchoRouteAttempt {
   readonly endpointUri: string;
   status: "pending" | "ok" | "failed";
@@ -123,12 +124,13 @@ interface MutableEchoRouteAttempt {
 class EchoAttemptController {
   private client: SameRelayTransportClient | null = null;
   private unsubscribe: (() => void) | null = null;
+  private responseWaiter: EchoResponseWaiter | null = null;
 
   constructor(readonly route: RelayRouteMaterial) {}
 
   async run(options: {
     readonly body: string;
-    readonly contact: BetaEchoContact;
+    readonly contact: BetaEchoContact | null;
     readonly socketFactory?: BrowserRelaySocketFactory;
     readonly crypto?: Crypto;
     readonly timeoutMs: number;
@@ -150,8 +152,10 @@ class EchoAttemptController {
       await client.attach();
       client.announcePresence();
       client.heartbeat();
-      client.lookup(options.contact.peerId);
-      client.rendezvous(options.contact.peerId);
+      const recipientPeerId = options.contact?.peerId ?? identity.peerId;
+      const recipientHpkePublicKey = options.contact?.hpkePublicKey ?? payloadKey.publicKey;
+      client.lookup(recipientPeerId);
+      client.rendezvous(recipientPeerId);
 
       const deliveryId = randomToken(16);
       const plaintext = encodeEchoRequestPayload({
@@ -160,31 +164,36 @@ class EchoAttemptController {
         body: options.body
       });
       const sealed = await sealBetaPayload({
-        recipientPublicKey: options.contact.hpkePublicKey,
+        recipientPublicKey: recipientHpkePublicKey,
         plaintext,
         aad: makeEchoPayloadAAD({
           route: this.route,
           senderPeerId: identity.peerId,
-          recipientPeerId: options.contact.peerId,
+          recipientPeerId,
           deliveryId
         })
       });
       const response = this.waitForEchoResponse({
         client,
-        contact: options.contact,
+        expectedSenderPeerId: recipientPeerId,
         recipientPrivateKey: payloadKey.privateKey,
-        recipientPeerId: identity.peerId,
+        localPeerId: identity.peerId,
         timeoutMs: options.timeoutMs
       });
-      client.sendSealedEnvelope(sealed, { deliveryId });
-      const echoed = await response;
-      if (echoed !== options.body) {
-        throw new Error("echo body mismatch");
+      try {
+        client.sendSealedEnvelope(sealed, { deliveryId });
+        const echoed = await response.promise;
+        if (echoed !== options.body) {
+          throw new Error("echo body mismatch");
+        }
+      } catch (error) {
+        response.cancel();
+        throw error;
       }
       const latencyMs = Date.now() - startedAt;
       options.attempt.status = "ok";
       options.attempt.latencyMs = latencyMs;
-      return { route: this.route, body: echoed, latencyMs };
+      return { route: this.route, body: options.body, latencyMs };
     } catch (error) {
       options.attempt.status = "failed";
       options.attempt.latencyMs = Date.now() - startedAt;
@@ -195,6 +204,8 @@ class EchoAttemptController {
   }
 
   stop(): void {
+    this.responseWaiter?.cancel();
+    this.responseWaiter = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.client?.disconnect();
@@ -203,20 +214,29 @@ class EchoAttemptController {
 
   private waitForEchoResponse(options: {
     readonly client: SameRelayTransportClient;
-    readonly contact: BetaEchoContact;
+    readonly expectedSenderPeerId: string;
     readonly recipientPrivateKey: CryptoKey;
-    readonly recipientPeerId: string;
+    readonly localPeerId: string;
     readonly timeoutMs: number;
-  }): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+  }): EchoResponseWaiter {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const promise = new Promise<string>((resolve, reject) => {
+      timer = setTimeout(() => {
         cleanup();
         reject(new Error("echo response timeout"));
       }, options.timeoutMs);
       const cleanup = (): void => {
-        clearTimeout(timer);
+        settled = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
         this.unsubscribe?.();
         this.unsubscribe = null;
+        if (this.responseWaiter === waiter) {
+          this.responseWaiter = null;
+        }
       };
       this.unsubscribe = options.client.addEventListener((event) => {
         if (event.type === "error") {
@@ -232,7 +252,7 @@ class EchoAttemptController {
         if (event.type !== "envelope_received") {
           return;
         }
-        if (event.senderPeerId !== options.contact.peerId) {
+        if (event.senderPeerId !== options.expectedSenderPeerId) {
           cleanup();
           reject(new Error("unexpected echo sender peer id"));
           return;
@@ -242,8 +262,8 @@ class EchoAttemptController {
           sealedPayload: event.ciphertext,
           aad: makeEchoPayloadAAD({
             route: this.route,
-            senderPeerId: options.contact.peerId,
-            recipientPeerId: options.recipientPeerId,
+            senderPeerId: options.expectedSenderPeerId,
+            recipientPeerId: options.localPeerId,
             deliveryId: event.deliveryId
           })
         }).then((plaintext) => {
@@ -256,6 +276,26 @@ class EchoAttemptController {
         });
       });
     });
+    const waiter = {
+      promise,
+      cancel: (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        this.unsubscribe?.();
+        this.unsubscribe = null;
+        if (this.responseWaiter === waiter) {
+          this.responseWaiter = null;
+        }
+      }
+    };
+    this.responseWaiter = waiter;
+    return waiter;
   }
 }
 

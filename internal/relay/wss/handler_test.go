@@ -175,6 +175,71 @@ func TestHandlerAttachesTwoPeersAndForwardsOpaqueEnvelope(t *testing.T) {
 	}
 }
 
+func TestHandlerForwardsSelfAddressedEnvelopeOnLoopbackRoute(t *testing.T) {
+	hub, handler := newTestHubAndHandler(t)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	alice := dialAndReady(t, server.URL)
+	defer alice.Close(websocket.StatusNormalClosure, "")
+	aliceReady := alice.Ready
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  aliceReady.SessionID,
+		"route_id":    aliceReady.RouteID,
+		"peer_id":     testAlicePeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": aliceReady.SessionID,
+		"route_id":   aliceReady.RouteID,
+		"peer_id":    testAlicePeerID,
+		"sequence":   2,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":          "ENVELOPE",
+		"session_id":    aliceReady.SessionID,
+		"route_id":      aliceReady.RouteID,
+		"path_epoch":    0,
+		"stream_id":     0,
+		"delivery_id":   testB64x16,
+		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("self-addressed opaque bytes")),
+		"ack_requested": true,
+	})
+
+	frames := []map[string]any{readObject(t, alice.Conn), readObject(t, alice.Conn)}
+	var ack map[string]any
+	var envelope map[string]any
+	for _, frame := range frames {
+		switch frame["type"] {
+		case "ACK":
+			ack = frame
+		case "ENVELOPE":
+			envelope = frame
+		}
+	}
+	if ack == nil || ack["ack_type"] != "relay.forwarded" || ack["durable"] != false {
+		t.Fatalf("unexpected ack frames: %+v", frames)
+	}
+	if envelope == nil || envelope["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("self-addressed opaque bytes")) {
+		t.Fatalf("unexpected loopback envelope frames: %+v", frames)
+	}
+	if envelope["sender_peer_id"] != testAlicePeerID {
+		t.Fatalf("sender peer id missing from loopback envelope: %+v", envelope)
+	}
+	if _, err := protocol.DecodeDraftRelayAttachmentFrame(mustMarshal(t, envelope)); err != nil {
+		t.Fatalf("loopback envelope does not match shared schema: %v", err)
+	}
+
+	snapshot := hub.Snapshot()
+	if snapshot.SessionsActive != 1 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 1 || snapshot.ForwardedFrames != 1 {
+		t.Fatalf("unexpected hub snapshot: %+v", snapshot)
+	}
+}
+
 func TestHandlerSkipsRelayAckWhenEnvelopeDoesNotRequestIt(t *testing.T) {
 	_, handler := newTestHubAndHandler(t)
 	server := httptest.NewServer(handler)

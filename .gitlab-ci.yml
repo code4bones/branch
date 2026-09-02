@@ -66,7 +66,7 @@ build:branch-node:
       - relay-artifacts/
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: manual
+      when: on_success
   allow_failure: false
 
 deploy:relay01:
@@ -127,7 +127,7 @@ deploy:relay05:
     - if [ "${BRANCH_DOCKER_PRUNE_ALL:-0}" = "1" ]; then deployments/gitlab/docker-cli.sh image prune -af --filter "until=${BRANCH_DOCKER_PRUNE_UNTIL}" || true; fi
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: manual
+      when: on_success
   allow_failure: true
 
 cleanup:relay01:

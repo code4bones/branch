@@ -579,9 +579,6 @@ func (hub *Hub) rendezvous(from SessionID, routeID RouteID, peerID PeerID, now t
 
 	localPresence, ok := hub.lookupLocalLocked(peerID, now)
 	if ok {
-		if from == localPresence.SessionID {
-			return ErrInvalidID
-		}
 		hub.routes[routeID] = routeState{
 			left:  routeEndpoint{sessionID: from},
 			right: routeEndpoint{sessionID: localPresence.SessionID},
