@@ -1,3 +1,24 @@
+import {
+  CopyOutlined,
+  DownloadOutlined,
+  ExperimentOutlined,
+  PlayCircleOutlined,
+  StopOutlined,
+  UploadOutlined
+} from "@ant-design/icons";
+import {
+  Button,
+  Input,
+  InputNumber,
+  Progress,
+  Segmented,
+  Select,
+  Space,
+  Table,
+  Typography,
+  Upload,
+  type TableColumnsType
+} from "antd";
 import { useEffect, useRef } from "react";
 
 import { copyTextFromFallback, downloadText, downloadURL } from "../browser-files.js";
@@ -49,7 +70,7 @@ type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonF
 
 export function RibbonTool(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const decodeFileRef = useRef<HTMLInputElement | null>(null);
+  const decodeFileRef = useRef<File | null>(null);
   const transformAbortRef = useRef<AbortController | null>(null);
   const transformReportFallbackRef = useRef<HTMLTextAreaElement | null>(null);
   const ribbonTab = useAdminStore((state) => state.ribbonTab);
@@ -84,8 +105,7 @@ export function RibbonTool(): React.JSX.Element {
     setRibbonPngUrl(url);
   }
 
-  async function onCoverChange(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
-    const file = event.currentTarget.files?.[0];
+  async function onCoverFile(file: File | undefined): Promise<void> {
     if (file === undefined) {
       setCover(null);
       replaceRibbonPngUrl("");
@@ -154,10 +174,10 @@ export function RibbonTool(): React.JSX.Element {
     }
   }
 
-  async function onDecodeImageChange(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
-    const file = event.currentTarget.files?.[0];
+  async function onDecodeImageFile(file: File | undefined): Promise<void> {
     setDecodedWrapper("");
     if (file === undefined) {
+      decodeFileRef.current = null;
       drawIdle();
       setDiagnostics(createDiagnostics("idle", "status-warn"));
       return;
@@ -165,11 +185,13 @@ export function RibbonTool(): React.JSX.Element {
 
     try {
       const loaded = await loadLocalImage(file, "decode image");
+      decodeFileRef.current = file;
       drawDecodePreview(loaded);
       setDiagnostics(createDiagnostics("decode image loaded", "status-good", {
         canvas: `${String(loaded.width)}x${String(loaded.height)}`
       }));
     } catch (error) {
+      decodeFileRef.current = null;
       drawIdle();
       setDiagnostics(createDiagnostics(errorMessage(error), "status-bad"));
     }
@@ -192,7 +214,7 @@ export function RibbonTool(): React.JSX.Element {
       const presets = selectTransformLabPresets(mode, transformLab.selectedPresetId);
       const results = await runTransformLab({
         source: image,
-        sourceMime: readDecodeSourceMime(decodeFileRef.current?.files?.[0]),
+        sourceMime: readDecodeSourceMime(decodeFileRef.current ?? undefined),
         presets,
         decodeOptions: makeAutoDecodeBaseOptions(image.width, image.height),
         decode: (candidate, _options, signal) => decodeRibbonImageAutoWithWorker(candidate, signal),
@@ -245,8 +267,8 @@ export function RibbonTool(): React.JSX.Element {
   }
 
   async function loadDecodeImage(options: { readonly refreshPreview?: boolean } = {}) {
-    const file = decodeFileRef.current?.files?.[0];
-    if (file === undefined) {
+    const file = decodeFileRef.current;
+    if (file === null) {
       return canvasToImageData(requireCanvas());
     }
     const loaded = await loadLocalImage(file, "decode image");
@@ -319,14 +341,13 @@ export function RibbonTool(): React.JSX.Element {
             ribbon={ribbon}
             ribbonPngUrl={ribbonPngUrl}
             setRibbonField={setRibbonField}
-            onCoverChange={onCoverChange}
+            onCoverFile={onCoverFile}
             onGenerate={onGenerate}
           />
         ) : (
           <RibbonDecodePanel
-            decodeFileRef={decodeFileRef}
             decodedWrapper={decodedWrapper}
-            onDecodeImageChange={onDecodeImageChange}
+            onDecodeImageFile={onDecodeImageFile}
             onDecode={onDecode}
             transformLab={transformLab}
             transformReportFallbackRef={transformReportFallbackRef}
@@ -354,46 +375,29 @@ function RibbonWorkflowTabs(
   }
 ): React.JSX.Element {
   return (
-    <div className="ribbon-tabs" role="tablist" aria-label="Ribbon Image workflow">
-      <button
-        type="button"
-        className={`tab${activeTab === "encode" ? " is-active" : ""}`}
-        id="ribbon-tab-encode"
-        role="tab"
-        aria-selected={activeTab === "encode"}
-        aria-controls="ribbon-panel-encode"
-        onClick={() => { onTabChange("encode"); }}
-      >
-        Encode
-      </button>
-      <button
-        type="button"
-        className={`tab${activeTab === "decode" ? " is-active" : ""}`}
-        id="ribbon-tab-decode"
-        role="tab"
-        aria-selected={activeTab === "decode"}
-        aria-controls="ribbon-panel-decode"
-        onClick={() => { onTabChange("decode"); }}
-      >
-        Decode
-      </button>
-    </div>
+    <Segmented
+      block
+      className="workflow-segmented"
+      id="ribbon-workflow"
+      options={[
+        { label: "Encode", value: "encode" },
+        { label: "Decode", value: "decode" }
+      ]}
+      value={activeTab}
+      onChange={(value) => { onTabChange(value === "decode" ? "decode" : "encode"); }}
+    />
   );
 }
 
 function RibbonEncodePanel(
-  { ribbon, ribbonPngUrl, setRibbonField, onCoverChange, onGenerate }: {
+  { ribbon, ribbonPngUrl, setRibbonField, onCoverFile, onGenerate }: {
     readonly ribbon: RibbonFormState;
     readonly ribbonPngUrl: string;
     readonly setRibbonField: SetRibbonField;
-    readonly onCoverChange: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+    readonly onCoverFile: (file: File | undefined) => Promise<void>;
     readonly onGenerate: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   }
 ): React.JSX.Element {
-  const publicationTitleRef = useRef<HTMLInputElement | null>(null);
-  const publicationDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
-  const publicationQueryRef = useRef<HTMLInputElement | null>(null);
-
   return (
     <form
       className="panel control-panel"
@@ -404,7 +408,7 @@ function RibbonEncodePanel(
       onSubmit={(event) => void onGenerate(event)}
     >
       <label htmlFor="branch-wrapper">BRANCH0 wrapper</label>
-      <textarea
+      <Input.TextArea
         id="branch-wrapper"
         name="branch-wrapper"
         spellCheck={false}
@@ -416,57 +420,68 @@ function RibbonEncodePanel(
 
       <div className="control-row">
         <label htmlFor="cover-image">Cover image</label>
-        <input id="cover-image" name="cover-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onCoverChange(event)} />
+        <Upload
+          accept="image/png,image/jpeg,image/webp"
+          beforeUpload={(file) => {
+            void onCoverFile(file);
+            return false;
+          }}
+          maxCount={1}
+          onRemove={() => {
+            void onCoverFile(undefined);
+            return true;
+          }}
+        >
+          <Button icon={<UploadOutlined />} id="cover-image">Choose cover</Button>
+        </Upload>
       </div>
 
       <RibbonOutputSizeControls ribbon={ribbon} setRibbonField={setRibbonField} />
 
       <section className="publication-fields" aria-label="Image publication metadata">
-        <h2>Publication</h2>
+        <Typography.Title level={3}>Publication</Typography.Title>
         <div className="publication-row">
           <label htmlFor="ribbon-publication-title">Pinterest title</label>
-          <input id="ribbon-publication-title" ref={publicationTitleRef} readOnly value={ribbonImagePublicationTitle} />
-          <button type="button" onClick={() => void copyTextFromFallback(ribbonImagePublicationTitle, publicationTitleRef.current)}>
+          <Input id="ribbon-publication-title" readOnly value={ribbonImagePublicationTitle} />
+          <Button icon={<CopyOutlined />} onClick={() => void copyTextFromFallback(ribbonImagePublicationTitle, null)}>
             Copy title
-          </button>
+          </Button>
         </div>
         <label htmlFor="ribbon-publication-description">Pinterest description</label>
-        <textarea
+        <Input.TextArea
           id="ribbon-publication-description"
-          ref={publicationDescriptionRef}
           readOnly
           rows={3}
           value={ribbonImagePublicationDescription}
         />
-        <div className="button-row">
-          <button type="button" onClick={() => void copyTextFromFallback(ribbonImagePublicationDescription, publicationDescriptionRef.current)}>
+        <Space wrap>
+          <Button icon={<CopyOutlined />} onClick={() => void copyTextFromFallback(ribbonImagePublicationDescription, null)}>
             Copy description
-          </button>
-        </div>
+          </Button>
+        </Space>
         <div className="publication-row">
           <label htmlFor="ribbon-publication-query">Image search query</label>
-          <input id="ribbon-publication-query" ref={publicationQueryRef} readOnly value={ribbonImagePublicationSearchQuery} />
-          <button type="button" onClick={() => void copyTextFromFallback(ribbonImagePublicationSearchQuery, publicationQueryRef.current)}>
+          <Input id="ribbon-publication-query" readOnly value={ribbonImagePublicationSearchQuery} />
+          <Button icon={<CopyOutlined />} onClick={() => void copyTextFromFallback(ribbonImagePublicationSearchQuery, null)}>
             Copy query
-          </button>
+          </Button>
         </div>
       </section>
 
-      <div className="button-row">
-        <button type="submit">Generate</button>
-        <button type="button" id="download-ribbon" disabled={ribbonPngUrl === ""} onClick={() => { downloadURL(ribbonPngUrl, ribbonPngFilename); }}>
+      <Space wrap>
+        <Button htmlType="submit" icon={<PlayCircleOutlined />} type="primary">Generate</Button>
+        <Button icon={<DownloadOutlined />} id="download-ribbon" disabled={ribbonPngUrl === ""} onClick={() => { downloadURL(ribbonPngUrl, ribbonPngFilename); }}>
           Download PNG
-        </button>
-      </div>
+        </Button>
+      </Space>
     </form>
   );
 }
 
 function RibbonDecodePanel(
   {
-    decodeFileRef,
     decodedWrapper,
-    onDecodeImageChange,
+    onDecodeImageFile,
     onDecode,
     transformLab,
     transformReportFallbackRef,
@@ -476,9 +491,8 @@ function RibbonDecodePanel(
     onCopyTransformLabReport,
     onDownloadTransformLabReport
   }: {
-    readonly decodeFileRef: React.RefObject<HTMLInputElement | null>;
     readonly decodedWrapper: string;
-    readonly onDecodeImageChange: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+    readonly onDecodeImageFile: (file: File | undefined) => Promise<void>;
     readonly onDecode: () => Promise<void>;
     readonly transformLab: TransformLabState;
     readonly transformReportFallbackRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -493,14 +507,27 @@ function RibbonDecodePanel(
     <section className="panel control-panel" id="ribbon-panel-decode" role="tabpanel" aria-labelledby="ribbon-tab-decode">
       <div className="decode-controls">
         <label htmlFor="decode-image">Decode image</label>
-        <input id="decode-image" ref={decodeFileRef} name="decode-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onDecodeImageChange(event)} />
-        <button type="button" id="decode-ribbon" onClick={() => void onDecode()}>
+        <Upload
+          accept="image/png,image/jpeg,image/webp"
+          beforeUpload={(file) => {
+            void onDecodeImageFile(file);
+            return false;
+          }}
+          maxCount={1}
+          onRemove={() => {
+            void onDecodeImageFile(undefined);
+            return true;
+          }}
+        >
+          <Button icon={<UploadOutlined />} id="decode-image">Choose image</Button>
+        </Upload>
+        <Button icon={<PlayCircleOutlined />} id="decode-ribbon" type="primary" onClick={() => void onDecode()}>
           Decode
-        </button>
+        </Button>
       </div>
 
       <label htmlFor="decoded-wrapper">Decoded wrapper</label>
-      <textarea id="decoded-wrapper" spellCheck={false} readOnly rows={7} value={decodedWrapper} />
+      <Input.TextArea id="decoded-wrapper" spellCheck={false} readOnly rows={7} value={decodedWrapper} />
 
       <TransformLabPanel
         transformLab={transformLab}
@@ -528,48 +555,46 @@ function TransformLabPanel(
 ): React.JSX.Element {
   return (
     <section className="transform-lab" aria-labelledby="transform-lab-title">
-      <h2 id="transform-lab-title">Transform Lab</h2>
+      <Typography.Title id="transform-lab-title" level={3}>Transform Lab</Typography.Title>
       <div className="control-row">
         <label htmlFor="transform-preset">Preset</label>
-        <select
+        <Select
           id="transform-preset"
-          name="transform-preset"
+          options={transformLabPresets.map((preset) => ({ label: preset.label, value: preset.id }))}
           value={transformLab.selectedPresetId}
-          onChange={(event) => { onPresetChange(event.currentTarget.value); }}
-        >
-          {transformLabPresets.map((preset) => (
-            <option key={preset.id} value={preset.id}>
-              {preset.label}
-            </option>
-          ))}
-        </select>
+          onChange={onPresetChange}
+        />
       </div>
 
-      <div className="button-row lab-actions">
-        <button type="button" id="run-transform-preset" disabled={transformLab.running} onClick={() => void onRun("selected")}>
+      <Space className="lab-actions" wrap>
+        <Button icon={<ExperimentOutlined />} id="run-transform-preset" disabled={transformLab.running} onClick={() => void onRun("selected")}>
           Run selected
-        </button>
-        <button type="button" id="run-transform-matrix" disabled={transformLab.running} onClick={() => void onRun("matrix")}>
+        </Button>
+        <Button icon={<PlayCircleOutlined />} id="run-transform-matrix" type="primary" disabled={transformLab.running} onClick={() => void onRun("matrix")}>
           Run matrix
-        </button>
-        <button type="button" id="cancel-transform-lab" disabled={!transformLab.running} onClick={onCancel}>
+        </Button>
+        <Button icon={<StopOutlined />} id="cancel-transform-lab" disabled={!transformLab.running} onClick={onCancel}>
           Cancel
-        </button>
-      </div>
+        </Button>
+      </Space>
 
       <div className="lab-status">
         <span className={transformLab.statusClass}>{transformLab.status}</span>
         {transformLab.progress === null ? null : (
-          <progress value={transformLab.progress.current} max={transformLab.progress.total} aria-label="Transform Lab progress" />
+          <Progress
+            aria-label="Transform Lab progress"
+            percent={Math.round((transformLab.progress.current / Math.max(1, transformLab.progress.total)) * 100)}
+            size="small"
+          />
         )}
-        <div className="button-row">
-          <button type="button" id="copy-transform-report" disabled={transformLab.reportJson === ""} onClick={() => void onCopyReport()}>
+        <Space wrap>
+          <Button icon={<CopyOutlined />} id="copy-transform-report" disabled={transformLab.reportJson === ""} onClick={() => void onCopyReport()}>
             Copy JSON
-          </button>
-          <button type="button" id="download-transform-report" disabled={transformLab.reportJson === ""} onClick={onDownloadReport}>
+          </Button>
+          <Button icon={<DownloadOutlined />} id="download-transform-report" disabled={transformLab.reportJson === ""} onClick={onDownloadReport}>
             Download JSON
-          </button>
-        </div>
+          </Button>
+        </Space>
       </div>
 
       <TransformLabResults results={transformLab.results} />
@@ -583,41 +608,75 @@ function TransformLabResults({ results }: { readonly results: readonly Transform
     return <div className="lab-empty">No results</div>;
   }
 
+  const columns: TableColumnsType<TransformLabResult> = [
+    {
+      title: "Preset",
+      dataIndex: "presetLabel",
+      key: "preset",
+      sorter: (left, right) => left.presetLabel.localeCompare(right.presetLabel)
+    },
+    {
+      title: "Result",
+      dataIndex: "status",
+      key: "result",
+      sorter: (left, right) => left.status.localeCompare(right.status),
+      render: (_, result) => <span className={statusClassForTransformResult(result)}>{result.status}</span>
+    },
+    {
+      title: "Output",
+      key: "output",
+      render: (_, result) => `${String(result.output.width)}x${String(result.output.height)}`
+    },
+    {
+      title: "MIME",
+      key: "mime",
+      render: (_, result) => formatMime(result)
+    },
+    {
+      title: "Bytes",
+      key: "bytes",
+      sorter: (left, right) => (left.output.byteSize ?? 0) - (right.output.byteSize ?? 0),
+      render: (_, result) => result.output.byteSize === null ? "-" : String(result.output.byteSize)
+    },
+    {
+      title: "Decode",
+      key: "decode",
+      render: (_, result) => result.failureReason ?? result.decodeStatus
+    },
+    {
+      title: "Region",
+      key: "region",
+      render: (_, result) => formatFoundRegion(result)
+    },
+    {
+      title: "Match",
+      key: "match",
+      sorter: (left, right) => Number(left.exactMatch) - Number(right.exactMatch),
+      render: (_, result) => result.exactMatch ? "exact" : "-"
+    },
+    {
+      title: "Signature",
+      dataIndex: "signatureValidation",
+      key: "signature"
+    },
+    {
+      title: "ms",
+      dataIndex: "durationMs",
+      key: "duration",
+      sorter: (left, right) => left.durationMs - right.durationMs
+    }
+  ];
+
   return (
-    <div className="lab-table-wrap">
-      <table className="lab-results">
-        <thead>
-          <tr>
-            <th scope="col">Preset</th>
-            <th scope="col">Result</th>
-            <th scope="col">Output</th>
-            <th scope="col">MIME</th>
-            <th scope="col">Bytes</th>
-            <th scope="col">Decode</th>
-            <th scope="col">Region</th>
-            <th scope="col">Match</th>
-            <th scope="col">Signature</th>
-            <th scope="col">ms</th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((result) => (
-            <tr key={result.presetId}>
-              <td>{result.presetLabel}</td>
-              <td className={statusClassForTransformResult(result)}>{result.status}</td>
-              <td>{`${String(result.output.width)}x${String(result.output.height)}`}</td>
-              <td>{formatMime(result)}</td>
-              <td>{result.output.byteSize === null ? "-" : String(result.output.byteSize)}</td>
-              <td>{result.failureReason ?? result.decodeStatus}</td>
-              <td>{formatFoundRegion(result)}</td>
-              <td>{result.exactMatch ? "exact" : "-"}</td>
-              <td>{result.signatureValidation}</td>
-              <td>{String(result.durationMs)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table
+      className="lab-results"
+      columns={columns}
+      dataSource={[...results]}
+      pagination={{ pageSize: 8, showSizeChanger: true }}
+      rowKey="presetId"
+      scroll={{ x: 980 }}
+      size="small"
+    />
   );
 }
 
@@ -631,12 +690,28 @@ function RibbonOutputSizeControls(
     <>
       <div className="control-row">
         <label htmlFor="output-width">Output width</label>
-        <input id="output-width" name="output-width" type="number" min="640" max="4096" step="10" value={ribbon.outputWidth} onChange={(event) => { setRibbonField("outputWidth", event.currentTarget.value); }} />
+        <InputNumber
+          id="output-width"
+          max="4096"
+          min="640"
+          step="10"
+          stringMode
+          value={ribbon.outputWidth}
+          onChange={(value) => { setRibbonField("outputWidth", value ?? ""); }}
+        />
       </div>
 
       <div className="control-row">
         <label htmlFor="output-height">Output height</label>
-        <input id="output-height" name="output-height" type="number" min="640" max="4096" step="10" value={ribbon.outputHeight} onChange={(event) => { setRibbonField("outputHeight", event.currentTarget.value); }} />
+        <InputNumber
+          id="output-height"
+          max="4096"
+          min="640"
+          step="10"
+          stringMode
+          value={ribbon.outputHeight}
+          onChange={(value) => { setRibbonField("outputHeight", value ?? ""); }}
+        />
       </div>
     </>
   );

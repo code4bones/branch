@@ -1,5 +1,6 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
+import "antd/dist/reset.css";
 
 import { AdminApp } from "./App.js";
 
@@ -16,4 +17,3 @@ flushSync(() => {
 });
 
 window.dispatchEvent(new Event("branch:admin-mounted"));
-

@@ -1,3 +1,13 @@
+import {
+  CopyOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
+  PlayCircleOutlined,
+  SearchOutlined,
+  StopOutlined,
+  SyncOutlined
+} from "@ant-design/icons";
+import { Button, Checkbox, Input, InputNumber, Segmented, Select, Space, Table, Tag, type TableColumnsType } from "antd";
 import { useRef } from "react";
 
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
@@ -8,6 +18,7 @@ import {
   githubDiscoveryConstraints,
   githubDiscoveryFallbackQuery,
   mergeGitHubDiscoveryReports,
+  type GitHubDiscoveryResult,
   type GitHubValidatedRecord
 } from "../../discovery/github.js";
 import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
@@ -17,9 +28,6 @@ import { useAdminStore } from "../store.js";
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
 
 export function GitHubTool(): React.JSX.Element {
-  const outputRef = useRef<HTMLTextAreaElement | null>(null);
-  const badgeRef = useRef<HTMLTextAreaElement | null>(null);
-  const topicsRef = useRef<HTMLInputElement | null>(null);
   const discoveryAbortRef = useRef<AbortController | null>(null);
   const githubTab = useAdminStore((state) => state.githubTab);
   const github = useAdminStore((state) => state.github);
@@ -47,9 +55,8 @@ export function GitHubTool(): React.JSX.Element {
 
   async function onGenerate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const recordsInput = readFormString(formData, "github-records");
-    const sourceCommit = readFormString(formData, "source-commit");
+    const recordsInput = github.records;
+    const sourceCommit = github.sourceCommit;
     setGitHubRecords(recordsInput);
     setGitHubSourceCommit(sourceCommit);
     try {
@@ -126,49 +133,36 @@ export function GitHubTool(): React.JSX.Element {
 
   return (
     <section className="github-admin" data-panel="github" aria-label="GitHub carrier">
-      <div className="ribbon-tabs github-tabs" role="tablist" aria-label="GitHub workflow">
-        <button
-          aria-controls="github-panel-generate"
-          aria-selected={githubTab === "generate"}
-          className={`tab${githubTab === "generate" ? " is-active" : ""}`}
-          id="github-tab-generate"
-          role="tab"
-          type="button"
-          onClick={() => { setGitHubTab("generate"); }}
-        >
-          Generate
-        </button>
-        <button
-          aria-controls="github-panel-check"
-          aria-selected={githubTab === "check"}
-          className={`tab${githubTab === "check" ? " is-active" : ""}`}
-          id="github-tab-check"
-          role="tab"
-          type="button"
-          onClick={() => { setGitHubTab("check"); }}
-        >
-          Check
-        </button>
-      </div>
+      <Segmented
+        block
+        className="workflow-segmented"
+        id="github-workflow"
+        options={[
+          { label: "Generate", value: "generate" },
+          { label: "Check", value: "check" }
+        ]}
+        value={githubTab}
+        onChange={(value) => { setGitHubTab(value === "check" ? "check" : "generate"); }}
+      />
 
       {githubTab === "generate" ? (
         <div className="tool-grid is-active" id="github-panel-generate" role="tabpanel" aria-labelledby="github-tab-generate">
           <form className="panel control-panel" id="github-form" onSubmit={(event) => { void onGenerate(event); }}>
             <div className="control-row">
               <label htmlFor="github-mode">Bundle mode</label>
-              <select
+              <Select
                 id="github-mode"
-                name="github-mode"
+                options={[
+                  { label: "Demo fixture", value: "demo" },
+                  { label: "Live publishable", value: "live" }
+                ]}
                 value={github.mode}
-                onChange={(event) => { setGitHubMode(event.currentTarget.value === "live" ? "live" : "demo"); }}
-              >
-                <option value="demo">Demo fixture</option>
-                <option value="live">Live publishable</option>
-              </select>
+                onChange={(value) => { setGitHubMode(value); }}
+              />
             </div>
 
             <label htmlFor="github-records">BRANCH0 records</label>
-            <textarea
+            <Input.TextArea
               id="github-records"
               name="github-records"
               spellCheck={false}
@@ -180,7 +174,7 @@ export function GitHubTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="relay-endpoint-uri">Relay WSS endpoint</label>
-              <input
+              <Input
                 id="relay-endpoint-uri"
                 name="relay-endpoint-uri"
                 type="url"
@@ -192,7 +186,7 @@ export function GitHubTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="github-relay-admin-url">Relay admin URL</label>
-              <input
+              <Input
                 id="github-relay-admin-url"
                 name="github-relay-admin-url"
                 type="text"
@@ -204,11 +198,10 @@ export function GitHubTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="github-relay-admin-token">Relay admin token</label>
-              <input
+              <Input.Password
                 autoComplete="off"
                 id="github-relay-admin-token"
                 name="github-relay-admin-token"
-                type="password"
                 value={github.relayAdminToken}
                 onChange={(event) => { setGitHubRelayAdminToken(event.currentTarget.value); }}
               />
@@ -216,7 +209,7 @@ export function GitHubTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="source-commit">Source commit</label>
-              <input
+              <Input
                 id="source-commit"
                 name="source-commit"
                 type="text"
@@ -227,76 +220,67 @@ export function GitHubTool(): React.JSX.Element {
               />
             </div>
 
-            <div className="button-row">
-              <button
-                type="button"
-                onClick={() => { void onGenerateRelayBeacon(); }}
-              >
+            <Space wrap>
+              <Button icon={<SyncOutlined />} onClick={() => { void onGenerateRelayBeacon(); }}>
                 Fetch relay beacon
-              </button>
-              <button type="submit">Generate</button>
-              <button
-                type="button"
+              </Button>
+              <Button htmlType="submit" icon={<PlayCircleOutlined />} type="primary">Generate</Button>
+              <Button
+                icon={<DownloadOutlined />}
                 id="download-bundle"
                 disabled={github.files.length === 0}
                 onClick={() => { downloadBytes(makeGitHubArchive(github.files), githubBundleFilename, "application/zip"); }}
               >
                 Download bundle
-              </button>
-            </div>
+              </Button>
+            </Space>
             <p className={github.statusClass}>{github.status}</p>
 
             <label htmlFor="github-badge-snippet">README badge snippet</label>
-            <textarea
+            <Input.TextArea
               id="github-badge-snippet"
-              ref={badgeRef}
               readOnly
               rows={2}
               spellCheck={false}
               value={github.badgeSnippet}
             />
             <label htmlFor="github-topics">GitHub topics</label>
-            <input
+            <Input
               id="github-topics"
-              ref={topicsRef}
               readOnly
               type="text"
               value={githubTopics}
             />
-            <div className="button-row">
-              <button
-                type="button"
+            <Space wrap>
+              <Button
+                icon={<CopyOutlined />}
                 disabled={github.badgeSnippet === ""}
-                onClick={() => { void copyTextFromFallback(github.badgeSnippet, badgeRef.current); }}
+                onClick={() => { void copyTextFromFallback(github.badgeSnippet, null); }}
               >
                 Copy snippet
-              </button>
-              <button
-                type="button"
-                onClick={() => { void copyTextFromFallback(githubTopics, topicsRef.current); }}
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
+                onClick={() => { void copyTextFromFallback(githubTopics, null); }}
               >
                 Copy topics
-              </button>
-            </div>
+              </Button>
+            </Space>
           </form>
 
           <section className="panel output-panel" aria-label="Generated GitHub files">
-            <div className="file-tabs" id="file-tabs" role="tablist" aria-label="Generated files">
-              {github.files.map((file, index) => (
-                <button
-                  className={`file-tab${index === github.selectedFile ? " is-active" : ""}`}
-                  key={file.path}
-                  type="button"
-                  onClick={() => { setSelectedGitHubFile(index); }}
-                >
-                  {file.path}
-                </button>
-              ))}
-            </div>
-            <textarea id="file-output" ref={outputRef} spellCheck={false} readOnly rows={18} value={selectedFile?.content ?? ""} />
-            <div className="button-row">
-              <button
-                type="button"
+            <Segmented
+              block
+              className="file-segmented"
+              id="file-tabs"
+              options={github.files.map((file, index) => ({ label: file.path, value: index }))}
+              value={github.selectedFile}
+              onChange={(value) => { setSelectedGitHubFile(typeof value === "number" ? value : Number(value)); }}
+            />
+            <Input.TextArea id="file-output" spellCheck={false} readOnly rows={18} value={selectedFile?.content ?? ""} />
+            <Space wrap>
+              <Button
+                icon={<FileTextOutlined />}
                 id="download-file"
                 disabled={selectedFile === null}
                 onClick={() => {
@@ -306,27 +290,27 @@ export function GitHubTool(): React.JSX.Element {
                 }}
               >
                 Download file
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
                 id="copy-file"
                 disabled={selectedFile === null}
                 onClick={() => {
                   if (selectedFile !== null) {
-                    void copyTextFromFallback(selectedFile.content, outputRef.current);
+                    void copyTextFromFallback(selectedFile.content, null);
                   }
                 }}
               >
                 Copy
-              </button>
-            </div>
+              </Button>
+            </Space>
           </section>
         </div>
       ) : (
         <div className="tool-grid is-active" id="github-panel-check" role="tabpanel" aria-labelledby="github-tab-check">
           <form className="panel control-panel github-discovery-panel" id="github-discovery-form" onSubmit={(event) => { void onDiscover(event); }}>
             <label htmlFor="github-discovery-query">Discovery query</label>
-            <textarea
+            <Input.TextArea
               id="github-discovery-query"
               name="github-discovery-query"
               spellCheck={false}
@@ -337,94 +321,60 @@ export function GitHubTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="github-discovery-per-page">Page size</label>
-              <input
+              <InputNumber
                 id="github-discovery-per-page"
-                name="github-discovery-per-page"
-                type="number"
                 min="1"
                 max="10"
+                stringMode
                 value={github.discoveryPerPage}
-                onChange={(event) => { setGitHubDiscoveryPerPage(event.currentTarget.value); }}
+                onChange={(value) => { setGitHubDiscoveryPerPage(value ?? ""); }}
               />
             </div>
 
             <div className="control-row">
               <label htmlFor="github-discovery-page">Page</label>
-              <input
+              <InputNumber
                 id="github-discovery-page"
-                name="github-discovery-page"
-                type="number"
                 min="1"
                 max="10"
+                stringMode
                 value={github.discoveryPage}
-                onChange={(event) => { setGitHubDiscoveryPage(event.currentTarget.value); }}
+                onChange={(value) => { setGitHubDiscoveryPage(value ?? ""); }}
               />
             </div>
 
-            <label className="checkbox-row" htmlFor="github-discovery-forks">
-              <input
+            <Checkbox
                 id="github-discovery-forks"
-                name="github-discovery-forks"
-                type="checkbox"
                 checked={github.discoveryIncludeForks}
-                onChange={(event) => { setGitHubDiscoveryIncludeForks(event.currentTarget.checked); }}
-              />
-              <span>Include forks</span>
-            </label>
+                onChange={(event) => { setGitHubDiscoveryIncludeForks(event.target.checked); }}
+            >
+              Include forks
+            </Checkbox>
 
-            <label className="checkbox-row" htmlFor="github-discovery-fallback">
-              <input
+            <Checkbox
                 id="github-discovery-fallback"
-                name="github-discovery-fallback"
-                type="checkbox"
                 checked={github.discoveryIncludeLegacyFallback}
-                onChange={(event) => { setGitHubDiscoveryIncludeLegacyFallback(event.currentTarget.checked); }}
-              />
-              <span>Legacy fallback</span>
-            </label>
+                onChange={(event) => { setGitHubDiscoveryIncludeLegacyFallback(event.target.checked); }}
+            >
+              Legacy fallback
+            </Checkbox>
 
-            <div className="button-row">
-              <button type="submit" disabled={github.discoveryRunning}>Discover</button>
-              <button type="button" disabled={!github.discoveryRunning} onClick={onCancelDiscover}>Cancel</button>
-            </div>
+            <Space wrap>
+              <Button htmlType="submit" icon={<SearchOutlined />} type="primary" disabled={github.discoveryRunning}>Discover</Button>
+              <Button icon={<StopOutlined />} disabled={!github.discoveryRunning} onClick={onCancelDiscover}>Cancel</Button>
+            </Space>
             <p className={github.discoveryStatusClass}>{github.discoveryStatus}</p>
           </form>
 
           <section className="panel output-panel github-discovery-results" aria-label="GitHub discovery results">
-            <table>
-              <thead>
-                <tr>
-                  <th>Repository</th>
-                  <th>Branch</th>
-                  <th>Records</th>
-                  <th>Validation</th>
-                  <th>Relay endpoint</th>
-                  <th>Expiry</th>
-                  <th>Profile</th>
-                </tr>
-              </thead>
-              <tbody>
-                {github.discoveryResults.map((result) => (
-                  <tr key={result.recordsUrl}>
-                    <td><a href={result.htmlUrl} rel="noreferrer" target="_blank">{result.repository}</a></td>
-                    <td>{result.defaultBranch}{result.fork ? " fork" : ""}</td>
-                    <td>{result.wrapperCount}{result.firstWrapperPreview === null ? "" : ` ${result.firstWrapperPreview}`}</td>
-                    <td>
-                      <strong>{result.acceptedCount}</strong> accepted / <strong>{result.rejectedCount}</strong> rejected
-                      {result.reason === null ? "" : `; ${result.reason}`}
-                      {result.records.map((record) => (
-                        <div className={`record-validation is-${record.validation}`} key={`${result.recordsUrl}-${record.wrapperPreview}`}>
-                          {record.validation}: {record.reason}
-                        </div>
-                      ))}
-                    </td>
-                    <td>{firstAcceptedValue(result.records, "relayEndpoint") ?? "-"}</td>
-                    <td>{formatUnixSeconds(firstAcceptedValue(result.records, "expiresAt"))}</td>
-                    <td>{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Table
+              columns={githubDiscoveryColumns}
+              dataSource={[...github.discoveryResults]}
+              pagination={{ pageSize: 8, showSizeChanger: true }}
+              rowKey="recordsUrl"
+              scroll={{ x: 1120 }}
+              size="small"
+            />
             <ul className="github-discovery-notes">
               {githubDiscoveryConstraints.map((constraint) => (
                 <li key={constraint}>{constraint}</li>
@@ -436,6 +386,70 @@ export function GitHubTool(): React.JSX.Element {
     </section>
   );
 }
+
+const githubDiscoveryColumns: TableColumnsType<GitHubDiscoveryResult> = [
+  {
+    title: "Repository",
+    dataIndex: "repository",
+    key: "repository",
+    sorter: (left, right) => left.repository.localeCompare(right.repository),
+    render: (value: string, result) => <a href={result.htmlUrl} rel="noreferrer" target="_blank">{value}</a>
+  },
+  {
+    title: "Branch",
+    key: "branch",
+    sorter: (left, right) => left.defaultBranch.localeCompare(right.defaultBranch),
+    render: (_, result) => `${result.defaultBranch}${result.fork ? " fork" : ""}`
+  },
+  {
+    title: "Records",
+    key: "records",
+    sorter: (left, right) => left.wrapperCount - right.wrapperCount,
+    render: (_, result) => (
+      <>
+        <strong>{result.wrapperCount}</strong>
+        {result.firstWrapperPreview === null ? "" : ` ${result.firstWrapperPreview}`}
+      </>
+    )
+  },
+  {
+    title: "Validation",
+    key: "validation",
+    sorter: (left, right) => left.acceptedCount - right.acceptedCount || left.rejectedCount - right.rejectedCount,
+    render: (_, result) => (
+      <Space direction="vertical" size={4}>
+        <span>
+          <Tag color="green">{result.acceptedCount} accepted</Tag>
+          <Tag color={result.rejectedCount > 0 ? "red" : "default"}>{result.rejectedCount} rejected</Tag>
+        </span>
+        {result.reason === null ? null : <span className="table-muted">{result.reason}</span>}
+        {result.records.map((record) => (
+          <span className={`record-validation is-${record.validation}`} key={`${result.recordsUrl}-${record.wrapperPreview}`}>
+            {record.validation}: {record.reason}
+          </span>
+        ))}
+      </Space>
+    )
+  },
+  {
+    title: "Relay endpoint",
+    key: "relayEndpoint",
+    sorter: (left, right) => textValue(left, "relayEndpoint").localeCompare(textValue(right, "relayEndpoint")),
+    render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "relayEndpoint") ?? "-"}</span>
+  },
+  {
+    title: "Expiry",
+    key: "expiresAt",
+    sorter: (left, right) => (firstAcceptedValue(left.records, "expiresAt") ?? 0) - (firstAcceptedValue(right.records, "expiresAt") ?? 0),
+    render: (_, result) => formatUnixSeconds(firstAcceptedValue(result.records, "expiresAt"))
+  },
+  {
+    title: "Profile",
+    key: "profile",
+    sorter: (left, right) => textValue(left, "profileMultihash").localeCompare(textValue(right, "profileMultihash")),
+    render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</span>
+  }
+];
 
 function firstAcceptedValue<K extends "relayEndpoint" | "expiresAt" | "profileMultihash">(
   records: readonly GitHubValidatedRecord[],
@@ -452,9 +466,8 @@ function formatUnixSeconds(value: number | null): string {
   return new Date(value * 1000).toISOString();
 }
 
-function readFormString(formData: FormData, name: string): string {
-  const value = formData.get(name);
-  return typeof value === "string" ? value : "";
+function textValue(result: GitHubDiscoveryResult, key: "relayEndpoint" | "profileMultihash"): string {
+  return firstAcceptedValue(result.records, key) ?? "";
 }
 
 function readBoundedInteger(value: string, min: number, max: number, fallback: number): number {

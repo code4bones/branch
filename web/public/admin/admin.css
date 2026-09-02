@@ -17,81 +17,10 @@ body {
   background: #0a0d11;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-button:not(.ant-btn) {
-  min-height: 42px;
-  border: 1px solid #3971ad;
-  border-radius: 8px;
-  padding: 0 16px;
-  color: #06111d;
-  background: var(--admin-blue);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-button:not(.ant-btn):hover:not(:disabled) {
-  background: #86bdff;
-}
-
-button:not(.ant-btn):disabled {
-  cursor: not-allowed;
-  opacity: 0.52;
-}
-
-textarea:not(.ant-input),
-select,
-input:not(.ant-input):not(.ant-checkbox-input) {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--admin-line);
-  border-radius: 8px;
-  color: var(--admin-ink);
-  background: #080b0f;
-  outline: none;
-}
-
-textarea:not(.ant-input):focus,
-input:not(.ant-input):not(.ant-checkbox-input):focus {
-  border-color: var(--admin-blue);
-  box-shadow: 0 0 0 3px rgb(100 168 255 / 18%);
-}
-
-textarea:not(.ant-input) {
-  resize: vertical;
-  padding: 14px;
-  line-height: 1.45;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.88rem;
-}
-
-input:not(.ant-input):not(.ant-checkbox-input) {
-  min-height: 42px;
-  padding: 0 12px;
-}
-
-select {
-  min-height: 42px;
-  padding: 0 12px;
-}
-
-input[type="file"] {
-  display: block;
-  min-height: auto;
-  padding: 10px 12px;
-}
-
-input[type="range"] {
-  padding: 0;
-  accent-color: var(--admin-cyan);
-}
-
-label {
+.control-panel > label,
+.control-row > label,
+.decode-controls > label,
+.publication-row > label {
   display: block;
   color: var(--admin-muted);
   font-size: 0.82rem;
@@ -279,6 +208,28 @@ label {
   flex: 1 1 160px;
 }
 
+.workflow-segmented {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.file-segmented {
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+
+.file-segmented .ant-segmented-group {
+  min-width: max-content;
+}
+
+.file-segmented .ant-segmented-item-label {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .panel {
   min-width: 0;
   border: 1px solid var(--admin-line);
@@ -301,6 +252,30 @@ label {
   grid-template-columns: minmax(120px, 1fr) minmax(96px, 0.4fr);
   align-items: center;
   gap: 12px;
+}
+
+.control-row .ant-input,
+.control-row .ant-input-affix-wrapper,
+.control-row .ant-input-number,
+.control-row .ant-select,
+.control-panel > .ant-input,
+.control-panel > .ant-input-affix-wrapper,
+.control-panel > .ant-input-number,
+.control-panel > .ant-select,
+.control-panel > .ant-input-textarea,
+.output-panel > .ant-input-textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.ant-upload-wrapper,
+.ant-upload-wrapper .ant-upload,
+.ant-upload-wrapper .ant-btn {
+  max-width: 100%;
+}
+
+.ant-upload-wrapper .ant-upload-list-item-name {
+  color: var(--admin-muted);
 }
 
 .checkbox-row {
@@ -346,7 +321,8 @@ label {
   border-top: 1px solid var(--admin-line);
 }
 
-.publication-fields h2 {
+.publication-fields h2,
+.publication-fields h3 {
   margin: 0;
   color: var(--admin-ink);
   font-size: 1.05rem;
@@ -360,7 +336,8 @@ label {
   gap: 10px;
 }
 
-.transform-lab h2 {
+.transform-lab h2,
+.transform-lab h3 {
   margin: 0;
   color: var(--admin-ink);
   font-size: 1.05rem;
@@ -385,12 +362,10 @@ label {
   font-weight: 700;
 }
 
-.lab-status progress {
+.lab-status .ant-progress {
   flex: 1 1 180px;
   min-width: 140px;
   max-width: 320px;
-  height: 10px;
-  accent-color: #38e8ff;
 }
 
 .lab-empty {

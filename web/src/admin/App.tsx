@@ -7,9 +7,9 @@ import {
   PictureOutlined,
   RadarChartOutlined
 } from "@ant-design/icons";
-import { ConfigProvider, Layout, Menu, Typography, theme, type MenuProps } from "antd";
+import { Button, ConfigProvider, Layout, Menu, Space, Typography, theme, type MenuProps } from "antd";
 import { useEffect } from "react";
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { AdminStoreProvider, type AdminTab, useAdminStore } from "./store.js";
 import { ClientTool } from "./components/ClientTool.js";
@@ -91,17 +91,17 @@ function AdminShell(): React.JSX.Element {
   const menuItems: MenuProps["items"] = routeItems.map((item) => ({
     key: item.key,
     icon: item.icon,
-    label: <Link to={item.path}>{item.label}</Link>
+    label: item.label
   }));
 
   return (
     <Layout className="admin-layout">
       <Layout.Sider breakpoint="lg" className="admin-sider" collapsedWidth={0} width={248}>
-        <div className="admin-brand">
+        <div className="admin-brand" aria-label="Blue Ribbon Autonomous Network for Carrier Hopping">
           <BranchesOutlined aria-hidden="true" />
           <div>
-            <Typography.Text className="kicker">Blue Ribbon Autonomous Network for Carrier Hopping</Typography.Text>
-            <Typography.Title level={1}>Admin</Typography.Title>
+            <Typography.Text className="kicker">Operator console</Typography.Text>
+            <Typography.Title level={1}>B.R.A.N.C.H.</Typography.Title>
           </div>
         </div>
         <Menu
@@ -110,6 +110,12 @@ function AdminShell(): React.JSX.Element {
           mode="inline"
           selectedKeys={[activeRoute]}
           theme="dark"
+          onClick={({ key }) => {
+            const item = routeItems.find((routeItem) => routeItem.key === key);
+            if (item !== undefined) {
+              void navigate(item.path);
+            }
+          }}
         />
       </Layout.Sider>
 
@@ -119,10 +125,10 @@ function AdminShell(): React.JSX.Element {
             <Typography.Text className="kicker">B.R.A.N.C.H. operator console</Typography.Text>
             <Typography.Title id="admin-title" level={2}>{titleForRoute(activeRoute)}</Typography.Title>
           </div>
-          <nav className="admin-nav" aria-label="Admin navigation">
-            <a href="/"><HomeOutlined /> Status</a>
-            <a href="/admin/ribbon" aria-current="page">Admin</a>
-          </nav>
+          <Space className="admin-nav" wrap aria-label="Admin navigation">
+            <Button href="/" icon={<HomeOutlined />}>Status</Button>
+            <Button href="/admin/ribbon" type="primary">Admin</Button>
+          </Space>
         </Layout.Header>
 
         <Layout.Content className="admin-workspace" aria-labelledby="admin-title">

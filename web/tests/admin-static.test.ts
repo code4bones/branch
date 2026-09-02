@@ -40,6 +40,7 @@ void test("admin surface is static and open", async () => {
   const html = await readFile(adminHtmlPath, "utf8");
 
   assert.match(html, /\/admin\/admin-app\.js/);
+  assert.match(html, /\/admin\/admin-app\.css/);
   assert.match(html, /id="admin-root"/);
   assert.doesNotMatch(html, /\/vendor\/qrcode-browser\.js/);
   assert.doesNotMatch(html, /\/vendor\/jsqr\.js/);
@@ -62,6 +63,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const nginx = await readFile(nginxConfigPath, "utf8");
 
   assert.match(main, /createRoot/);
+  assert.match(main, /antd\/dist\/reset\.css/);
   assert.match(app, /Blue Ribbon Autonomous Network for Carrier Hopping/);
   assert.match(app, /AdminStoreProvider/);
   assert.match(app, /ClientTool/);
@@ -69,9 +71,12 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(app, /ConfigProvider/);
   assert.match(app, /BrowserRouter basename="\/admin"/);
   assert.match(app, /Menu/);
+  assert.match(app, /onClick=\{\(\{ key \}\)/);
   assert.match(app, /Routes/);
   assert.match(app, /Navigate/);
   assert.match(app, /darkAlgorithm/);
+  assert.match(app, /Typography\.Title level=\{1\}>B\.R\.A\.N\.C\.H\./);
+  assert.doesNotMatch(app, /<Link/);
   assert.match(app, /useEffect/);
   assert.match(app, /location\.hash === "#client"/);
   assert.match(app, /void navigate\("\/client", \{ replace: true \}\)/);
@@ -100,9 +105,12 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(store, /transformLab/);
   assert.match(store, /progress: null/);
   assert.match(store, /setTransformLabProgress/);
-  assert.match(ribbonTool, /id="ribbon-tab-encode"/);
-  assert.match(ribbonTool, /id="ribbon-tab-decode"/);
-  assert.match(ribbonTool, /aria-controls="ribbon-panel-encode"/);
+  assert.match(ribbonTool, /Segmented/);
+  assert.match(ribbonTool, /Upload/);
+  assert.match(ribbonTool, /Input\.TextArea/);
+  assert.match(ribbonTool, /InputNumber/);
+  assert.match(ribbonTool, /Table/);
+  assert.match(ribbonTool, /id="ribbon-workflow"/);
   assert.match(ribbonTool, /id="ribbon-panel-decode"/);
   assert.match(ribbonTool, /RibbonEncodePanel/);
   assert.match(ribbonTool, /RibbonDecodePanel/);
@@ -116,7 +124,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="copy-transform-report"/);
   assert.match(ribbonTool, /id="download-transform-report"/);
   assert.match(ribbonTool, /decodeRibbonImageAutoWithWorker/);
-  assert.match(ribbonTool, /onDecodeImageChange/);
+  assert.match(ribbonTool, /onDecodeImageFile/);
   assert.match(ribbonTool, /drawDecodePreview/);
   assert.match(ribbonTool, /drawFoundRegion/);
   assert.match(ribbonTool, /id="cover-image"/);
@@ -132,9 +140,13 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(ribbonTool, /id="decode-image"/);
   assert.match(ribbonTool, /id="decoded-wrapper"/);
   assert.match(ribbonTool, /className="tool-grid is-active ribbon-tool"/);
+  assert.doesNotMatch(ribbonTool, /<button|<input|<select/);
   assert.match(githubTool, /id="github-form"/);
-  assert.match(githubTool, /id="github-tab-generate"/);
-  assert.match(githubTool, /id="github-tab-check"/);
+  assert.match(githubTool, /Segmented/);
+  assert.match(githubTool, /Input\.TextArea/);
+  assert.match(githubTool, /InputNumber/);
+  assert.match(githubTool, /Table/);
+  assert.match(githubTool, /id="github-workflow"/);
   assert.match(githubTool, /id="github-panel-generate"/);
   assert.match(githubTool, /id="github-panel-check"/);
   assert.match(githubTool, /id="github-mode"/);
@@ -151,7 +163,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /GitHub topics/);
   assert.match(githubTool, /githubRepositoryTopics/);
   assert.match(githubTool, /makeRootReadmeSnippet/);
-  assert.match(githubTool, /<textarea[\s\S]*id="github-badge-snippet"/);
+  assert.match(githubTool, /Input\.TextArea[\s\S]*id="github-badge-snippet"/);
   assert.match(githubTool, /id="github-discovery-form"/);
   assert.match(githubTool, /id="github-discovery-query"/);
   assert.match(githubTool, /id="github-discovery-forks"/);
@@ -163,9 +175,13 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /formatUnixSeconds/);
   assert.match(githubTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
+  assert.doesNotMatch(githubTool, /<button|<input|<select|<textarea/);
   assert.match(gitLabTool, /id="gitlab-form"/);
-  assert.match(gitLabTool, /id="gitlab-tab-generate"/);
-  assert.match(gitLabTool, /id="gitlab-tab-check"/);
+  assert.match(gitLabTool, /Segmented/);
+  assert.match(gitLabTool, /Input\.TextArea/);
+  assert.match(gitLabTool, /InputNumber/);
+  assert.match(gitLabTool, /Table/);
+  assert.match(gitLabTool, /id="gitlab-workflow"/);
   assert.match(gitLabTool, /id="gitlab-panel-generate"/);
   assert.match(gitLabTool, /id="gitlab-panel-check"/);
   assert.match(gitLabTool, /GitLab project description/);
@@ -177,6 +193,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(gitLabTool, /createGitLabSearchCarrier/);
   assert.match(gitLabTool, /gitLabDiscoveryConstraints/);
   assert.match(gitLabTool, /downloadBytes\(makeGitLabArchive/);
+  assert.doesNotMatch(gitLabTool, /<button|<input|<select|<textarea/);
   assert.match(clientTool, /useEffect/);
   assert.match(clientTool, /data-panel="client"/);
   assert.match(clientTool, /id="client-discovery-query"/);
@@ -359,8 +376,12 @@ void test("admin css remains dark and bounded", async () => {
   assert.match(source, /color: var\(--admin-ink\)/);
   assert.match(source, /\.admin-layout \{[\s\S]*display: flex;/);
   assert.match(source, /\.admin-main \{[\s\S]*flex: 1 1 auto;/);
+  assert.match(source, /\.control-panel > label/);
   assert.match(source, /border-radius: 8px/);
   assert.match(source, /overflow-wrap: anywhere/);
+  assert.doesNotMatch(source, /^label \{/m);
+  assert.doesNotMatch(source, /input:not\(/);
+  assert.doesNotMatch(source, /button:not\(/);
   assert.doesNotMatch(source, /color-scheme:\s*light/);
 });
 

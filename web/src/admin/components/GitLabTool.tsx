@@ -1,3 +1,13 @@
+import {
+  CopyOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
+  PlayCircleOutlined,
+  SearchOutlined,
+  StopOutlined,
+  SyncOutlined
+} from "@ant-design/icons";
+import { Button, Input, InputNumber, Segmented, Select, Space, Table, Tag, type TableColumnsType } from "antd";
 import { useRef } from "react";
 
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
@@ -7,6 +17,7 @@ import {
   gitLabDiscoveryConstraints,
   gitLabReportsFromCarrierReports,
   mergeGitLabDiscoveryReports,
+  type GitLabDiscoveryResult,
   type GitLabValidatedRecord
 } from "../../discovery/gitlab.js";
 import { makeGitLabArchive, makeGitLabFiles, parseGitLabRecords } from "../gitlab-dropin.js";
@@ -16,10 +27,6 @@ import { useAdminStore } from "../store.js";
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
 
 export function GitLabTool(): React.JSX.Element {
-  const outputRef = useRef<HTMLTextAreaElement | null>(null);
-  const badgeRef = useRef<HTMLTextAreaElement | null>(null);
-  const topicsRef = useRef<HTMLInputElement | null>(null);
-  const descriptionRef = useRef<HTMLInputElement | null>(null);
   const discoveryAbortRef = useRef<AbortController | null>(null);
   const gitLabTab = useAdminStore((state) => state.gitLabTab);
   const gitlab = useAdminStore((state) => state.gitlab);
@@ -45,9 +52,8 @@ export function GitLabTool(): React.JSX.Element {
 
   async function onGenerate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const recordsInput = readFormString(formData, "gitlab-records");
-    const sourceCommit = readFormString(formData, "gitlab-source-commit");
+    const recordsInput = gitlab.records;
+    const sourceCommit = gitlab.sourceCommit;
     setGitLabRecords(recordsInput);
     setGitLabSourceCommit(sourceCommit);
     try {
@@ -119,49 +125,36 @@ export function GitLabTool(): React.JSX.Element {
 
   return (
     <section className="github-admin" data-panel="gitlab" aria-label="GitLab carrier">
-      <div className="ribbon-tabs github-tabs" role="tablist" aria-label="GitLab workflow">
-        <button
-          aria-controls="gitlab-panel-generate"
-          aria-selected={gitLabTab === "generate"}
-          className={`tab${gitLabTab === "generate" ? " is-active" : ""}`}
-          id="gitlab-tab-generate"
-          role="tab"
-          type="button"
-          onClick={() => { setGitLabTab("generate"); }}
-        >
-          Generate
-        </button>
-        <button
-          aria-controls="gitlab-panel-check"
-          aria-selected={gitLabTab === "check"}
-          className={`tab${gitLabTab === "check" ? " is-active" : ""}`}
-          id="gitlab-tab-check"
-          role="tab"
-          type="button"
-          onClick={() => { setGitLabTab("check"); }}
-        >
-          Check
-        </button>
-      </div>
+      <Segmented
+        block
+        className="workflow-segmented"
+        id="gitlab-workflow"
+        options={[
+          { label: "Generate", value: "generate" },
+          { label: "Check", value: "check" }
+        ]}
+        value={gitLabTab}
+        onChange={(value) => { setGitLabTab(value === "check" ? "check" : "generate"); }}
+      />
 
       {gitLabTab === "generate" ? (
         <div className="tool-grid is-active" id="gitlab-panel-generate" role="tabpanel" aria-labelledby="gitlab-tab-generate">
           <form className="panel control-panel" id="gitlab-form" onSubmit={(event) => { void onGenerate(event); }}>
             <div className="control-row">
               <label htmlFor="gitlab-mode">Bundle mode</label>
-              <select
+              <Select
                 id="gitlab-mode"
-                name="gitlab-mode"
+                options={[
+                  { label: "Demo fixture", value: "demo" },
+                  { label: "Live publishable", value: "live" }
+                ]}
                 value={gitlab.mode}
-                onChange={(event) => { setGitLabMode(event.currentTarget.value === "live" ? "live" : "demo"); }}
-              >
-                <option value="demo">Demo fixture</option>
-                <option value="live">Live publishable</option>
-              </select>
+                onChange={(value) => { setGitLabMode(value); }}
+              />
             </div>
 
             <label htmlFor="gitlab-records">BRANCH0 records</label>
-            <textarea
+            <Input.TextArea
               id="gitlab-records"
               name="gitlab-records"
               spellCheck={false}
@@ -173,7 +166,7 @@ export function GitLabTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="gitlab-relay-endpoint-uri">Relay WSS endpoint</label>
-              <input
+              <Input
                 id="gitlab-relay-endpoint-uri"
                 name="gitlab-relay-endpoint-uri"
                 type="url"
@@ -185,7 +178,7 @@ export function GitLabTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="gitlab-relay-admin-url">Relay admin URL</label>
-              <input
+              <Input
                 id="gitlab-relay-admin-url"
                 name="gitlab-relay-admin-url"
                 type="text"
@@ -197,11 +190,10 @@ export function GitLabTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="gitlab-relay-admin-token">Relay admin token</label>
-              <input
+              <Input.Password
                 autoComplete="off"
                 id="gitlab-relay-admin-token"
                 name="gitlab-relay-admin-token"
-                type="password"
                 value={gitlab.relayAdminToken}
                 onChange={(event) => { setGitLabRelayAdminToken(event.currentTarget.value); }}
               />
@@ -209,7 +201,7 @@ export function GitLabTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="gitlab-source-commit">Source commit</label>
-              <input
+              <Input
                 id="gitlab-source-commit"
                 name="gitlab-source-commit"
                 type="text"
@@ -220,87 +212,80 @@ export function GitLabTool(): React.JSX.Element {
               />
             </div>
 
-            <div className="button-row">
-              <button type="button" onClick={() => { void onGenerateRelayBeacon(); }}>
+            <Space wrap>
+              <Button icon={<SyncOutlined />} onClick={() => { void onGenerateRelayBeacon(); }}>
                 Fetch relay beacon
-              </button>
-              <button type="submit">Generate</button>
-              <button
-                type="button"
+              </Button>
+              <Button htmlType="submit" icon={<PlayCircleOutlined />} type="primary">Generate</Button>
+              <Button
+                icon={<DownloadOutlined />}
                 id="download-gitlab-bundle"
                 disabled={gitlab.files.length === 0}
                 onClick={() => { downloadBytes(makeGitLabArchive(gitlab.files), gitLabBundleFilename, "application/zip"); }}
               >
                 Download bundle
-              </button>
-            </div>
+              </Button>
+            </Space>
             <p className={gitlab.statusClass}>{gitlab.status}</p>
 
             <label htmlFor="gitlab-badge-snippet">README badge snippet</label>
-            <textarea
+            <Input.TextArea
               id="gitlab-badge-snippet"
-              ref={badgeRef}
               readOnly
               rows={2}
               spellCheck={false}
               value={gitlab.badgeSnippet}
             />
             <label htmlFor="gitlab-description">GitLab project description</label>
-            <input
+            <Input
               id="gitlab-description"
-              ref={descriptionRef}
               readOnly
               type="text"
               value={gitLabProjectDescription}
             />
             <label htmlFor="gitlab-topics">GitLab topics</label>
-            <input
+            <Input
               id="gitlab-topics"
-              ref={topicsRef}
               readOnly
               type="text"
               value={gitLabTopics}
             />
-            <div className="button-row">
-              <button
-                type="button"
+            <Space wrap>
+              <Button
+                icon={<CopyOutlined />}
                 disabled={gitlab.badgeSnippet === ""}
-                onClick={() => { void copyTextFromFallback(gitlab.badgeSnippet, badgeRef.current); }}
+                onClick={() => { void copyTextFromFallback(gitlab.badgeSnippet, null); }}
               >
                 Copy snippet
-              </button>
-              <button
-                type="button"
-                onClick={() => { void copyTextFromFallback(gitLabProjectDescription, descriptionRef.current); }}
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
+                onClick={() => { void copyTextFromFallback(gitLabProjectDescription, null); }}
               >
                 Copy description
-              </button>
-              <button
-                type="button"
-                onClick={() => { void copyTextFromFallback(gitLabTopics, topicsRef.current); }}
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
+                onClick={() => { void copyTextFromFallback(gitLabTopics, null); }}
               >
                 Copy topics
-              </button>
-            </div>
+              </Button>
+            </Space>
           </form>
 
           <section className="panel output-panel" aria-label="Generated GitLab files">
-            <div className="file-tabs" id="gitlab-file-tabs" role="tablist" aria-label="Generated files">
-              {gitlab.files.map((file, index) => (
-                <button
-                  className={`file-tab${index === gitlab.selectedFile ? " is-active" : ""}`}
-                  key={file.path}
-                  type="button"
-                  onClick={() => { setSelectedGitLabFile(index); }}
-                >
-                  {file.path}
-                </button>
-              ))}
-            </div>
-            <textarea id="gitlab-file-output" ref={outputRef} spellCheck={false} readOnly rows={18} value={selectedFile?.content ?? ""} />
-            <div className="button-row">
-              <button
-                type="button"
+            <Segmented
+              block
+              className="file-segmented"
+              id="gitlab-file-tabs"
+              options={gitlab.files.map((file, index) => ({ label: file.path, value: index }))}
+              value={gitlab.selectedFile}
+              onChange={(value) => { setSelectedGitLabFile(typeof value === "number" ? value : Number(value)); }}
+            />
+            <Input.TextArea id="gitlab-file-output" spellCheck={false} readOnly rows={18} value={selectedFile?.content ?? ""} />
+            <Space wrap>
+              <Button
+                icon={<FileTextOutlined />}
                 id="download-gitlab-file"
                 disabled={selectedFile === null}
                 onClick={() => {
@@ -310,27 +295,27 @@ export function GitLabTool(): React.JSX.Element {
                 }}
               >
                 Download file
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
                 id="copy-gitlab-file"
                 disabled={selectedFile === null}
                 onClick={() => {
                   if (selectedFile !== null) {
-                    void copyTextFromFallback(selectedFile.content, outputRef.current);
+                    void copyTextFromFallback(selectedFile.content, null);
                   }
                 }}
               >
                 Copy
-              </button>
-            </div>
+              </Button>
+            </Space>
           </section>
         </div>
       ) : (
         <div className="tool-grid is-active" id="gitlab-panel-check" role="tabpanel" aria-labelledby="gitlab-tab-check">
           <form className="panel control-panel github-discovery-panel" id="gitlab-discovery-form" onSubmit={(event) => { void onDiscover(event); }}>
             <label htmlFor="gitlab-discovery-query">Discovery query</label>
-            <textarea
+            <Input.TextArea
               id="gitlab-discovery-query"
               name="gitlab-discovery-query"
               spellCheck={false}
@@ -341,72 +326,44 @@ export function GitLabTool(): React.JSX.Element {
 
             <div className="control-row">
               <label htmlFor="gitlab-discovery-per-page">Page size</label>
-              <input
+              <InputNumber
                 id="gitlab-discovery-per-page"
-                name="gitlab-discovery-per-page"
-                type="number"
                 min="1"
                 max="10"
+                stringMode
                 value={gitlab.discoveryPerPage}
-                onChange={(event) => { setGitLabDiscoveryPerPage(event.currentTarget.value); }}
+                onChange={(value) => { setGitLabDiscoveryPerPage(value ?? ""); }}
               />
             </div>
 
             <div className="control-row">
               <label htmlFor="gitlab-discovery-page">Page</label>
-              <input
+              <InputNumber
                 id="gitlab-discovery-page"
-                name="gitlab-discovery-page"
-                type="number"
                 min="1"
                 max="10"
+                stringMode
                 value={gitlab.discoveryPage}
-                onChange={(event) => { setGitLabDiscoveryPage(event.currentTarget.value); }}
+                onChange={(value) => { setGitLabDiscoveryPage(value ?? ""); }}
               />
             </div>
 
-            <div className="button-row">
-              <button type="submit" disabled={gitlab.discoveryRunning}>Discover</button>
-              <button type="button" disabled={!gitlab.discoveryRunning} onClick={() => { discoveryAbortRef.current?.abort(); }}>Cancel</button>
-            </div>
+            <Space wrap>
+              <Button htmlType="submit" icon={<SearchOutlined />} type="primary" disabled={gitlab.discoveryRunning}>Discover</Button>
+              <Button icon={<StopOutlined />} disabled={!gitlab.discoveryRunning} onClick={() => { discoveryAbortRef.current?.abort(); }}>Cancel</Button>
+            </Space>
             <p className={gitlab.discoveryStatusClass}>{gitlab.discoveryStatus}</p>
           </form>
 
           <section className="panel output-panel github-discovery-results" aria-label="GitLab discovery results">
-            <table>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Branch</th>
-                  <th>Records</th>
-                  <th>Validation</th>
-                  <th>Relay endpoint</th>
-                  <th>Expiry</th>
-                  <th>Profile</th>
-                </tr>
-              </thead>
-              <tbody>
-                {gitlab.discoveryResults.map((result) => (
-                  <tr key={result.recordsUrl}>
-                    <td><a href={result.htmlUrl} rel="noreferrer" target="_blank">{result.repository}</a></td>
-                    <td>{result.defaultBranch}{result.fork ? " fork" : ""}</td>
-                    <td>{result.wrapperCount}{result.firstWrapperPreview === null ? "" : ` ${result.firstWrapperPreview}`}</td>
-                    <td>
-                      <strong>{result.acceptedCount}</strong> accepted / <strong>{result.rejectedCount}</strong> rejected
-                      {result.reason === null ? "" : `; ${result.reason}`}
-                      {result.records.map((record) => (
-                        <div className={`record-validation is-${record.validation}`} key={`${result.recordsUrl}-${record.wrapperPreview}`}>
-                          {record.validation}: {record.reason}
-                        </div>
-                      ))}
-                    </td>
-                    <td>{firstAcceptedValue(result.records, "relayEndpoint") ?? "-"}</td>
-                    <td>{formatUnixSeconds(firstAcceptedValue(result.records, "expiresAt"))}</td>
-                    <td>{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Table
+              columns={gitLabDiscoveryColumns}
+              dataSource={[...gitlab.discoveryResults]}
+              pagination={{ pageSize: 8, showSizeChanger: true }}
+              rowKey="recordsUrl"
+              scroll={{ x: 1120 }}
+              size="small"
+            />
             <ul className="github-discovery-notes">
               {gitLabDiscoveryConstraints.map((constraint) => (
                 <li key={constraint}>{constraint}</li>
@@ -418,6 +375,70 @@ export function GitLabTool(): React.JSX.Element {
     </section>
   );
 }
+
+const gitLabDiscoveryColumns: TableColumnsType<GitLabDiscoveryResult> = [
+  {
+    title: "Project",
+    dataIndex: "repository",
+    key: "repository",
+    sorter: (left, right) => left.repository.localeCompare(right.repository),
+    render: (value: string, result) => <a href={result.htmlUrl} rel="noreferrer" target="_blank">{value}</a>
+  },
+  {
+    title: "Branch",
+    key: "branch",
+    sorter: (left, right) => left.defaultBranch.localeCompare(right.defaultBranch),
+    render: (_, result) => `${result.defaultBranch}${result.fork ? " fork" : ""}`
+  },
+  {
+    title: "Records",
+    key: "records",
+    sorter: (left, right) => left.wrapperCount - right.wrapperCount,
+    render: (_, result) => (
+      <>
+        <strong>{result.wrapperCount}</strong>
+        {result.firstWrapperPreview === null ? "" : ` ${result.firstWrapperPreview}`}
+      </>
+    )
+  },
+  {
+    title: "Validation",
+    key: "validation",
+    sorter: (left, right) => left.acceptedCount - right.acceptedCount || left.rejectedCount - right.rejectedCount,
+    render: (_, result) => (
+      <Space direction="vertical" size={4}>
+        <span>
+          <Tag color="green">{result.acceptedCount} accepted</Tag>
+          <Tag color={result.rejectedCount > 0 ? "red" : "default"}>{result.rejectedCount} rejected</Tag>
+        </span>
+        {result.reason === null ? null : <span className="table-muted">{result.reason}</span>}
+        {result.records.map((record) => (
+          <span className={`record-validation is-${record.validation}`} key={`${result.recordsUrl}-${record.wrapperPreview}`}>
+            {record.validation}: {record.reason}
+          </span>
+        ))}
+      </Space>
+    )
+  },
+  {
+    title: "Relay endpoint",
+    key: "relayEndpoint",
+    sorter: (left, right) => textValue(left, "relayEndpoint").localeCompare(textValue(right, "relayEndpoint")),
+    render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "relayEndpoint") ?? "-"}</span>
+  },
+  {
+    title: "Expiry",
+    key: "expiresAt",
+    sorter: (left, right) => (firstAcceptedValue(left.records, "expiresAt") ?? 0) - (firstAcceptedValue(right.records, "expiresAt") ?? 0),
+    render: (_, result) => formatUnixSeconds(firstAcceptedValue(result.records, "expiresAt"))
+  },
+  {
+    title: "Profile",
+    key: "profile",
+    sorter: (left, right) => textValue(left, "profileMultihash").localeCompare(textValue(right, "profileMultihash")),
+    render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</span>
+  }
+];
 
 function firstAcceptedValue<K extends "relayEndpoint" | "expiresAt" | "profileMultihash">(
   records: readonly GitLabValidatedRecord[],
@@ -434,9 +455,8 @@ function formatUnixSeconds(value: number | null): string {
   return new Date(value * 1000).toISOString();
 }
 
-function readFormString(formData: FormData, name: string): string {
-  const value = formData.get(name);
-  return typeof value === "string" ? value : "";
+function textValue(result: GitLabDiscoveryResult, key: "relayEndpoint" | "profileMultihash"): string {
+  return firstAcceptedValue(result.records, key) ?? "";
 }
 
 function readBoundedInteger(value: string, min: number, max: number, fallback: number): number {
