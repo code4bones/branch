@@ -16,6 +16,7 @@
 
 # Go build and test output
 bin/
+/dist/
 coverage.out
 *.test
 
