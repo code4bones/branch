@@ -307,63 +307,70 @@ export function GitHubTool(): React.JSX.Element {
           </section>
         </div>
       ) : (
-        <div className="tool-grid is-active" id="github-panel-check" role="tabpanel" aria-labelledby="github-tab-check">
-          <form className="panel control-panel github-discovery-panel" id="github-discovery-form" onSubmit={(event) => { void onDiscover(event); }}>
-            <label htmlFor="github-discovery-query">Discovery query</label>
-            <Input.TextArea
-              id="github-discovery-query"
-              name="github-discovery-query"
-              spellCheck={false}
-              rows={3}
-              value={github.discoveryQuery}
-              onChange={(event) => { setGitHubDiscoveryQuery(event.currentTarget.value); }}
-            />
+        <section className="github-discovery-layout" id="github-panel-check" role="tabpanel" aria-labelledby="github-tab-check">
+          <form className="panel control-panel github-discovery-summary" id="github-discovery-form" onSubmit={(event) => { void onDiscover(event); }}>
+            <div className="github-discovery-controls">
+              <div className="github-discovery-query-field">
+                <label htmlFor="github-discovery-query">Discovery query</label>
+                <Input.TextArea
+                  id="github-discovery-query"
+                  name="github-discovery-query"
+                  spellCheck={false}
+                  rows={2}
+                  value={github.discoveryQuery}
+                  onChange={(event) => { setGitHubDiscoveryQuery(event.currentTarget.value); }}
+                />
+              </div>
 
-            <div className="control-row">
-              <label htmlFor="github-discovery-per-page">Page size</label>
-              <InputNumber
-                id="github-discovery-per-page"
-                min="1"
-                max="10"
-                stringMode
-                value={github.discoveryPerPage}
-                onChange={(value) => { setGitHubDiscoveryPerPage(value ?? ""); }}
-              />
+              <div className="control-row">
+                <label htmlFor="github-discovery-per-page">Page size</label>
+                <InputNumber
+                  id="github-discovery-per-page"
+                  min="1"
+                  max="10"
+                  stringMode
+                  value={github.discoveryPerPage}
+                  onChange={(value) => { setGitHubDiscoveryPerPage(value ?? ""); }}
+                />
+              </div>
+
+              <div className="control-row">
+                <label htmlFor="github-discovery-page">Page</label>
+                <InputNumber
+                  id="github-discovery-page"
+                  min="1"
+                  max="10"
+                  stringMode
+                  value={github.discoveryPage}
+                  onChange={(value) => { setGitHubDiscoveryPage(value ?? ""); }}
+                />
+              </div>
+
+              <Space className="github-discovery-options" direction="vertical" size={6}>
+                <Checkbox
+                  id="github-discovery-forks"
+                  checked={github.discoveryIncludeForks}
+                  onChange={(event) => { setGitHubDiscoveryIncludeForks(event.target.checked); }}
+                >
+                  Include forks
+                </Checkbox>
+
+                <Checkbox
+                  id="github-discovery-fallback"
+                  checked={github.discoveryIncludeLegacyFallback}
+                  onChange={(event) => { setGitHubDiscoveryIncludeLegacyFallback(event.target.checked); }}
+                >
+                  Legacy fallback
+                </Checkbox>
+              </Space>
+
+              <Space className="github-discovery-actions" wrap>
+                <Button htmlType="submit" icon={<SearchOutlined />} type="primary" disabled={github.discoveryRunning}>Discover</Button>
+                <Button icon={<StopOutlined />} disabled={!github.discoveryRunning} onClick={onCancelDiscover}>Cancel</Button>
+              </Space>
+
+              <p className={github.discoveryStatusClass}>{github.discoveryStatus}</p>
             </div>
-
-            <div className="control-row">
-              <label htmlFor="github-discovery-page">Page</label>
-              <InputNumber
-                id="github-discovery-page"
-                min="1"
-                max="10"
-                stringMode
-                value={github.discoveryPage}
-                onChange={(value) => { setGitHubDiscoveryPage(value ?? ""); }}
-              />
-            </div>
-
-            <Checkbox
-                id="github-discovery-forks"
-                checked={github.discoveryIncludeForks}
-                onChange={(event) => { setGitHubDiscoveryIncludeForks(event.target.checked); }}
-            >
-              Include forks
-            </Checkbox>
-
-            <Checkbox
-                id="github-discovery-fallback"
-                checked={github.discoveryIncludeLegacyFallback}
-                onChange={(event) => { setGitHubDiscoveryIncludeLegacyFallback(event.target.checked); }}
-            >
-              Legacy fallback
-            </Checkbox>
-
-            <Space wrap>
-              <Button htmlType="submit" icon={<SearchOutlined />} type="primary" disabled={github.discoveryRunning}>Discover</Button>
-              <Button icon={<StopOutlined />} disabled={!github.discoveryRunning} onClick={onCancelDiscover}>Cancel</Button>
-            </Space>
-            <p className={github.discoveryStatusClass}>{github.discoveryStatus}</p>
           </form>
 
           <section className="panel output-panel github-discovery-results" aria-label="GitHub discovery results">
@@ -381,7 +388,7 @@ export function GitHubTool(): React.JSX.Element {
               ))}
             </ul>
           </section>
-        </div>
+        </section>
       )}
     </section>
   );

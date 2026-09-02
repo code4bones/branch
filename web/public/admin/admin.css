@@ -17,7 +17,7 @@ body {
   background: #0a0d11;
 }
 
-.control-panel > label,
+.control-panel > label:not(.ant-checkbox-wrapper),
 .control-row > label,
 .decode-controls > label,
 .publication-row > label {
@@ -400,16 +400,19 @@ body {
 }
 
 .client-layout,
+.github-discovery-layout,
 .relay-monitor-layout {
   display: grid;
   min-width: 0;
   gap: 16px;
 }
 
+.github-discovery-summary,
 .client-summary {
   align-self: start;
 }
 
+.github-discovery-controls,
 .client-discovery-controls {
   display: grid;
   grid-template-columns: minmax(520px, 1fr) auto minmax(220px, 0.32fr);
@@ -417,16 +420,64 @@ body {
   gap: 14px;
 }
 
+.github-discovery-controls {
+  grid-template-columns: minmax(520px, 1fr) minmax(132px, 0.18fr) minmax(112px, 0.15fr) minmax(160px, 0.22fr) auto;
+}
+
+.github-discovery-query-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.github-discovery-query-field > label {
+  color: var(--admin-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.github-discovery-query-field .ant-input-textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.github-discovery-controls .control-row,
 .client-discovery-controls .control-row {
   grid-template-columns: max-content minmax(240px, 1fr);
 }
 
+.github-discovery-controls .control-row {
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 6px;
+}
+
+.github-discovery-controls .ant-input-number {
+  width: 100%;
+}
+
+.github-discovery-options {
+  align-self: center;
+  min-width: 0;
+}
+
+.github-discovery-options .ant-checkbox-wrapper {
+  min-width: 0;
+  color: var(--admin-ink);
+}
+
+.github-discovery-controls > p,
 .client-discovery-controls > p {
   margin: 0;
   overflow-wrap: anywhere;
   font-weight: 700;
 }
 
+.github-discovery-controls > p {
+  grid-column: 1 / -1;
+}
+
+.github-discovery-actions,
 .client-discovery-actions {
   align-self: end;
 }
@@ -699,9 +750,18 @@ body {
 }
 
 @media (max-width: 1200px) {
+  .github-discovery-controls,
   .client-discovery-controls,
   .relay-monitor-controls {
     grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+  }
+
+  .github-discovery-query-field {
+    grid-column: 1 / -1;
+  }
+
+  .github-discovery-actions {
+    align-self: end;
   }
 
   .client-route-controls {
@@ -749,6 +809,7 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .github-discovery-controls,
   .client-discovery-controls,
   .client-route-panel,
   .client-route-controls {
