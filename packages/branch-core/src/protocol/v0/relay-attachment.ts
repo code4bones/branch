@@ -1,12 +1,15 @@
 import { decodeBase64URL } from "./base64url.js";
 import { maxDraftEnvelopeBytes, maxDraftStringBytes, maxDraftTimestamp, protocolID } from "./envelope.js";
 import { developmentProfileMultihash } from "./profile.js";
+import { branchTextWrapperPrefix } from "./text-carrier.js";
 
 export const relayAttachmentSchema = "branch.relay-attachment/0.draft" as const;
 export const relayProofDomain = "BRANCH relay attachment v0\n" as const;
 export const maxDraftRelayAttachmentFrameBytes = maxDraftEnvelopeBytes;
 const maxDraftRouteHints = 8;
 const maxDraftRouteHintUriBytes = 512;
+const maxDraftIdentityRecords = 4;
+const maxDraftIdentityWrapperBytes = 8192;
 const draftRelayAttachmentPath = "/relay/v0";
 
 const relayFrameTypes = [
@@ -17,6 +20,8 @@ const relayFrameTypes = [
   "PRESENCE",
   "HEARTBEAT",
   "LOOKUP",
+  "IDENTITY_WANT",
+  "IDENTITY_HAVE",
   "RENDEZVOUS",
   "ENVELOPE",
   "ACK",
@@ -106,6 +111,12 @@ export function validateDraftRelayAttachmentFrame(value: unknown): DraftRelayAtt
     case "LOOKUP":
       validateLookup(value);
       break;
+    case "IDENTITY_WANT":
+      validateIdentityWant(value);
+      break;
+    case "IDENTITY_HAVE":
+      validateIdentityHave(value);
+      break;
     case "RENDEZVOUS":
       validateRendezvous(value);
       break;
@@ -191,6 +202,22 @@ function validateLookup(record: Record<string, unknown>): void {
   readBase64URLBytes(record, "session_id", 32);
   readBase64URLBytes(record, "peer_id", 32);
   readBoundedInteger(record, "sequence", 0, maxDraftTimestamp);
+}
+
+function validateIdentityWant(record: Record<string, unknown>): void {
+  rejectUnknownKeys(record, ["type", "session_id", "branch_id", "sequence", "hop_limit"]);
+  readBase64URLBytes(record, "session_id", 32);
+  readBranchID(record, "branch_id");
+  readBoundedInteger(record, "sequence", 0, maxDraftTimestamp);
+  readBoundedInteger(record, "hop_limit", 0, 4);
+}
+
+function validateIdentityHave(record: Record<string, unknown>): void {
+  rejectUnknownKeys(record, ["type", "session_id", "branch_id", "sequence", "records"]);
+  readBase64URLBytes(record, "session_id", 32);
+  readBranchID(record, "branch_id");
+  readBoundedInteger(record, "sequence", 0, maxDraftTimestamp);
+  readIdentityRecords(record, "records");
 }
 
 function validateRendezvous(record: Record<string, unknown>): void {
@@ -398,6 +425,40 @@ function readString(record: Record<string, unknown>, key: string): string {
     new TextEncoder().encode(value).byteLength > maxDraftStringBytes
   ) {
     throw new RelayAttachmentError(`invalid ${key}`);
+  }
+  return value;
+}
+
+function readBranchID(record: Record<string, unknown>, key: string): string {
+  const value = readString(record, key);
+  if (!value.startsWith("br1.")) {
+    throw new RelayAttachmentError(`invalid ${key}`);
+  }
+  try {
+    const multihash = decodeBase64URL(value.slice(4));
+    if (multihash.byteLength !== 34 || multihash[0] !== 0x12 || multihash[1] !== 0x20) {
+      throw new RelayAttachmentError(`invalid ${key}`);
+    }
+  } catch {
+    throw new RelayAttachmentError(`invalid ${key}`);
+  }
+  return value;
+}
+
+function readIdentityRecords(record: Record<string, unknown>, key: string): readonly string[] {
+  const value = record[key];
+  if (!Array.isArray(value) || value.length > maxDraftIdentityRecords) {
+    throw new RelayAttachmentError(`invalid ${key}`);
+  }
+  for (const item of value) {
+    if (
+      typeof item !== "string" ||
+      item.length === 0 ||
+      new TextEncoder().encode(item).byteLength > maxDraftIdentityWrapperBytes ||
+      !item.startsWith(branchTextWrapperPrefix)
+    ) {
+      throw new RelayAttachmentError(`invalid ${key}`);
+    }
   }
   return value;
 }

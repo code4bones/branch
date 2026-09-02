@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/code4bones/branch/internal/discovery"
 	"github.com/code4bones/branch/internal/relay"
 	protocol "github.com/code4bones/branch/protocol/v0"
 	"github.com/coder/websocket"
@@ -124,7 +125,13 @@ func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID 
 			return nil, false
 		}
 		available, reason := router.remotePeerAvailable(ctx, candidate, peerID)
-		router.recordPeerObservation(candidate.endpoint, available, reason, now)
+		state := "unreachable"
+		bridgeCount := 0
+		if available {
+			state = "reachable"
+			bridgeCount = 1
+		}
+		router.recordPeerObservation(candidate.endpoint, state, reason, bridgeCount, now)
 		if available {
 			return &federatedWSSForwarder{
 				router:         router,
@@ -135,6 +142,44 @@ func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID 
 		}
 	}
 	return nil, false
+}
+
+// LookupIdentityContact asks configured peer relays for exact signed
+// identity.announce source records. Peer requests use hop_limit=0 to avoid
+// recursive mesh loops.
+func (router *StaticPeerRouter) LookupIdentityContact(ctx context.Context, branchID string) ([]discovery.IdentityContactCandidate, error) {
+	if err := protocol.ParseBranchID(branchID); err != nil {
+		return nil, ErrInvalidFrame
+	}
+	var candidates []discovery.IdentityContactCandidate
+	now := router.now()
+	for _, candidate := range router.staticFederationCandidates() {
+		if err := ctx.Err(); err != nil {
+			return candidates, err
+		}
+		client, err := router.dial(ctx, candidate)
+		if err != nil {
+			router.recordPeerObservation(candidate.endpoint, "unreachable", "identity_dial_failed", 0, now)
+			continue
+		}
+		records, err := client.lookupIdentityContact(ctx, branchID)
+		client.close()
+		if err != nil {
+			router.recordPeerObservation(candidate.endpoint, "unreachable", "identity_unavailable", 0, now)
+			continue
+		}
+		router.recordPeerObservation(candidate.endpoint, "reachable", "identity_lookup_ok", 0, now)
+		for _, record := range records {
+			candidates = append(candidates, discovery.IdentityContactCandidate{
+				Wrapper: record,
+				Source:  candidate.endpoint,
+			})
+			if len(candidates) >= maxFederationResponses {
+				return candidates, nil
+			}
+		}
+	}
+	return candidates, nil
 }
 
 // FederationSnapshot returns a detached bounded view of relay mesh probes for
@@ -222,16 +267,12 @@ func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, candida
 	return true, "lookup_ok"
 }
 
-func (router *StaticPeerRouter) recordPeerObservation(endpoint string, reachable bool, reason string, now time.Time) {
+func (router *StaticPeerRouter) recordPeerObservation(endpoint string, state string, reason string, bridgeCount int, now time.Time) {
 	router.diagMu.Lock()
 	defer router.diagMu.Unlock()
 
-	state := "unreachable"
-	bridgeCount := 0
 	var freshUntil time.Time
-	if reachable {
-		state = "reachable"
-		bridgeCount = 1
+	if state == "reachable" {
 		freshUntil = now.Add(router.localHub.PresenceTTL())
 	}
 	observation := router.diagnostics[endpoint]
@@ -446,6 +487,39 @@ func (client *federationClient) writeLookup(ctx context.Context, peerID relay.Pe
 		"peer_id":    string(peerID),
 		"sequence":   1,
 	})
+}
+
+func (client *federationClient) lookupIdentityContact(ctx context.Context, branchID string) ([]string, error) {
+	if err := client.writeTyped(ctx, map[string]any{
+		"type":       "IDENTITY_WANT",
+		"session_id": client.sessionID,
+		"branch_id":  branchID,
+		"sequence":   1,
+		"hop_limit":  0,
+	}); err != nil {
+		return nil, err
+	}
+	responseCtx, cancel := context.WithTimeout(ctx, client.writeTimeout)
+	defer cancel()
+	raw, err := readFederationRaw(responseCtx, client.conn)
+	if err != nil {
+		return nil, err
+	}
+	response, err := readFederationObject(raw)
+	if err != nil {
+		return nil, err
+	}
+	switch response["type"] {
+	case "IDENTITY_HAVE":
+		if response["branch_id"] != branchID {
+			return nil, ErrInvalidFrame
+		}
+		return identityRecordStringsFromFrame(response)
+	case "ERROR":
+		return nil, relayErrorFromFrame(response)
+	default:
+		return nil, ErrInvalidFrame
+	}
 }
 
 func (client *federationClient) writeRendezvous(ctx context.Context, routeID relay.RouteID, peerID relay.PeerID) error {

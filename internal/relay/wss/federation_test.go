@@ -32,7 +32,7 @@ func TestStaticPeerRouterFederationSnapshotReportsConfiguredAndObservedPeers(t *
 	}
 
 	now := time.Date(2026, 9, 2, 13, 0, 0, 0, time.UTC)
-	router.recordPeerObservation("wss://relay04.undoo.ru:443/relay/v0", true, "lookup_ok", now)
+	router.recordPeerObservation("wss://relay04.undoo.ru:443/relay/v0", "reachable", "lookup_ok", 1, now)
 	snapshot = router.FederationSnapshot()
 	var observed FederationPeerObservation
 	for _, item := range snapshot {

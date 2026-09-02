@@ -51,6 +51,8 @@
       "PRESENCE",
       "HEARTBEAT",
       "LOOKUP",
+      "IDENTITY_WANT",
+      "IDENTITY_HAVE",
       "RENDEZVOUS",
       "ENVELOPE",
       "ACK",

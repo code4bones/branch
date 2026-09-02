@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -23,6 +24,8 @@ const (
 
 	maxDraftRouteHints        = 8
 	maxDraftRouteHintURIBytes = 512
+	maxDraftIdentityRecords   = 4
+	maxDraftIdentityWrapper   = 8192
 	draftRelayAttachmentPath  = "/relay/v0"
 )
 
@@ -30,17 +33,19 @@ const (
 type RelayFrameType string
 
 const (
-	RelayFrameHello      RelayFrameType = "HELLO"
-	RelayFrameChallenge  RelayFrameType = "CHALLENGE"
-	RelayFrameAuth       RelayFrameType = "AUTH"
-	RelayFrameReady      RelayFrameType = "READY"
-	RelayFramePresence   RelayFrameType = "PRESENCE"
-	RelayFrameHeartbeat  RelayFrameType = "HEARTBEAT"
-	RelayFrameLookup     RelayFrameType = "LOOKUP"
-	RelayFrameRendezvous RelayFrameType = "RENDEZVOUS"
-	RelayFrameEnvelope   RelayFrameType = "ENVELOPE"
-	RelayFrameAck        RelayFrameType = "ACK"
-	RelayFrameError      RelayFrameType = "ERROR"
+	RelayFrameHello        RelayFrameType = "HELLO"
+	RelayFrameChallenge    RelayFrameType = "CHALLENGE"
+	RelayFrameAuth         RelayFrameType = "AUTH"
+	RelayFrameReady        RelayFrameType = "READY"
+	RelayFramePresence     RelayFrameType = "PRESENCE"
+	RelayFrameHeartbeat    RelayFrameType = "HEARTBEAT"
+	RelayFrameLookup       RelayFrameType = "LOOKUP"
+	RelayFrameIdentityWant RelayFrameType = "IDENTITY_WANT"
+	RelayFrameIdentityHave RelayFrameType = "IDENTITY_HAVE"
+	RelayFrameRendezvous   RelayFrameType = "RENDEZVOUS"
+	RelayFrameEnvelope     RelayFrameType = "ENVELOPE"
+	RelayFrameAck          RelayFrameType = "ACK"
+	RelayFrameError        RelayFrameType = "ERROR"
 )
 
 var (
@@ -91,6 +96,8 @@ func KnownRelayFrameType(frameType RelayFrameType) bool {
 		RelayFramePresence,
 		RelayFrameHeartbeat,
 		RelayFrameLookup,
+		RelayFrameIdentityWant,
+		RelayFrameIdentityHave,
 		RelayFrameRendezvous,
 		RelayFrameEnvelope,
 		RelayFrameAck,
@@ -117,6 +124,10 @@ func validateRelayFrame(frameType RelayFrameType, frame map[string]json.RawMessa
 		return validateHeartbeatFrame(frame)
 	case RelayFrameLookup:
 		return validateLookupFrame(frame)
+	case RelayFrameIdentityWant:
+		return validateIdentityWantFrame(frame)
+	case RelayFrameIdentityHave:
+		return validateIdentityHaveFrame(frame)
 	case RelayFrameRendezvous:
 		return validateRendezvousFrame(frame)
 	case RelayFrameEnvelope:
@@ -262,6 +273,47 @@ func validateLookupFrame(frame map[string]json.RawMessage) error {
 	}
 	_, err := readBoundedUintField(frame, "sequence", 0, MaxDraftTimestamp)
 	return err
+}
+
+func validateIdentityWantFrame(frame map[string]json.RawMessage) error {
+	if err := rejectUnknownRawKeys(frame, "type", "session_id", "branch_id", "sequence", "hop_limit"); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "session_id", 32); err != nil {
+		return err
+	}
+	branchID, err := readStringField(frame, "branch_id")
+	if err != nil {
+		return err
+	}
+	if err := ParseBranchID(branchID); err != nil {
+		return fmt.Errorf("%w: invalid branch_id", ErrInvalidRelayAttachmentFrame)
+	}
+	if _, err := readBoundedUintField(frame, "sequence", 0, MaxDraftTimestamp); err != nil {
+		return err
+	}
+	_, err = readBoundedUintField(frame, "hop_limit", 0, 4)
+	return err
+}
+
+func validateIdentityHaveFrame(frame map[string]json.RawMessage) error {
+	if err := rejectUnknownRawKeys(frame, "type", "session_id", "branch_id", "sequence", "records"); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "session_id", 32); err != nil {
+		return err
+	}
+	branchID, err := readStringField(frame, "branch_id")
+	if err != nil {
+		return err
+	}
+	if err := ParseBranchID(branchID); err != nil {
+		return fmt.Errorf("%w: invalid branch_id", ErrInvalidRelayAttachmentFrame)
+	}
+	if _, err := readBoundedUintField(frame, "sequence", 0, MaxDraftTimestamp); err != nil {
+		return err
+	}
+	return readIdentityRecordsField(frame, "records")
 }
 
 func validateRendezvousFrame(frame map[string]json.RawMessage) error {
@@ -622,6 +674,23 @@ func readBase64Field(frame map[string]json.RawMessage, key string, size int) err
 	}
 	if !validBase64URLBytes(value, size) {
 		return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
+	}
+	return nil
+}
+
+func readIdentityRecordsField(frame map[string]json.RawMessage, key string) error {
+	raw, ok := frame[key]
+	if !ok {
+		return fmt.Errorf("%w: missing %s", ErrInvalidRelayAttachmentFrame, key)
+	}
+	var records []string
+	if err := json.Unmarshal(raw, &records); err != nil || len(records) > maxDraftIdentityRecords {
+		return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
+	}
+	for _, record := range records {
+		if len(record) == 0 || len([]byte(record)) > maxDraftIdentityWrapper || !strings.HasPrefix(record, BranchTextWrapperPrefix) {
+			return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
+		}
 	}
 	return nil
 }

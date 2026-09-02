@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/code4bones/branch/internal/discovery"
 	"github.com/code4bones/branch/internal/identity"
 	"github.com/code4bones/branch/internal/relay"
 	protocol "github.com/code4bones/branch/protocol/v0"
@@ -25,6 +26,8 @@ import (
 const (
 	// Path is the public same-relay WSS attachment endpoint.
 	Path = "/relay/v0"
+
+	maxIdentityHaveRecords = 4
 )
 
 var (
@@ -36,6 +39,7 @@ var (
 type Config struct {
 	Hub              *relay.Hub
 	Identity         *identity.NodeIdentity
+	IdentityContacts *discovery.IdentityContactCache
 	PeerRouter       PeerRouter
 	Random           io.Reader
 	Now              func() time.Time
@@ -64,6 +68,7 @@ type FederationRouteHint struct {
 type Handler struct {
 	hub              *relay.Hub
 	identity         *identity.NodeIdentity
+	identityContacts *discovery.IdentityContactCache
 	peerRouter       PeerRouter
 	random           io.Reader
 	now              func() time.Time
@@ -100,6 +105,7 @@ func NewHandler(config Config) (*Handler, error) {
 	return &Handler{
 		hub:              config.Hub,
 		identity:         config.Identity,
+		identityContacts: config.IdentityContacts,
 		peerRouter:       config.PeerRouter,
 		random:           config.Random,
 		now:              config.Now,
@@ -307,6 +313,10 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 			return nil
 		}
 		return relay.ErrPeerUnavailable
+	case "IDENTITY_WANT":
+		return handler.handleIdentityWant(ctx, conn, frame)
+	case "IDENTITY_HAVE":
+		return handler.handleIdentityHave(frame)
 	case "RENDEZVOUS":
 		routeID := relay.RouteID(frame["route_id"].(string))
 		peerID := relay.PeerID(frame["peer_id"].(string))
@@ -337,6 +347,108 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	default:
 		return nil
 	}
+}
+
+func (handler *Handler) handleIdentityWant(ctx context.Context, conn *connection, frame map[string]any) error {
+	branchID := frame["branch_id"].(string)
+	sequence, ok := numericField(frame["sequence"])
+	if !ok {
+		return ErrInvalidFrame
+	}
+	hopLimit, ok := numericField(frame["hop_limit"])
+	if !ok {
+		return ErrInvalidFrame
+	}
+	records := handler.identityRecordsForBranchID(ctx, branchID, int(hopLimit))
+	response := map[string]any{
+		"type":       "IDENTITY_HAVE",
+		"session_id": frame["session_id"].(string),
+		"branch_id":  branchID,
+		"sequence":   sequence,
+		"records":    records,
+	}
+	return writeJSON(ctx, conn, handler.writeTimeout, response)
+}
+
+func (handler *Handler) handleIdentityHave(frame map[string]any) error {
+	if handler.identityContacts == nil {
+		return nil
+	}
+	branchID := frame["branch_id"].(string)
+	records, err := identityRecordStringsFromFrame(frame)
+	if err != nil {
+		return err
+	}
+	nowUnix := handler.now().Unix()
+	for _, record := range records {
+		result := protocol.ValidateBranchTextIdentityContact(record, protocol.IdentityContactValidationOptions{NowUnix: nowUnix})
+		if !result.Accepted || result.Contact == nil {
+			return ErrInvalidFrame
+		}
+		if result.Contact.Payload.BranchID != branchID {
+			return ErrInvalidFrame
+		}
+		cacheResult := handler.identityContacts.Accept(record, "wss.identity_have", protocol.IdentityContactValidationOptions{NowUnix: nowUnix})
+		if !cacheResult.Accepted {
+			return ErrInvalidFrame
+		}
+	}
+	return nil
+}
+
+func (handler *Handler) identityRecordsForBranchID(ctx context.Context, branchID string, hopLimit int) []string {
+	if handler.identityContacts == nil {
+		return []string{}
+	}
+	if observation, ok := handler.identityContacts.Lookup(branchID); ok {
+		return []string{observation.Wrapper}
+	}
+	if hopLimit <= 0 {
+		return []string{}
+	}
+	source, ok := handler.peerRouter.(interface {
+		LookupIdentityContact(context.Context, string) ([]discovery.IdentityContactCandidate, error)
+	})
+	if !ok {
+		return []string{}
+	}
+	candidates, err := source.LookupIdentityContact(ctx, branchID)
+	if err != nil {
+		return []string{}
+	}
+	records := make([]string, 0, min(len(candidates), maxIdentityHaveRecords))
+	nowUnix := handler.now().Unix()
+	for _, candidate := range candidates {
+		if len(records) >= maxIdentityHaveRecords {
+			break
+		}
+		result := protocol.ValidateBranchTextIdentityContact(candidate.Wrapper, protocol.IdentityContactValidationOptions{NowUnix: nowUnix})
+		if !result.Accepted || result.Contact == nil || result.Contact.Payload.BranchID != branchID {
+			continue
+		}
+		cacheResult := handler.identityContacts.Accept(candidate.Wrapper, candidate.Source, protocol.IdentityContactValidationOptions{NowUnix: nowUnix})
+		if !cacheResult.Accepted {
+			continue
+		}
+		records = append(records, candidate.Wrapper)
+	}
+	return records
+}
+
+func identityRecordStringsFromFrame(frame map[string]any) ([]string, error) {
+	raw, ok := frame["records"].([]any)
+	if !ok || len(raw) > maxIdentityHaveRecords {
+		return nil, ErrInvalidFrame
+	}
+	records := make([]string, 0, len(raw))
+	for _, item := range raw {
+		record, ok := item.(string)
+		if !ok || record == "" {
+			return nil, ErrInvalidFrame
+		}
+		records = append(records, record)
+	}
+	return records, nil
 }
 
 func deliveryPayload(frame relay.Frame) ([]byte, error) {

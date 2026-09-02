@@ -118,6 +118,28 @@
       }
     },
     {
+      "name": "identity-want-exact-branch-id",
+      "expect": "accept",
+      "frame": {
+        "type": "IDENTITY_WANT",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "sequence": 4,
+        "hop_limit": 1
+      }
+    },
+    {
+      "name": "identity-have-bounded-signed-source-records",
+      "expect": "accept",
+      "frame": {
+        "type": "IDENTITY_HAVE",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "sequence": 4,
+        "records": ["BRANCH0.identityannounceplaceholder"]
+      }
+    },
+    {
       "name": "rendezvous-live-route",
       "expect": "accept",
       "frame": {

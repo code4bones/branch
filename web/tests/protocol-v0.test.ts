@@ -90,6 +90,8 @@ type RelayFrameType =
   | "PRESENCE"
   | "HEARTBEAT"
   | "LOOKUP"
+  | "IDENTITY_WANT"
+  | "IDENTITY_HAVE"
   | "RENDEZVOUS"
   | "ENVELOPE"
   | "ACK"
@@ -676,6 +678,8 @@ function isRelayFrameType(value: unknown): value is RelayFrameType {
     value === "PRESENCE" ||
     value === "HEARTBEAT" ||
     value === "LOOKUP" ||
+    value === "IDENTITY_WANT" ||
+    value === "IDENTITY_HAVE" ||
     value === "RENDEZVOUS" ||
     value === "ENVELOPE" ||
     value === "ACK" ||

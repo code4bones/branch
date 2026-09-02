@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/code4bones/branch/internal/admin"
+	"github.com/code4bones/branch/internal/discovery"
 	"github.com/code4bones/branch/internal/identity"
 	"github.com/code4bones/branch/internal/relay"
 	"github.com/code4bones/branch/internal/relay/wss"
@@ -67,6 +68,10 @@ func New(config Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create relay hub: %w", err)
 	}
+	identityContactCache, err := discovery.NewIdentityContactCache(discovery.IdentityContactCacheConfig{})
+	if err != nil {
+		return nil, fmt.Errorf("create identity contact cache: %w", err)
+	}
 	peerRouter, err := wss.NewStaticPeerRouter(wss.StaticPeerRouterConfig{
 		Endpoints:     config.FederationPeers,
 		LocalHub:      hub,
@@ -80,6 +85,7 @@ func New(config Config) (*App, error) {
 	relayHandler, err := wss.NewHandler(wss.Config{
 		Hub:              hub,
 		Identity:         nodeIdentity,
+		IdentityContacts: identityContactCache,
 		PeerRouter:       peerRouter,
 		OriginPatterns:   config.WSSOrigins,
 		MaxFrameBytes:    int64(config.Relay.MaxFrameBytes),

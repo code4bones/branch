@@ -262,6 +262,8 @@ The initial frame roles are:
 | `PRESENCE` | authenticated client to relay | Announces a live peer id and short TTL for the current session route. |
 | `HEARTBEAT` | authenticated client to relay | Renews the live presence TTL. |
 | `LOOKUP` | authenticated client to relay | Asks whether a specific peer id is currently reachable under local policy. |
+| `IDENTITY_WANT` | authenticated client/relay to relay | Asks for exact signed `identity.announce` source records for one BranchID. |
+| `IDENTITY_HAVE` | relay/client to relay/client | Returns a bounded list of exact signed `identity.announce` wrappers for the requested BranchID, or an empty list. |
 | `RENDEZVOUS` | authenticated client/relay | Binds a live route id to a currently reachable peer id; beta frames may include bounded client-discovered relay `route_hints`. |
 | `ENVELOPE` | authenticated client/relay | Carries opaque end-to-end encrypted bytes over a live route only. |
 | `ACK` | relay/client | Reports relay acceptance/forwarding or peer receipt; it never claims durable custody. |
@@ -316,6 +318,26 @@ mailbox, or delivery receipt. `LOOKUP` and `RENDEZVOUS` can only return live
 routes currently permitted by local policy. A relay may bind `RENDEZVOUS` to the
 requester's own live peer id for bounded loopback diagnostics; this still
 creates only an in-memory route and never authorizes durable delivery.
+
+`IDENTITY_WANT` and `IDENTITY_HAVE` are beta relay-assisted control-plane
+gossip frames for D-BRANCH-043. `IDENTITY_WANT` contains `session_id`,
+`branch_id`, `sequence`, and `hop_limit`. `branch_id` is an exact self-
+certifying BranchID; aliases, UINs, platform usernames, prefix scans, wildcard
+queries, and enumeration are not supported. `hop_limit` is bounded and prevents
+relay mesh loops. A relay with `hop_limit = 0` checks only its local volatile
+IdentityContact observation cache. A relay with `hop_limit > 0` may ask a
+bounded configured peer set with `hop_limit - 1`.
+
+`IDENTITY_HAVE` contains `session_id`, `branch_id`, `sequence`, and `records`,
+where `records` is a bounded list of exact `BRANCH0.` wrappers. Each wrapper
+must validate as a signed `identity.announce` event, match the requested
+BranchID, be fresh, have an acceptable profile multihash, and satisfy local
+sequence policy before it enters any relay cache. An empty `records` array
+means only "no matching signed source record in the checked volatile view"; it
+does not prove that the identity is unknown, offline, absent from the network,
+or untrusted. Relays must not persist these observations across restart and
+must not expose prefix search, reverse lookup, global presence, contact graph,
+or platform-account claims through these frames.
 
 `RENDEZVOUS.route_hints`, when present in the executable beta JSON profile, is
 an ordered bounded array of at most eight candidate objects. Each object

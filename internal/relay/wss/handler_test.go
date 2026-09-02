@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/code4bones/branch/internal/discovery"
 	"github.com/code4bones/branch/internal/identity"
 	"github.com/code4bones/branch/internal/relay"
 	protocol "github.com/code4bones/branch/protocol/v0"
@@ -648,6 +650,126 @@ func TestHandlerReturnsPeerUnavailableWithoutStoreAndForward(t *testing.T) {
 	}
 }
 
+func TestHandlerAcceptsAndReturnsIdentityContactRecords(t *testing.T) {
+	now := time.Unix(1_789_000_000, 0)
+	cache := newTestIdentityContactCache(t, now)
+	_, _, handler := newTestHubIdentityAndHandlerWithIdentityContacts(t, nil, nil, cache)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	wrapper, branchID := createTestIdentityContactWrapper(t, now)
+	client := dialAndReady(t, server.URL)
+	defer client.Close(websocket.StatusNormalClosure, "")
+
+	sendJSON(t, client.Conn, map[string]any{
+		"type":       "IDENTITY_HAVE",
+		"session_id": client.Ready.SessionID,
+		"branch_id":  branchID,
+		"sequence":   1,
+		"records":    []string{wrapper},
+	})
+
+	sendJSON(t, client.Conn, map[string]any{
+		"type":       "IDENTITY_WANT",
+		"session_id": client.Ready.SessionID,
+		"branch_id":  branchID,
+		"sequence":   2,
+		"hop_limit":  0,
+	})
+	response := readObject(t, client.Conn)
+	if response["type"] != "IDENTITY_HAVE" || response["branch_id"] != branchID {
+		t.Fatalf("unexpected identity response: %+v", response)
+	}
+	records, err := identityRecordStringsFromFrame(response)
+	if err != nil {
+		t.Fatalf("read records: %v", err)
+	}
+	if len(records) != 1 || records[0] != wrapper {
+		t.Fatalf("records = %+v", records)
+	}
+}
+
+func TestHandlerFederatesIdentityContactWantToPeerRelay(t *testing.T) {
+	now := time.Unix(1_789_000_000, 0)
+	wrapper, branchID := createTestIdentityContactWrapper(t, now)
+	remoteCache := newTestIdentityContactCache(t, now)
+	if result := remoteCache.Accept(wrapper, "test", protocol.IdentityContactValidationOptions{NowUnix: now.Unix()}); !result.Accepted {
+		t.Fatalf("seed remote cache = %+v", result)
+	}
+	_, _, remoteHandler := newTestHubIdentityAndHandlerWithIdentityContacts(t, nil, nil, remoteCache)
+	remoteServer := httptest.NewServer(remoteHandler)
+	defer remoteServer.Close()
+
+	localHub, err := relay.NewHub(relay.Config{
+		MaxSessions:         8,
+		MaxQueueDepth:       8,
+		MaxFrameBytes:       49_152,
+		MaxFramesPerSession: 32,
+		MaxBytesPerSession:  1 << 20,
+		PresenceTTL:         30 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewStaticPeerRouter(StaticPeerRouterConfig{
+		Endpoints:     []string{wssURL(remoteServer.URL)},
+		LocalHub:      localHub,
+		Random:        bytes.NewReader(countingBytes(4096)),
+		Now:           func() time.Time { return now },
+		MaxFrameBytes: 49_152,
+		DialTimeout:   time.Second,
+		WriteTimeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new static peer router: %v", err)
+	}
+	localCache := newTestIdentityContactCache(t, now)
+	nodeIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate identity: %v", err)
+	}
+	localHandler, err := NewHandler(Config{
+		Hub:              localHub,
+		Identity:         nodeIdentity,
+		IdentityContacts: localCache,
+		PeerRouter:       router,
+		Random:           bytes.NewReader(countingBytes(512)),
+		Now:              func() time.Time { return now },
+		MaxFrameBytes:    49_152,
+		HandshakeTimeout: time.Second,
+		WriteTimeout:     time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	localServer := httptest.NewServer(localHandler)
+	defer localServer.Close()
+
+	client := dialAndReady(t, localServer.URL)
+	defer client.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, client.Conn, map[string]any{
+		"type":       "IDENTITY_WANT",
+		"session_id": client.Ready.SessionID,
+		"branch_id":  branchID,
+		"sequence":   1,
+		"hop_limit":  1,
+	})
+	response := readObject(t, client.Conn)
+	if response["type"] != "IDENTITY_HAVE" {
+		t.Fatalf("unexpected identity response: %+v", response)
+	}
+	records, err := identityRecordStringsFromFrame(response)
+	if err != nil {
+		t.Fatalf("read records: %v", err)
+	}
+	if len(records) != 1 || records[0] != wrapper {
+		t.Fatalf("records = %+v", records)
+	}
+	if _, ok := localCache.Lookup(branchID); !ok {
+		t.Fatal("federated record was not cached locally")
+	}
+}
+
 func waitForDetachedPeer(t *testing.T, hub *relay.Hub) {
 	t.Helper()
 	deadline := time.After(time.Second)
@@ -759,6 +881,11 @@ func newTestHubIdentityAndHandler(t *testing.T) (*relay.Hub, *identity.NodeIdent
 
 func newTestHubIdentityAndHandlerWithOptions(t *testing.T, originPatterns []string, peerRouter PeerRouter) (*relay.Hub, *identity.NodeIdentity, http.Handler) {
 	t.Helper()
+	return newTestHubIdentityAndHandlerWithIdentityContacts(t, originPatterns, peerRouter, nil)
+}
+
+func newTestHubIdentityAndHandlerWithIdentityContacts(t *testing.T, originPatterns []string, peerRouter PeerRouter, identityContacts *discovery.IdentityContactCache) (*relay.Hub, *identity.NodeIdentity, http.Handler) {
+	t.Helper()
 	hub, err := relay.NewHub(relay.Config{
 		MaxSessions:         8,
 		MaxQueueDepth:       8,
@@ -777,6 +904,7 @@ func newTestHubIdentityAndHandlerWithOptions(t *testing.T, originPatterns []stri
 	handler, err := NewHandler(Config{
 		Hub:              hub,
 		Identity:         nodeIdentity,
+		IdentityContacts: identityContacts,
 		PeerRouter:       peerRouter,
 		Random:           bytes.NewReader(countingBytes(512)),
 		Now:              func() time.Time { return time.Unix(1_789_000_000, 0) },
@@ -789,6 +917,57 @@ func newTestHubIdentityAndHandlerWithOptions(t *testing.T, originPatterns []stri
 		t.Fatalf("new handler: %v", err)
 	}
 	return hub, nodeIdentity, handler
+}
+
+func newTestIdentityContactCache(t *testing.T, now time.Time) *discovery.IdentityContactCache {
+	t.Helper()
+	cache, err := discovery.NewIdentityContactCache(discovery.IdentityContactCacheConfig{
+		MaxEntries: 8,
+		Now: func() time.Time {
+			return now
+		},
+	})
+	if err != nil {
+		t.Fatalf("identity contact cache: %v", err)
+	}
+	return cache
+}
+
+func createTestIdentityContactWrapper(t *testing.T, now time.Time) (string, string) {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate identity key: %v", err)
+	}
+	relayPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate relay key: %v", err)
+	}
+	branchID, err := protocol.BranchIDFromPublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("branch id: %v", err)
+	}
+	wrapper, err := protocol.CreateIdentityContactWrapper(protocol.IdentityContactOptions{
+		NowUnix:         now.Unix(),
+		ExpiresAtUnix:   now.Add(time.Hour).Unix(),
+		Sequence:        1,
+		SenderPublicKey: publicKey,
+		Aliases:         []string{"alice"},
+		RouteHints: []protocol.IdentityContactRouteHint{{
+			Transport:        "wss",
+			URI:              "wss://relay01.undoo.ru:443/relay/v0",
+			RelayPublicKey:   base64.RawURLEncoding.EncodeToString(relayPublicKey),
+			ProfileMultihash: protocol.DevelopmentProfileMultihash,
+			Priority:         0,
+		}},
+		Sign: func(message []byte) ([]byte, error) {
+			return ed25519.Sign(privateKey, message), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("create identity contact: %v", err)
+	}
+	return wrapper, branchID
 }
 
 func countingBytes(size int) []byte {
