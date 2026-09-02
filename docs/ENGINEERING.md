@@ -187,6 +187,9 @@ must cover every network, CBOR, text-carrier, and image-carrier decoder.
 - TypeScript strict mode is mandatory.
 - Enable noUncheckedIndexedAccess and exactOptionalPropertyTypes unless a
   documented compiler limitation prevents it.
+- The Admin UI may use `skipLibCheck` for third-party React component
+  declaration drift, but project-owned TypeScript remains under strict,
+  noUncheckedIndexedAccess, and exactOptionalPropertyTypes checks.
 - any is forbidden in protocol, connectivity, identity, and storage core.
 - External data begins as unknown and passes runtime validation.
 - Frames, state machines, and results use discriminated unions rather than

@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { ApiOutlined, BranchesOutlined, GithubOutlined, GitlabOutlined, PictureOutlined, RadarChartOutlined } from "@ant-design/icons";
+import { ConfigProvider, Layout, Tabs, Typography, theme, type TabsProps } from "antd";
 
 import { AdminStoreProvider, useAdminStore } from "./store.js";
 import { ClientTool } from "./components/ClientTool.js";
@@ -9,9 +11,33 @@ import { RibbonTool } from "./components/RibbonTool.js";
 
 export function AdminApp(): React.JSX.Element {
   return (
-    <AdminStoreProvider>
-      <AdminShell />
-    </AdminStoreProvider>
+    <ConfigProvider
+      theme={{
+        algorithm: theme.darkAlgorithm,
+        token: {
+          colorPrimary: "#57d2c6",
+          colorBgBase: "#0a0d11",
+          colorBgContainer: "#12171d",
+          colorBorder: "#2d3845",
+          borderRadius: 8,
+          fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+        },
+        components: {
+          Layout: {
+            bodyBg: "#0a0d11",
+            headerBg: "#0a0d11"
+          },
+          Table: {
+            headerBg: "#18202a",
+            rowHoverBg: "#18202a"
+          }
+        }
+      }}
+    >
+      <AdminStoreProvider>
+        <AdminShell />
+      </AdminStoreProvider>
+    </ConfigProvider>
   );
 }
 
@@ -32,59 +58,78 @@ function AdminShell(): React.JSX.Element {
     };
   }, [setActiveTab]);
 
+  const items: TabsProps["items"] = [
+    {
+      key: "ribbon",
+      label: "Ribbon Image",
+      icon: <PictureOutlined />,
+      children: <RibbonTool />
+    },
+    {
+      key: "github",
+      label: "GitHub",
+      icon: <GithubOutlined />,
+      children: <GitHubTool />
+    },
+    {
+      key: "gitlab",
+      label: "GitLab",
+      icon: <GitlabOutlined />,
+      children: <GitLabTool />
+    },
+    {
+      key: "relays",
+      label: "Relays",
+      icon: <RadarChartOutlined />,
+      children: <RelayMonitorTool />
+    },
+    {
+      key: "client",
+      label: "Client",
+      icon: <ApiOutlined />,
+      children: <ClientTool />
+    }
+  ];
+
   return (
-    <main className="admin-shell" aria-labelledby="admin-title">
-      <header className="admin-header">
-        <div>
-          <p className="kicker">Blue Ribbon Autonomous Network for Carrier Hopping</p>
-          <h1 id="admin-title">Admin</h1>
-        </div>
-        <nav className="admin-nav" aria-label="Admin navigation">
-          <a href="/">Status</a>
-          <a
-            href="/admin/"
-            aria-current={activeTab === "client" ? undefined : "page"}
-            onClick={(event) => {
-              event.preventDefault();
-              window.history.replaceState(null, "", "/admin/");
-              setActiveTab("ribbon");
-            }}
-          >
-            Admin
-          </a>
-          <a
-            href="/admin/#client"
-            aria-current={activeTab === "client" ? "page" : undefined}
-            onClick={(event) => {
-              event.preventDefault();
-              window.history.replaceState(null, "", "/admin/#client");
-              setActiveTab("client");
-            }}
-          >
-            Client
-          </a>
-        </nav>
-      </header>
+    <Layout className="admin-layout">
+      <main className="admin-shell" aria-labelledby="admin-title">
+        <header className="admin-header">
+          <div>
+            <Typography.Text className="kicker">Blue Ribbon Autonomous Network for Carrier Hopping</Typography.Text>
+            <Typography.Title id="admin-title" level={1}>Admin</Typography.Title>
+          </div>
+          <nav className="admin-nav" aria-label="Admin navigation">
+            <a href="/">Status</a>
+            <a href="/admin/" aria-current="page">Admin</a>
+          </nav>
+        </header>
 
-      <section className="admin-tabs" aria-label="Admin tools">
-        <button className={`tab${activeTab === "ribbon" ? " is-active" : ""}`} type="button" data-tab="ribbon" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("ribbon"); }}>
-          Ribbon Image
-        </button>
-        <button className={`tab${activeTab === "github" ? " is-active" : ""}`} type="button" data-tab="github" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("github"); }}>
-          GitHub
-        </button>
-        <button className={`tab${activeTab === "gitlab" ? " is-active" : ""}`} type="button" data-tab="gitlab" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("gitlab"); }}>
-          GitLab
-        </button>
-        <button className={`tab${activeTab === "relays" ? " is-active" : ""}`} type="button" data-tab="relays" onClick={() => { window.history.replaceState(null, "", "/admin/"); setActiveTab("relays"); }}>
-          Relays
-        </button>
-        <button className={`tab${activeTab === "client" ? " is-active" : ""}`} type="button" data-tab="client" onClick={() => { window.history.replaceState(null, "", "/admin/#client"); setActiveTab("client"); }}>
-          Client
-        </button>
-      </section>
-
-      {activeTab === "client" ? <ClientTool /> : activeTab === "ribbon" ? <RibbonTool /> : activeTab === "gitlab" ? <GitLabTool /> : activeTab === "relays" ? <RelayMonitorTool /> : <GitHubTool />}
-    </main>
+        <Tabs
+          activeKey={activeTab}
+          className="admin-workspace-tabs"
+          destroyOnHidden={false}
+          items={items}
+          onChange={(key) => {
+            const tab = normalizeTab(key);
+            window.history.replaceState(null, "", tab === "client" ? "/admin/#client" : "/admin/");
+            setActiveTab(tab);
+          }}
+          tabBarExtraContent={<BranchesOutlined aria-hidden="true" className="admin-tab-mark" />}
+        />
+      </main>
+    </Layout>
   );
+}
+
+function normalizeTab(value: string): "ribbon" | "github" | "gitlab" | "relays" | "client" {
+  switch (value) {
+    case "github":
+    case "gitlab":
+    case "relays":
+    case "client":
+      return value;
+    default:
+      return "ribbon";
+  }
 }

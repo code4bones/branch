@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { ReloadOutlined, StopOutlined } from "@ant-design/icons";
+import { Button, Input, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchRelayMonitorObservations, type RelayMonitorObservation } from "../relay-monitor.js";
 import { useAdminStore, type StatusClass } from "../store.js";
 
 const expectedRelays = [
   { id: "relay01", endpoint: "wss://relay01.undoo.ru:443/relay/v0" },
-  { id: "relay02", endpoint: "wss://relay02.undoo.ru:443/relay/v0" }
+  { id: "relay02", endpoint: "wss://relay02.undoo.ru:443/relay/v0" },
+  { id: "relay04", endpoint: "wss://relay04.undoo.ru:443/relay/v0" },
+  { id: "relay05", endpoint: "wss://relay05.undoo.ru:443/relay/v0" }
 ] as const;
 
 export function RelayMonitorTool(): React.JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
+  const [search, setSearch] = useState("");
   const relayMonitor = useAdminStore((state) => state.relayMonitor);
   const setRelayMonitorAdminBaseUrl = useAdminStore((state) => state.setRelayMonitorAdminBaseUrl);
   const setRelayMonitorAdminToken = useAdminStore((state) => state.setRelayMonitorAdminToken);
@@ -59,13 +64,62 @@ export function RelayMonitorTool(): React.JSX.Element {
   }, []);
 
   const rows = useMemo(() => inventoryRows(relayMonitor.observations), [relayMonitor.observations]);
+  const visibleRows = useMemo(() => filterRows(rows, search), [rows, search]);
+  const columns = useMemo<TableColumnsType<RelayInventoryRow>>(() => [
+    {
+      title: "Relay",
+      dataIndex: "id",
+      key: "id",
+      sorter: (left, right) => left.id.localeCompare(right.id),
+      render: (value: string) => <strong>{value}</strong>
+    },
+    {
+      title: "Freshness",
+      key: "freshness",
+      sorter: (left, right) => freshnessRank(left.observation) - freshnessRank(right.observation),
+      render: (_, row) => (
+        <Tag color={freshnessColor(row.observation)}>
+          {row.observation === null ? "missing" : row.observation.stale ? "stale" : "fresh"}
+        </Tag>
+      )
+    },
+    {
+      title: "Readiness",
+      key: "readiness",
+      sorter: (left, right) => readinessText(left.observation).localeCompare(readinessText(right.observation)),
+      render: (_, row) => <Tag color={readinessColor(row.observation)}>{readinessText(row.observation)}</Tag>
+    },
+    {
+      title: "Endpoint",
+      key: "endpoint",
+      sorter: (left, right) => endpointText(left).localeCompare(endpointText(right)),
+      render: (_, row) => <span className="mono-cell">{endpointText(row)}</span>
+    },
+    {
+      title: "Last seen",
+      key: "lastSeen",
+      sorter: (left, right) => timestamp(left.observation?.last_seen_at) - timestamp(right.observation?.last_seen_at),
+      render: (_, row) => row.observation === null ? "-" : formatTime(row.observation.last_seen_at)
+    },
+    {
+      title: "Counters",
+      key: "counters",
+      render: (_, row) => row.observation === null ? "-" : counterText(row.observation)
+    },
+    {
+      title: "Build",
+      key: "build",
+      sorter: (left, right) => buildText(left.observation).localeCompare(buildText(right.observation)),
+      render: (_, row) => buildText(row.observation)
+    }
+  ], []);
 
   return (
     <section className="tool-grid is-active relay-monitor-tool" data-panel="relays" aria-label="Relay inventory">
       <section className="panel control-panel relay-monitor-summary" aria-label="Relay inventory controls">
         <div className="control-row">
           <label htmlFor="relay-monitor-admin-url">MASTER admin URL</label>
-          <input
+          <Input
             id="relay-monitor-admin-url"
             name="relay-monitor-admin-url"
             type="text"
@@ -75,66 +129,51 @@ export function RelayMonitorTool(): React.JSX.Element {
         </div>
         <div className="control-row">
           <label htmlFor="relay-monitor-admin-token">Admin token</label>
-          <input
+          <Input.Password
             id="relay-monitor-admin-token"
             name="relay-monitor-admin-token"
-            type="password"
             value={relayMonitor.adminToken}
             onChange={(event) => { setRelayMonitorAdminToken(event.currentTarget.value); }}
           />
         </div>
-        <div className="button-row">
-          <button type="button" disabled={relayMonitor.running} onClick={() => { void refresh(); }}>
+        <Space wrap>
+          <Button icon={<ReloadOutlined />} type="primary" disabled={relayMonitor.running} onClick={() => { void refresh(); }}>
             Refresh
-          </button>
-          <button type="button" disabled={!relayMonitor.running} onClick={() => { abortRef.current?.abort(); }}>
+          </Button>
+          <Button icon={<StopOutlined />} disabled={!relayMonitor.running} onClick={() => { abortRef.current?.abort(); }}>
             Cancel
-          </button>
-        </div>
+          </Button>
+        </Space>
         <p className={relayMonitor.statusClass}>{relayMonitor.status}</p>
         <dl className="diagnostics relay-monitor-diagnostics">
           <div>
-            <dt>Observed</dt>
-            <dd>{String(relayMonitor.observations.length)}</dd>
+            <Statistic title="Observed" value={relayMonitor.observations.length} />
           </div>
           <div>
-            <dt>Fresh</dt>
-            <dd>{String(relayMonitor.observations.filter((observation) => !observation.stale).length)}</dd>
+            <Statistic title="Fresh" value={relayMonitor.observations.filter((observation) => !observation.stale).length} />
           </div>
           <div>
-            <dt>Updated</dt>
-            <dd>{relayMonitor.lastRefreshAt === null ? "-" : formatTime(relayMonitor.lastRefreshAt)}</dd>
+            <Statistic title="Updated" value={relayMonitor.lastRefreshAt === null ? "-" : formatTime(relayMonitor.lastRefreshAt)} />
           </div>
         </dl>
       </section>
 
       <section className="panel output-panel relay-monitor-results" aria-label="Relay inventory results">
-        <table>
-          <thead>
-            <tr>
-              <th>Relay</th>
-              <th>Freshness</th>
-              <th>Readiness</th>
-              <th>Endpoint</th>
-              <th>Last seen</th>
-              <th>Counters</th>
-              <th>Build</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className={row.observation === null ? "is-missing" : undefined}>
-                <td><strong>{row.id}</strong></td>
-                <td className={rowClass(row.observation)}>{row.observation === null ? "missing" : row.observation.stale ? "stale" : "fresh"}</td>
-                <td>{row.observation?.snapshot.readiness ?? "-"}</td>
-                <td>{row.observation?.public_endpoint ?? row.endpoint}</td>
-                <td>{row.observation === null ? "-" : formatTime(row.observation.last_seen_at)}</td>
-                <td>{row.observation === null ? "-" : counterText(row.observation)}</td>
-                <td>{row.observation === null ? "-" : `${row.observation.snapshot.service_name} ${row.observation.snapshot.service_version}`}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Input.Search
+          allowClear
+          placeholder="Search relay, endpoint, readiness"
+          value={search}
+          onChange={(event) => { setSearch(event.currentTarget.value); }}
+        />
+        <Table
+          columns={columns}
+          dataSource={visibleRows}
+          pagination={{ pageSize: 8, showSizeChanger: true }}
+          rowClassName={(row) => row.observation === null ? "is-missing" : ""}
+          rowKey="id"
+          scroll={{ x: 980 }}
+          size="small"
+        />
       </section>
     </section>
   );
@@ -163,6 +202,20 @@ function inventoryRows(observations: readonly RelayMonitorObservation[]): readon
   return [...expected, ...additional];
 }
 
+function filterRows(rows: readonly RelayInventoryRow[], query: string): readonly RelayInventoryRow[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return rows;
+  }
+  return rows.filter((row) => [
+    row.id,
+    endpointText(row),
+    readinessText(row.observation),
+    row.observation === null ? "missing" : row.observation.stale ? "stale" : "fresh",
+    buildText(row.observation)
+  ].some((value) => value.toLowerCase().includes(needle)));
+}
+
 function statusText(observations: readonly RelayMonitorObservation[]): string {
   if (observations.length === 0) {
     return "no relay reports";
@@ -188,16 +241,6 @@ function statusClass(observations: readonly RelayMonitorObservation[]): StatusCl
   return "status-good";
 }
 
-function rowClass(observation: RelayMonitorObservation | null): StatusClass {
-  if (observation === null || observation.stale || observation.snapshot.readiness === "degraded") {
-    return "status-warn";
-  }
-  if (observation.snapshot.readiness === "not_ready") {
-    return "status-bad";
-  }
-  return "status-good";
-}
-
 function counterText(observation: RelayMonitorObservation): string {
   return [
     `sessions ${String(observation.snapshot.sessions_active)}`,
@@ -205,6 +248,49 @@ function counterText(observation: RelayMonitorObservation): string {
     `presence ${String(observation.snapshot.presence_active)}`,
     `queue ${String(observation.snapshot.queue_depth)}`
   ].join(" / ");
+}
+
+function endpointText(row: RelayInventoryRow): string {
+  return row.observation?.public_endpoint ?? row.endpoint;
+}
+
+function readinessText(observation: RelayMonitorObservation | null): string {
+  return observation?.snapshot.readiness ?? "-";
+}
+
+function buildText(observation: RelayMonitorObservation | null): string {
+  return observation === null ? "-" : `${observation.snapshot.service_name} ${observation.snapshot.service_version}`;
+}
+
+function timestamp(value: string | undefined): number {
+  return value === undefined ? 0 : Date.parse(value);
+}
+
+function freshnessRank(observation: RelayMonitorObservation | null): number {
+  if (observation === null) {
+    return 0;
+  }
+  return observation.stale ? 1 : 2;
+}
+
+function freshnessColor(observation: RelayMonitorObservation | null): string {
+  if (observation === null || observation.stale) {
+    return "gold";
+  }
+  return "green";
+}
+
+function readinessColor(observation: RelayMonitorObservation | null): string {
+  switch (observation?.snapshot.readiness) {
+    case "ready":
+      return "green";
+    case "degraded":
+      return "gold";
+    case "not_ready":
+      return "red";
+    default:
+      return "default";
+  }
 }
 
 function formatTime(value: string): string {

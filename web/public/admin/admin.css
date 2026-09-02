@@ -14,10 +14,7 @@
 }
 
 body {
-  background:
-    linear-gradient(90deg, var(--admin-blue-strong) 0 10px, transparent 10px),
-    radial-gradient(circle at 88% 8%, rgb(87 210 198 / 12%), transparent 28rem),
-    linear-gradient(180deg, #101720 0%, var(--admin-bg) 60%, #06080b 100%);
+  background: #0a0d11;
 }
 
 button,
@@ -27,7 +24,7 @@ textarea {
   font: inherit;
 }
 
-button {
+button:not(.ant-btn) {
   min-height: 42px;
   border: 1px solid #3971ad;
   border-radius: 8px;
@@ -38,18 +35,18 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
+button:not(.ant-btn):hover:not(:disabled) {
   background: #86bdff;
 }
 
-button:disabled {
+button:not(.ant-btn):disabled {
   cursor: not-allowed;
   opacity: 0.52;
 }
 
-textarea,
+textarea:not(.ant-input),
 select,
-input {
+input:not(.ant-input):not(.ant-checkbox-input) {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--admin-line);
@@ -59,13 +56,13 @@ input {
   outline: none;
 }
 
-textarea:focus,
-input:focus {
+textarea:not(.ant-input):focus,
+input:not(.ant-input):not(.ant-checkbox-input):focus {
   border-color: var(--admin-blue);
   box-shadow: 0 0 0 3px rgb(100 168 255 / 18%);
 }
 
-textarea {
+textarea:not(.ant-input) {
   resize: vertical;
   padding: 14px;
   line-height: 1.45;
@@ -73,7 +70,7 @@ textarea {
   font-size: 0.88rem;
 }
 
-input {
+input:not(.ant-input):not(.ant-checkbox-input) {
   min-height: 42px;
   padding: 0 12px;
 }
@@ -101,11 +98,16 @@ label {
   font-weight: 700;
 }
 
+.admin-layout {
+  min-height: 100svh;
+  background: #0a0d11;
+}
+
 .admin-shell {
-  width: min(100% - 40px, 1180px);
+  width: min(100% - 40px, 1480px);
   min-height: 100svh;
   margin: 0 auto;
-  padding: 34px 0 44px;
+  padding: 24px 0 44px;
 }
 
 .admin-header {
@@ -118,7 +120,7 @@ label {
 
 .admin-header h1 {
   margin: 0;
-  font-size: 3.8rem;
+  font-size: 2.6rem;
   line-height: 0.95;
 }
 
@@ -143,6 +145,24 @@ label {
 .admin-nav a[aria-current="page"] {
   border-color: #376f5f;
   color: var(--admin-green);
+}
+
+.admin-workspace-tabs {
+  min-width: 0;
+}
+
+.admin-workspace-tabs .ant-tabs-nav {
+  margin-bottom: 16px;
+}
+
+.admin-workspace-tabs .ant-tabs-content-holder,
+.admin-workspace-tabs .ant-tabs-tabpane {
+  min-width: 0;
+}
+
+.admin-tab-mark {
+  color: var(--admin-muted);
+  font-size: 1.25rem;
 }
 
 .admin-tabs,
@@ -479,6 +499,39 @@ label {
 
 .relay-monitor-results {
   overflow-x: auto;
+}
+
+.relay-monitor-results .ant-table-wrapper,
+.client-discovery-results .ant-table-wrapper {
+  min-width: 0;
+}
+
+.relay-monitor-results .ant-table,
+.client-discovery-results .ant-table {
+  background: #0b0f14;
+}
+
+.relay-monitor-results .ant-table-cell,
+.client-discovery-results .ant-table-cell {
+  vertical-align: top;
+}
+
+.relay-monitor-results .ant-table-row.is-missing .ant-table-cell {
+  color: var(--admin-muted);
+}
+
+.mono-cell {
+  display: inline-block;
+  max-width: 28rem;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.table-muted {
+  color: var(--admin-muted);
+  font-size: 0.78rem;
 }
 
 .relay-monitor-results table {

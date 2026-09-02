@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef } from "react";
+import { ApiOutlined, BranchesOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined, SyncOutlined } from "@ant-design/icons";
+import { Button, Input, Select, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
 import {
   createGitHubSearchCarrier,
   gitHubReportsFromCarrierReports,
   mergeGitHubDiscoveryReports,
+  type GitHubDiscoveryResult,
   type GitHubValidatedRecord
 } from "../../discovery/github.js";
 import { useAdminStore } from "../store.js";
@@ -12,6 +15,7 @@ import { useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
 
 export function ClientTool(): React.JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
+  const [resultSearch, setResultSearch] = useState("");
   const client = useAdminStore((state) => state.client);
   const setClientDiscoveryRunning = useAdminStore((state) => state.setClientDiscoveryRunning);
   const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
@@ -70,34 +74,102 @@ export function ClientTool(): React.JSX.Element {
     };
   }, [runDiscovery]);
 
+  const discoveryRows = useMemo(() => filterDiscoveryResults(client.discoveryResults, resultSearch), [client.discoveryResults, resultSearch]);
+  const discoveryColumns = useMemo<TableColumnsType<GitHubDiscoveryResult>>(() => [
+    {
+      title: "Repository",
+      dataIndex: "repository",
+      key: "repository",
+      sorter: (left, right) => left.repository.localeCompare(right.repository),
+      render: (value: string, result) => <a href={result.htmlUrl} rel="noreferrer" target="_blank">{value}</a>
+    },
+    {
+      title: "Branch",
+      key: "branch",
+      sorter: (left, right) => left.defaultBranch.localeCompare(right.defaultBranch),
+      render: (_, result) => `${result.defaultBranch}${result.fork ? " fork" : ""}`
+    },
+    {
+      title: "Records",
+      key: "records",
+      sorter: (left, right) => left.wrapperCount - right.wrapperCount,
+      render: (_, result) => (
+        <>
+          <strong>{result.wrapperCount}</strong>
+          {result.firstWrapperPreview === null ? "" : ` ${result.firstWrapperPreview}`}
+        </>
+      )
+    },
+    {
+      title: "Validation",
+      key: "validation",
+      sorter: (left, right) => left.acceptedCount - right.acceptedCount || left.rejectedCount - right.rejectedCount,
+      render: (_, result) => (
+        <Space direction="vertical" size={4}>
+          <span>
+            <Tag color="green">{result.acceptedCount} accepted</Tag>
+            <Tag color={result.rejectedCount > 0 ? "red" : "default"}>{result.rejectedCount} rejected</Tag>
+          </span>
+          {result.reason === null ? null : <span className="table-muted">{result.reason}</span>}
+          {result.records.map((record) => (
+            <span className={`record-validation is-${record.validation}`} key={`${result.recordsUrl}-${record.wrapperPreview}`}>
+              {record.validation}: {record.reason}
+            </span>
+          ))}
+        </Space>
+      )
+    },
+    {
+      title: "Relay endpoint",
+      key: "relayEndpoint",
+      sorter: (left, right) => textValue(left, "relayEndpoint").localeCompare(textValue(right, "relayEndpoint")),
+      render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "relayEndpoint") ?? "-"}</span>
+    },
+    {
+      title: "Relay key",
+      key: "senderPublicKey",
+      sorter: (left, right) => textValue(left, "senderPublicKey").localeCompare(textValue(right, "senderPublicKey")),
+      render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "senderPublicKey") ?? "-"}</span>
+    },
+    {
+      title: "Expiry",
+      key: "expiresAt",
+      sorter: (left, right) => (firstAcceptedValue(left.records, "expiresAt") ?? 0) - (firstAcceptedValue(right.records, "expiresAt") ?? 0),
+      render: (_, result) => formatUnixSeconds(firstAcceptedValue(result.records, "expiresAt"))
+    },
+    {
+      title: "Profile",
+      key: "profile",
+      sorter: (left, right) => textValue(left, "profileMultihash").localeCompare(textValue(right, "profileMultihash")),
+      render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</span>
+    }
+  ], []);
+
   return (
     <section className="tool-grid is-active client-tool" data-panel="client" aria-label="Client discovery">
       <section className="panel control-panel client-summary" aria-label="Client GitHub discovery controls">
         <div className="control-row">
           <label htmlFor="client-discovery-query">Locator</label>
-          <input id="client-discovery-query" readOnly type="text" value={client.discoveryQuery} />
+          <Input id="client-discovery-query" readOnly type="text" value={client.discoveryQuery} />
         </div>
-        <div className="button-row">
-          <button type="button" disabled={client.discoveryRunning} onClick={() => { void runDiscovery(); }}>
+        <Space wrap>
+          <Button icon={<ReloadOutlined />} type="primary" disabled={client.discoveryRunning} onClick={() => { void runDiscovery(); }}>
             Refresh
-          </button>
-          <button type="button" disabled={!client.discoveryRunning} onClick={() => { abortRef.current?.abort(); }}>
+          </Button>
+          <Button icon={<StopOutlined />} disabled={!client.discoveryRunning} onClick={() => { abortRef.current?.abort(); }}>
             Cancel
-          </button>
-        </div>
+          </Button>
+        </Space>
         <p className={client.discoveryStatusClass}>{client.discoveryStatus}</p>
         <dl className="diagnostics client-diagnostics">
           <div>
-            <dt>Accepted</dt>
-            <dd>{String(sumResults(client.discoveryResults, "acceptedCount"))}</dd>
+            <Statistic title="Accepted" value={sumResults(client.discoveryResults, "acceptedCount")} />
           </div>
           <div>
-            <dt>Rejected</dt>
-            <dd>{String(sumResults(client.discoveryResults, "rejectedCount"))}</dd>
+            <Statistic title="Rejected" value={sumResults(client.discoveryResults, "rejectedCount")} />
           </div>
           <div>
-            <dt>Rate</dt>
-            <dd>{client.rateLimitRemaining ?? "-"}</dd>
+            <Statistic title="Rate" value={client.rateLimitRemaining ?? "-"} />
           </div>
         </dl>
         <div className="client-route">
@@ -108,19 +180,19 @@ export function ClientTool(): React.JSX.Element {
         <div className="client-route-controls">
           <div className="control-row">
             <label htmlFor="client-route-mode">Route source</label>
-            <select
+            <Select
               id="client-route-mode"
-              name="client-route-mode"
               value={client.routeMode}
-              onChange={(event) => { setClientRouteMode(event.currentTarget.value === "manual" ? "manual" : "discovery"); }}
-            >
-              <option value="discovery">Discovery</option>
-              <option value="manual">Manual</option>
-            </select>
+              options={[
+                { label: "Discovery", value: "discovery" },
+                { label: "Manual", value: "manual" }
+              ]}
+              onChange={(value) => { setClientRouteMode(value); }}
+            />
           </div>
           <div className="control-row">
             <label htmlFor="client-manual-endpoint">Endpoint</label>
-            <input
+            <Input
               id="client-manual-endpoint"
               name="client-manual-endpoint"
               type="text"
@@ -130,7 +202,7 @@ export function ClientTool(): React.JSX.Element {
           </div>
           <div className="control-row">
             <label htmlFor="client-manual-relay-key">Relay public key</label>
-            <input
+            <Input
               id="client-manual-relay-key"
               name="client-manual-relay-key"
               type="text"
@@ -140,7 +212,7 @@ export function ClientTool(): React.JSX.Element {
           </div>
           <div className="control-row">
             <label htmlFor="client-manual-profile">Profile</label>
-            <input
+            <Input
               id="client-manual-profile"
               name="client-manual-profile"
               type="text"
@@ -152,42 +224,20 @@ export function ClientTool(): React.JSX.Element {
       </section>
 
       <section className="panel output-panel github-discovery-results client-discovery-results" aria-label="Client GitHub discovery results">
-        <table>
-          <thead>
-            <tr>
-              <th>Repository</th>
-              <th>Branch</th>
-              <th>Records</th>
-              <th>Validation</th>
-              <th>Relay endpoint</th>
-              <th>Relay key</th>
-              <th>Expiry</th>
-              <th>Profile</th>
-            </tr>
-          </thead>
-          <tbody>
-            {client.discoveryResults.map((result) => (
-              <tr key={result.recordsUrl}>
-                <td><a href={result.htmlUrl} rel="noreferrer" target="_blank">{result.repository}</a></td>
-                <td>{result.defaultBranch}{result.fork ? " fork" : ""}</td>
-                <td>{result.wrapperCount}{result.firstWrapperPreview === null ? "" : ` ${result.firstWrapperPreview}`}</td>
-                <td>
-                  <strong>{result.acceptedCount}</strong> accepted / <strong>{result.rejectedCount}</strong> rejected
-                  {result.reason === null ? "" : `; ${result.reason}`}
-                  {result.records.map((record) => (
-                    <div className={`record-validation is-${record.validation}`} key={`${result.recordsUrl}-${record.wrapperPreview}`}>
-                      {record.validation}: {record.reason}
-                    </div>
-                  ))}
-                </td>
-                <td>{firstAcceptedValue(result.records, "relayEndpoint") ?? "-"}</td>
-                <td>{firstAcceptedValue(result.records, "senderPublicKey") ?? "-"}</td>
-                <td>{formatUnixSeconds(firstAcceptedValue(result.records, "expiresAt"))}</td>
-                <td>{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Input.Search
+          allowClear
+          placeholder="Search repository, endpoint, key, profile"
+          value={resultSearch}
+          onChange={(event) => { setResultSearch(event.currentTarget.value); }}
+        />
+        <Table
+          columns={discoveryColumns}
+          dataSource={discoveryRows}
+          pagination={{ pageSize: 6, showSizeChanger: true }}
+          rowKey="recordsUrl"
+          scroll={{ x: 1160 }}
+          size="small"
+        />
       </section>
 
       <section className="panel output-panel client-transport-panel" aria-label="Client same-relay transport">
@@ -195,26 +245,26 @@ export function ClientTool(): React.JSX.Element {
           <h2>Same-relay transport</h2>
           <p className={client.transportStatusClass}>{client.transportStatus}</p>
         </div>
-        <div className="button-row">
-          <button type="button" disabled={transport.route === null || client.transportRunning} onClick={() => { void transport.attachPair(); }}>
+        <Space wrap>
+          <Button icon={<ApiOutlined />} type="primary" disabled={transport.route === null || client.transportRunning} onClick={() => { void transport.attachPair(); }}>
             Attach test pair
-          </button>
-          <button type="button" disabled={client.alicePeerId === "" || client.transportRunning} onClick={() => { void transport.sendOpaqueEnvelope(); }}>
+          </Button>
+          <Button icon={<PlayCircleOutlined />} disabled={client.alicePeerId === "" || client.transportRunning} onClick={() => { void transport.sendOpaqueEnvelope(); }}>
             Send envelope
-          </button>
-          <button type="button" disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.disconnectBobAndSend(); }}>
+          </Button>
+          <Button icon={<StopOutlined />} disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.disconnectBobAndSend(); }}>
             Drop Bob
-          </button>
-          <button type="button" disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.reconnectBobAndRetry(); }}>
+          </Button>
+          <Button icon={<SyncOutlined />} disabled={client.bobPeerId === "" || client.transportRunning} onClick={() => { void transport.reconnectBobAndRetry(); }}>
             Reconnect retry
-          </button>
-          <button type="button" disabled={client.discoveryRunning || client.transportRunning} onClick={() => { void transport.runCarrierHopPoC(); }}>
+          </Button>
+          <Button icon={<BranchesOutlined />} disabled={client.discoveryRunning || client.transportRunning} onClick={() => { void transport.runCarrierHopPoC(); }}>
             Run carrier-hop PoC
-          </button>
-          <button type="button" onClick={() => { transport.reset(); }}>
+          </Button>
+          <Button onClick={() => { transport.reset(); }}>
             Reset
-          </button>
-        </div>
+          </Button>
+        </Space>
         <dl className="diagnostics client-transport-diagnostics">
           <div>
             <dt>Relay ACK</dt>
@@ -259,6 +309,26 @@ export function ClientTool(): React.JSX.Element {
 
 function sumResults(results: readonly { readonly acceptedCount: number; readonly rejectedCount: number }[], key: "acceptedCount" | "rejectedCount"): number {
   return results.reduce((total, result) => total + result[key], 0);
+}
+
+function filterDiscoveryResults(results: readonly GitHubDiscoveryResult[], query: string): readonly GitHubDiscoveryResult[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return results;
+  }
+  return results.filter((result) => [
+    result.repository,
+    result.defaultBranch,
+    result.reason ?? "",
+    firstAcceptedValue(result.records, "relayEndpoint") ?? "",
+    firstAcceptedValue(result.records, "senderPublicKey") ?? "",
+    firstAcceptedValue(result.records, "profileMultihash") ?? "",
+    ...result.records.map((record) => `${record.validation} ${record.reason} ${record.wrapperPreview}`)
+  ].some((value) => value.toLowerCase().includes(needle)));
+}
+
+function textValue(result: GitHubDiscoveryResult, key: "relayEndpoint" | "profileMultihash" | "senderPublicKey"): string {
+  return firstAcceptedValue(result.records, key) ?? "";
 }
 
 function firstAcceptedValue<K extends "relayEndpoint" | "expiresAt" | "profileMultihash" | "senderPublicKey">(

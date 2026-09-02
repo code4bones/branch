@@ -11,8 +11,8 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noEmit": true,
-    "types": ["node"],
-    "skipLibCheck": false
+    "types": ["node", "react"],
+    "skipLibCheck": true
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"]
 }
