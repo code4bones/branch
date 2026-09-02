@@ -1,6 +1,7 @@
 # Local agent/session artifacts
 .resume
 .resume*
+.runtime/
 .mcp-xchange/
 .mcpsession.json
 .tellymcp/
