@@ -24,6 +24,8 @@ type Config struct {
 	AdminToken   string
 	Relay        relay.Config
 	Version      string
+	Monitor      RelayMonitorConfig
+	MonitorToken string
 }
 
 // DefaultConfig returns development-safe defaults for a relay behind a local
@@ -44,6 +46,7 @@ type App struct {
 	hub          *relay.Hub
 	publicServer *http.Server
 	adminServer  *http.Server
+	monitor      *relayMonitorReporter
 }
 
 // New creates the node composition root.
@@ -84,19 +87,29 @@ func New(config Config) (*App, error) {
 		Capabilities:     []string{"relay.forward.live/0", "route.relay.wss/0"},
 	}
 	statusProvider := admin.NewRelayStatusProvider(baseStatus, hub)
+	relayMonitorRegistry := admin.NewRelayMonitorRegistry(admin.RelayMonitorConfig{})
 	adminMux := admin.NewHTTPHandler(
 		admin.NewHandler(
 			statusProvider,
 			admin.WithBootstrapBeaconProvider(newBootstrapBeaconProvider(nodeIdentity)),
+			admin.WithRelayMonitorRegistry(relayMonitorRegistry),
 		),
 		admin.AuthorizerFunc(func(request *http.Request) bool {
 			return config.AdminToken != "" && request.Header.Get("authorization") == "Bearer "+config.AdminToken
 		}),
+		admin.WithRelayMonitorAuthorizer(admin.AuthorizerFunc(func(request *http.Request) bool {
+			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
+		})),
 	)
+	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider)
+	if err != nil {
+		return nil, err
+	}
 
 	return &App{
-		config: config,
-		hub:    hub,
+		config:  config,
+		hub:     hub,
+		monitor: monitorReporter,
 		publicServer: &http.Server{
 			Addr:              config.PublicAddr,
 			Handler:           publicMux,
@@ -128,10 +141,13 @@ func (app *App) Hub() *relay.Hub {
 
 // Run starts configured listeners until ctx is cancelled.
 func (app *App) Run(ctx context.Context) error {
-	errs := make(chan error, 2)
+	errs := make(chan error, 3)
 	go serve(app.publicServer, errs)
 	if app.config.AdminAddr != "" {
 		go serve(app.adminServer, errs)
+	}
+	if app.monitor != nil {
+		go app.monitor.run(ctx)
 	}
 
 	select {

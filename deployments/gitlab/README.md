@@ -55,6 +55,25 @@ BRANCH_RELAY01_ADMIN_TOKEN=<masked protected secret>
 BRANCH_RELAY02_ADMIN_TOKEN=<masked protected secret>
 ~~~
 
+To enable beta central relay monitoring, set the MASTER node with:
+
+~~~text
+BRANCH_MONITOR_INGEST_TOKEN=<masked local secret>
+~~~
+
+Then set these CI/CD variables for relay deploy jobs:
+
+~~~text
+BRANCH_MONITOR_MASTER_URL=https://branch.undoo.ru/node-admin/relay-monitor/reports
+BRANCH_MONITOR_PUSH_TOKEN=<same value as BRANCH_MONITOR_INGEST_TOKEN for this beta>
+~~~
+
+The deploy script derives `BRANCH_MONITOR_RELAY_ID` from `BRANCH_RELAY_NAME`
+and `BRANCH_MONITOR_PUBLIC_ENDPOINT` from the relay public endpoint unless
+per-relay overrides are configured. Monitoring reports are optional bounded
+status snapshots, stored only in MASTER process memory with TTL. They are not a
+discovery source, routing input, bootstrap authority, or durable relay state.
+
 Configure NPM for relay01:
 
 ~~~text
@@ -100,6 +119,8 @@ Set these in GitLab project CI/CD variables:
 | `BRANCH_RELAY02_PUBLIC_ENDPOINT` | `deploy:relay02` | Public relay URL, initially `wss://relay02.undoo.ru:443/relay/v0`. |
 | `BRANCH_RELAY01_ADMIN_TOKEN` | `deploy:relay01` | Masked and protected. Used only against the local admin listener. |
 | `BRANCH_RELAY02_ADMIN_TOKEN` | `deploy:relay02` | Masked and protected. Use a different value from relay01. |
+| `BRANCH_MONITOR_MASTER_URL` | relay monitor | Optional. MASTER webhook URL, usually `https://branch.undoo.ru/node-admin/relay-monitor/reports`. |
+| `BRANCH_MONITOR_PUSH_TOKEN` | relay monitor | Optional. Masked and protected. Must match MASTER `BRANCH_MONITOR_INGEST_TOKEN`. |
 
 Optional variables:
 
@@ -109,6 +130,11 @@ Optional variables:
 | `BRANCH_RELAY01_PROXY_BIND`, `BRANCH_RELAY02_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
 | `BRANCH_RELAY01_PROXY_PORT`, `BRANCH_RELAY02_PROXY_PORT` | `8088` / `8089` | Host port NPM forwards to. |
 | `BRANCH_RELAY01_ADMIN_HOST_PORT`, `BRANCH_RELAY02_ADMIN_HOST_PORT` | `18081` / `18082` | Loopback admin ports used by deploy checks. |
+| `BRANCH_RELAY01_MONITOR_MASTER_URL`, `BRANCH_RELAY02_MONITOR_MASTER_URL` | `BRANCH_MONITOR_MASTER_URL` | Per-relay MASTER webhook override. |
+| `BRANCH_RELAY01_MONITOR_PUSH_TOKEN`, `BRANCH_RELAY02_MONITOR_PUSH_TOKEN` | `BRANCH_MONITOR_PUSH_TOKEN` | Per-relay monitor token override. |
+| `BRANCH_RELAY01_MONITOR_RELAY_ID`, `BRANCH_RELAY02_MONITOR_RELAY_ID` | `relay01` / `relay02` | Per-relay monitor id override. |
+| `BRANCH_RELAY01_MONITOR_PUBLIC_ENDPOINT`, `BRANCH_RELAY02_MONITOR_PUBLIC_ENDPOINT` | relay public endpoint | Per-relay monitor endpoint override. |
+| `BRANCH_RELAY01_MONITOR_INTERVAL`, `BRANCH_RELAY02_MONITOR_INTERVAL` | `30s` | Per-relay monitor push interval. Minimum enforced by the node is `5s`. |
 | `BRANCH_DOCKER_PRUNE_UNTIL` | `24h` | Manual cleanup age filter. |
 | `BRANCH_DOCKER_PRUNE_ALL` | `0` | Set to `1` only when manual cleanup may remove unused non-dangling images. |
 

@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/code4bones/branch/internal/node"
 )
@@ -45,6 +47,16 @@ func parseConfig() (node.Config, error) {
 	flag.StringVar(&config.AdminAddr, "admin-listen", config.AdminAddr, "protected admin HTTP listen address")
 	flag.StringVar(&config.IdentityPath, "identity", defaultIdentityPath, "node identity file path")
 	flag.StringVar(&config.AdminToken, "admin-token", os.Getenv("BRANCH_ADMIN_TOKEN"), "admin bearer token; defaults to BRANCH_ADMIN_TOKEN")
+	flag.StringVar(&config.MonitorToken, "monitor-ingest-token", os.Getenv("BRANCH_MONITOR_INGEST_TOKEN"), "relay monitor ingest bearer token; defaults to BRANCH_MONITOR_INGEST_TOKEN")
+	flag.StringVar(&config.Monitor.RelayID, "monitor-relay-id", os.Getenv("BRANCH_MONITOR_RELAY_ID"), "relay monitor reporter id; defaults to BRANCH_MONITOR_RELAY_ID")
+	flag.StringVar(&config.Monitor.PublicEndpoint, "monitor-public-endpoint", os.Getenv("BRANCH_MONITOR_PUBLIC_ENDPOINT"), "relay monitor public endpoint; defaults to BRANCH_MONITOR_PUBLIC_ENDPOINT")
+	flag.StringVar(&config.Monitor.MasterURL, "monitor-master-url", os.Getenv("BRANCH_MONITOR_MASTER_URL"), "relay monitor MASTER webhook URL; defaults to BRANCH_MONITOR_MASTER_URL")
+	flag.StringVar(&config.Monitor.PushToken, "monitor-push-token", os.Getenv("BRANCH_MONITOR_PUSH_TOKEN"), "relay monitor push bearer token; defaults to BRANCH_MONITOR_PUSH_TOKEN")
+	monitorInterval, err := envDuration("BRANCH_MONITOR_INTERVAL")
+	if err != nil {
+		return node.Config{}, err
+	}
+	flag.DurationVar(&config.Monitor.Interval, "monitor-interval", monitorInterval, "relay monitor reporter interval; defaults to BRANCH_MONITOR_INTERVAL")
 	flag.Parse()
 	return config, nil
 }
@@ -55,4 +67,17 @@ func defaultNodeIdentityPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(configDir, "branch", "node-identity.json"), nil
+}
+
+func envDuration(name string) (time.Duration, error) {
+	raw := os.Getenv(name)
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0, nil
+	}
+	value, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", name, err)
+	}
+	return value, nil
 }

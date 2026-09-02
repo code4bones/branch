@@ -60,12 +60,28 @@ relay_var() {
   printf '%s' "$value"
 }
 
+monitor_var() {
+  local suffix="$1"
+  local fallback_name="BRANCH_MONITOR_${suffix}"
+  local prefixed_name="${BRANCH_RELAY_ENV_PREFIX}_MONITOR_${suffix}"
+  local value="${!fallback_name:-}"
+  if [ -z "$value" ] && [ -n "$BRANCH_RELAY_ENV_PREFIX" ]; then
+    value="${!prefixed_name:-}"
+  fi
+  printf '%s' "$value"
+}
+
 BRANCH_PUBLIC_ENDPOINT="$(relay_var PUBLIC_ENDPOINT)"
 BRANCH_ADMIN_TOKEN="$(relay_var ADMIN_TOKEN)"
 BRANCH_GOARCH="$(relay_var GOARCH)"
 BRANCH_PROXY_BIND="$(relay_var PROXY_BIND)"
 BRANCH_PROXY_PORT="$(relay_var PROXY_PORT)"
 BRANCH_ADMIN_HOST_PORT="$(relay_var ADMIN_HOST_PORT)"
+BRANCH_MONITOR_RELAY_ID="$(monitor_var RELAY_ID)"
+BRANCH_MONITOR_PUBLIC_ENDPOINT="$(monitor_var PUBLIC_ENDPOINT)"
+BRANCH_MONITOR_MASTER_URL="$(monitor_var MASTER_URL)"
+BRANCH_MONITOR_PUSH_TOKEN="$(monitor_var PUSH_TOKEN)"
+BRANCH_MONITOR_INTERVAL="$(monitor_var INTERVAL)"
 
 require_var BRANCH_PUBLIC_ENDPOINT
 require_var BRANCH_ADMIN_TOKEN
@@ -91,6 +107,13 @@ case "$BRANCH_RELAY_NAME" in
     require_var BRANCH_ADMIN_HOST_PORT
     ;;
 esac
+
+if [ -n "$BRANCH_MONITOR_MASTER_URL" ] || [ -n "$BRANCH_MONITOR_PUSH_TOKEN" ]; then
+  require_var BRANCH_MONITOR_MASTER_URL
+  require_var BRANCH_MONITOR_PUSH_TOKEN
+  BRANCH_MONITOR_RELAY_ID="${BRANCH_MONITOR_RELAY_ID:-$BRANCH_RELAY_NAME}"
+  BRANCH_MONITOR_PUBLIC_ENDPOINT="${BRANCH_MONITOR_PUBLIC_ENDPOINT:-$BRANCH_PUBLIC_ENDPOINT}"
+fi
 
 if "${DOCKER[@]}" compose version >/dev/null 2>&1; then
   COMPOSE=("${DOCKER[@]}" compose)
@@ -125,6 +148,11 @@ chmod 0600 "$compose_env_file"
   printf 'BRANCH_PROXY_BIND=%s\n' "$BRANCH_PROXY_BIND"
   printf 'BRANCH_PROXY_PORT=%s\n' "$BRANCH_PROXY_PORT"
   printf 'BRANCH_ADMIN_HOST_PORT=%s\n' "$BRANCH_ADMIN_HOST_PORT"
+  printf 'BRANCH_MONITOR_RELAY_ID=%s\n' "$BRANCH_MONITOR_RELAY_ID"
+  printf 'BRANCH_MONITOR_PUBLIC_ENDPOINT=%s\n' "$BRANCH_MONITOR_PUBLIC_ENDPOINT"
+  printf 'BRANCH_MONITOR_MASTER_URL=%s\n' "$BRANCH_MONITOR_MASTER_URL"
+  printf 'BRANCH_MONITOR_PUSH_TOKEN=%s\n' "$BRANCH_MONITOR_PUSH_TOKEN"
+  printf 'BRANCH_MONITOR_INTERVAL=%s\n' "$BRANCH_MONITOR_INTERVAL"
 } >"$compose_env_file"
 "${SUDO[@]}" install -m 0600 -o root -g root "$compose_env_file" "${BRANCH_DEPLOY_DIR}/compose.env"
 

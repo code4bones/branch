@@ -322,6 +322,26 @@ sustained handshake failures, carrier failure concentration, queue drops,
 exporter drops, and abnormal route-migration rate. Thresholds are development
 or operator policy, not protocol constants.
 
+### Beta relay inventory
+
+During project-controlled beta deployments, relay nodes may optionally push a
+bounded status report to the MASTER node's protected admin surface. This is an
+operator monitoring shortcut, not a discovery carrier, liveness oracle, routing
+input, bootstrap authority, or protocol dependency.
+
+The push path uses a dedicated monitoring bearer token. It is separate from
+relay admin tokens and from carrier credentials. The receiver stores only the
+latest process-local observations in memory with TTL and stale timestamps.
+Restarting the MASTER forgets all relay observations.
+
+Allowed report fields are limited to relay instance id, public relay endpoint,
+report timestamp, service name and version, readiness, supported protocol
+versions, advertised aggregate capabilities, and aggregate counters such as
+active sessions, routes, presence, and queue depth. Reports must not include
+message bodies, files, keys, signed identity material, capability tokens, admin
+tokens, GitLab or GitHub tokens, cookies, mailbox state, repository contents, IP
+addresses, peer identifiers, session identifiers, or durable route state.
+
 ## 12. Testing
 
 Tests must prove:

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/code4bones/branch/internal/observability"
 )
@@ -56,6 +57,7 @@ type Handler struct {
 	diagnosticsProvider DiagnosticsSnapshotProvider
 	metricsProvider     MetricsProvider
 	bootstrapProvider   BootstrapBeaconProvider
+	relayMonitor        *RelayMonitorRegistry
 }
 
 // HandlerOption configures optional protected admin surfaces.
@@ -80,6 +82,14 @@ func WithMetricsProvider(provider MetricsProvider) HandlerOption {
 func WithBootstrapBeaconProvider(provider BootstrapBeaconProvider) HandlerOption {
 	return func(handler *Handler) {
 		handler.bootstrapProvider = provider
+	}
+}
+
+// WithRelayMonitorRegistry attaches the optional in-memory relay monitoring
+// registry used by the operator admin surface.
+func WithRelayMonitorRegistry(registry *RelayMonitorRegistry) HandlerOption {
+	return func(handler *Handler) {
+		handler.relayMonitor = registry
 	}
 }
 
@@ -132,6 +142,27 @@ func (handler *Handler) BootstrapBeacon(request BootstrapBeaconRequest) Response
 		return jsonResponse(400, map[string]string{"error": err.Error()})
 	}
 	return jsonResponse(StatusOK, response)
+}
+
+// RelayMonitorReports returns the current non-expired relay monitor
+// observations known to this process.
+func (handler *Handler) RelayMonitorReports(now time.Time) Response {
+	if handler.relayMonitor == nil {
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	return jsonResponse(StatusOK, handler.relayMonitor.List(now))
+}
+
+// AcceptRelayMonitorReport accepts one bounded relay monitor report into the
+// in-memory operator registry.
+func (handler *Handler) AcceptRelayMonitorReport(report RelayMonitorReport, now time.Time) Response {
+	if handler.relayMonitor == nil {
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	if err := handler.relayMonitor.Accept(report, now); err != nil {
+		return jsonResponse(httpStatusForRelayMonitorError(err), map[string]string{"error": err.Error()})
+	}
+	return jsonResponse(StatusOK, map[string]string{"status": "accepted"})
 }
 
 func sanitizeSnapshot(snapshot StatusSnapshot) StatusSnapshot {
