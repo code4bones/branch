@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/code4bones/branch/internal/admin"
+	protocol "github.com/code4bones/branch/protocol/v0"
 )
 
 const (
@@ -30,12 +31,13 @@ type RelayMonitorConfig struct {
 }
 
 type relayMonitorReporter struct {
-	config   RelayMonitorConfig
-	provider admin.SnapshotProvider
-	client   *http.Client
+	config            RelayMonitorConfig
+	provider          admin.SnapshotProvider
+	bootstrapProvider admin.BootstrapBeaconProvider
+	client            *http.Client
 }
 
-func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotProvider) (*relayMonitorReporter, error) {
+func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotProvider, bootstrapProvider admin.BootstrapBeaconProvider) (*relayMonitorReporter, error) {
 	if !config.enabled() {
 		return nil, nil
 	}
@@ -56,8 +58,9 @@ func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotP
 		config.Interval = minRelayMonitorInterval
 	}
 	return &relayMonitorReporter{
-		config:   config,
-		provider: provider,
+		config:            config,
+		provider:          provider,
+		bootstrapProvider: bootstrapProvider,
 		client: &http.Client{
 			Timeout: relayMonitorPostTimeout,
 		},
@@ -88,10 +91,11 @@ func (reporter *relayMonitorReporter) reportOnce(ctx context.Context) {
 	defer cancel()
 
 	report := admin.RelayMonitorReport{
-		RelayID:        reporter.config.RelayID,
-		PublicEndpoint: reporter.config.PublicEndpoint,
-		ReportedAt:     time.Now().UTC(),
-		Snapshot:       reporter.provider.Snapshot(),
+		RelayID:         reporter.config.RelayID,
+		PublicEndpoint:  reporter.config.PublicEndpoint,
+		ReportedAt:      time.Now().UTC(),
+		Snapshot:        reporter.provider.Snapshot(),
+		BootstrapBeacon: reporter.bootstrapBeacon(),
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
@@ -115,5 +119,26 @@ func (reporter *relayMonitorReporter) reportOnce(ctx context.Context) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1024))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		slog.Warn("relay.monitor.report.failed", "reason", "unexpected_status", "status", response.StatusCode)
+	}
+}
+
+func (reporter *relayMonitorReporter) bootstrapBeacon() *admin.RelayMonitorBootstrapBeacon {
+	if reporter.bootstrapProvider == nil {
+		return nil
+	}
+	response, err := reporter.bootstrapProvider.BootstrapBeacon(admin.BootstrapBeaconRequest{
+		RelayEndpoints: []protocol.BootstrapRelayEndpoint{{
+			Transport: "wss",
+			URI:       reporter.config.PublicEndpoint,
+			Priority:  0,
+		}},
+	})
+	if err != nil {
+		slog.Warn("relay.monitor.bootstrap_beacon.failed", "reason", "generate_failed")
+		return nil
+	}
+	return &admin.RelayMonitorBootstrapBeacon{
+		Wrapper:   response.Wrapper,
+		ExpiresAt: response.ExpiresAt,
 	}
 }

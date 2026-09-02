@@ -2,6 +2,7 @@ package node
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -9,10 +10,11 @@ import (
 	"time"
 
 	"github.com/code4bones/branch/internal/admin"
+	protocol "github.com/code4bones/branch/protocol/v0"
 )
 
 func TestRelayMonitorReporterDisabledWhenUnconfigured(t *testing.T) {
-	reporter, err := newRelayMonitorReporter(RelayMonitorConfig{}, staticNodeStatusProvider{})
+	reporter, err := newRelayMonitorReporter(RelayMonitorConfig{}, staticNodeStatusProvider{}, nil)
 	if err != nil {
 		t.Fatalf("reporter error = %v", err)
 	}
@@ -22,7 +24,7 @@ func TestRelayMonitorReporterDisabledWhenUnconfigured(t *testing.T) {
 }
 
 func TestRelayMonitorReporterRejectsPartialConfig(t *testing.T) {
-	_, err := newRelayMonitorReporter(RelayMonitorConfig{RelayID: "relay01"}, staticNodeStatusProvider{})
+	_, err := newRelayMonitorReporter(RelayMonitorConfig{RelayID: "relay01"}, staticNodeStatusProvider{}, nil)
 	if err == nil {
 		t.Fatal("expected partial config error")
 	}
@@ -57,6 +59,9 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 		Capabilities:     []string{"relay.forward.live/0"},
 		SessionsActive:   2,
 		QueueDepth:       1,
+	}}, staticNodeBootstrapProvider{response: admin.BootstrapBeaconResponse{
+		Wrapper:   "BRANCH0.relay01",
+		ExpiresAt: 1800000000,
 	}})
 	if err != nil {
 		t.Fatalf("reporter error = %v", err)
@@ -71,6 +76,12 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 		}
 		if report.Snapshot.SessionsActive != 2 || report.Snapshot.QueueDepth != 1 {
 			t.Fatalf("unexpected counters: %+v", report.Snapshot)
+		}
+		if report.BootstrapBeacon == nil {
+			t.Fatal("missing relay-owned bootstrap beacon")
+		}
+		if report.BootstrapBeacon.Wrapper != "BRANCH0.relay01" || report.BootstrapBeacon.ExpiresAt != 1800000000 {
+			t.Fatalf("unexpected bootstrap beacon: %+v", report.BootstrapBeacon)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("report not posted")
@@ -108,4 +119,32 @@ type staticNodeStatusProvider struct {
 
 func (provider staticNodeStatusProvider) Snapshot() admin.StatusSnapshot {
 	return provider.snapshot
+}
+
+type staticNodeBootstrapProvider struct {
+	response admin.BootstrapBeaconResponse
+	err      error
+}
+
+func (provider staticNodeBootstrapProvider) BootstrapBeacon(request admin.BootstrapBeaconRequest) (admin.BootstrapBeaconResponse, error) {
+	if provider.err != nil {
+		return admin.BootstrapBeaconResponse{}, provider.err
+	}
+	if len(request.RelayEndpoints) != 1 ||
+		request.RelayEndpoints[0].Transport != "wss" ||
+		request.RelayEndpoints[0].URI == "" ||
+		request.RelayEndpoints[0].Priority != 0 {
+		return admin.BootstrapBeaconResponse{}, errors.New("unexpected request")
+	}
+	response := provider.response
+	if response.Wrapper == "" {
+		response.Wrapper = "BRANCH0.default"
+	}
+	if response.ExpiresAt == 0 {
+		response.ExpiresAt = 1800000000
+	}
+	if len(response.RelayEndpoints) == 0 {
+		response.RelayEndpoints = []protocol.BootstrapRelayEndpoint{request.RelayEndpoints[0]}
+	}
+	return response, nil
 }

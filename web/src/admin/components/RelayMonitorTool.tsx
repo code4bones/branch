@@ -1,7 +1,10 @@
-import { ReloadOutlined, StopOutlined } from "@ant-design/icons";
+import { DownloadOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
 import { Button, Input, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { downloadBytes } from "../browser-files.js";
+import { githubBundleFilenameForRelay } from "../defaults.js";
+import { makeLiveGitHubDropInBundleFromWrapper } from "../github-dropin.js";
 import { fetchRelayMonitorObservations, type RelayMonitorObservation } from "../relay-monitor.js";
 import { useAdminStore, type StatusClass } from "../store.js";
 
@@ -15,6 +18,7 @@ const expectedRelays = [
 export function RelayMonitorTool(): React.JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
   const [search, setSearch] = useState("");
+  const [bundleRelayId, setBundleRelayId] = useState<string | null>(null);
   const relayMonitor = useAdminStore((state) => state.relayMonitor);
   const setRelayMonitorAdminBaseUrl = useAdminStore((state) => state.setRelayMonitorAdminBaseUrl);
   const setRelayMonitorAdminToken = useAdminStore((state) => state.setRelayMonitorAdminToken);
@@ -65,6 +69,28 @@ export function RelayMonitorTool(): React.JSX.Element {
 
   const rows = useMemo(() => inventoryRows(relayMonitor.observations), [relayMonitor.observations]);
   const visibleRows = useMemo(() => filterRows(rows, search), [rows, search]);
+  const generateGitHubBundle = useCallback(async (row: RelayInventoryRow): Promise<void> => {
+    const beacon = row.observation?.bootstrap_beacon;
+    if (beacon === undefined) {
+      setRelayMonitorStatus(`relay ${row.id} has no reported bootstrap.beacon yet`, "status-warn");
+      return;
+    }
+    if (bootstrapBeaconExpired(beacon.expires_at)) {
+      setRelayMonitorStatus(`relay ${row.id} bootstrap.beacon expired`, "status-bad");
+      return;
+    }
+    setBundleRelayId(row.id);
+    setRelayMonitorStatus(`generating GitHub bundle for ${row.id}`, "status-warn");
+    try {
+      const bundle = await makeLiveGitHubDropInBundleFromWrapper(beacon.wrapper, "", Math.floor(Date.now() / 1000));
+      downloadBytes(bundle.archive, githubBundleFilenameForRelay(row.id), "application/zip");
+      setRelayMonitorStatus(`GitHub bundle generated for ${row.id}`, "status-good");
+    } catch (error) {
+      setRelayMonitorStatus(errorMessage(error), "status-bad");
+    } finally {
+      setBundleRelayId(null);
+    }
+  }, [setRelayMonitorStatus]);
   const columns = useMemo<TableColumnsType<RelayInventoryRow>>(() => [
     {
       title: "Relay",
@@ -111,8 +137,22 @@ export function RelayMonitorTool(): React.JSX.Element {
       key: "build",
       sorter: (left, right) => buildText(left.observation).localeCompare(buildText(right.observation)),
       render: (_, row) => buildText(row.observation)
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, row) => (
+        <Button
+          icon={<DownloadOutlined />}
+          disabled={!canGenerateGitHubBundle(row) || bundleRelayId !== null}
+          loading={bundleRelayId === row.id}
+          onClick={() => { void generateGitHubBundle(row); }}
+        >
+          GitHub bundle
+        </Button>
+      )
     }
-  ], []);
+  ], [bundleRelayId, generateGitHubBundle]);
 
   return (
     <section className="relay-monitor-layout" data-panel="relays" aria-label="Relay inventory">
@@ -173,7 +213,7 @@ export function RelayMonitorTool(): React.JSX.Element {
           pagination={{ pageSize: 8, showSizeChanger: true }}
           rowClassName={(row) => row.observation === null ? "is-missing" : ""}
           rowKey="id"
-          scroll={{ x: 980 }}
+          scroll={{ x: 1120 }}
           size="small"
         />
       </section>
@@ -262,6 +302,15 @@ function readinessText(observation: RelayMonitorObservation | null): string {
 
 function buildText(observation: RelayMonitorObservation | null): string {
   return observation === null ? "-" : `${observation.snapshot.service_name} ${observation.snapshot.service_version}`;
+}
+
+function canGenerateGitHubBundle(row: RelayInventoryRow): boolean {
+  const beacon = row.observation?.bootstrap_beacon;
+  return beacon !== undefined && !bootstrapBeaconExpired(beacon.expires_at);
+}
+
+function bootstrapBeaconExpired(expiresAt: number): boolean {
+  return expiresAt <= Math.floor(Date.now() / 1000);
 }
 
 function timestamp(value: string | undefined): number {

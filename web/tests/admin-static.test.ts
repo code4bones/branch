@@ -198,6 +198,10 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.doesNotMatch(gitLabTool, /<button|<input|<select|<textarea/);
   assert.match(relayMonitorTool, /className="relay-monitor-layout"/);
   assert.match(relayMonitorTool, /className="relay-monitor-controls"/);
+  assert.match(relayMonitorTool, /makeLiveGitHubDropInBundleFromWrapper/);
+  assert.match(relayMonitorTool, /githubBundleFilenameForRelay/);
+  assert.match(relayMonitorTool, /GitHub bundle/);
+  assert.match(relayMonitorTool, /bootstrap_beacon/);
   assert.doesNotMatch(relayMonitorTool, /className="tool-grid is-active relay-monitor-tool"/);
   assert.match(clientTool, /useEffect/);
   assert.match(clientTool, /data-panel="client"/);
@@ -238,6 +242,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(publicationProfile, /ribbonImagePublicationDescription =\s*\n\s*"branchbootstrapv0/);
   assert.match(publicationProfile, /ribbonImagePublicationSearchQuery = branchBootstrapLocator/);
   assert.match(defaults, /branch-github-dropin\.zip/);
+  assert.match(defaults, /githubBundleFilenameForRelay/);
   assert.match(defaults, /branch-gitlab-dropin\.zip/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}`, /\bfetch\s*\(/);
   assert.doesNotMatch(`${app}\n${store}\n${ribbonTool}\n${githubTool}\n${gitLabTool}\n${clientTool}`, /XMLHttpRequest|localStorage|indexedDB/);

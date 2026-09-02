@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { defaultBranchWrapper } from "../src/admin/defaults.js";
+import { defaultBranchWrapper, githubBundleFilenameForRelay } from "../src/admin/defaults.js";
 import {
   discoverGitHubDropIns,
   githubDiscoveryConstraints,
   githubDiscoveryDefaultQuery,
   makeGitHubRepositorySearchUrl
 } from "../src/admin/github-discovery.js";
-import { makeBadgeSnippet, makeBundle, makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../src/admin/github-dropin.js";
+import { makeBadgeSnippet, makeBundle, makeGitHubArchive, makeGitHubFiles, makeLiveGitHubDropInBundleFromWrapper, parseBranchRecords } from "../src/admin/github-dropin.js";
 import {
   discoverGitLabDropIns,
   gitLabDiscoveryConstraints,
@@ -140,10 +140,15 @@ void test("github drop-in live mode accepts signed bootstrap.beacon wrappers", a
   const wrapper = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
   const records = await parseBranchRecords(wrapper, { mode: "live" });
   const files = await makeGitHubFiles(records, "relay-source", now, "live");
+  const bundle = await makeLiveGitHubDropInBundleFromWrapper(wrapper, "", now);
 
   assert.deepEqual(records, [wrapper]);
   assert.match(files.find((file) => file.path === ".branch/manifest.json")?.content ?? "", /"mode": "live"/);
   assert.match(files.find((file) => file.path === ".branch/README.md")?.content ?? "", /live signed bootstrap\.beacon/);
+  assert.deepEqual(bundle.records, [wrapper]);
+  assert.equal(readZipFileText(bundle.archive, ".branch/records.br0"), `${wrapper}\n`);
+  assert.equal(githubBundleFilenameForRelay("relay01"), "branch-relay01-github-dropin.zip");
+  assert.equal(githubBundleFilenameForRelay(" relay 01 "), "branch-relay-01-github-dropin.zip");
 });
 
 void test("gitlab drop-in module emits local .branch files without root README or CI overwrite", async () => {
@@ -225,6 +230,10 @@ void test("relay monitor adapter fetches protected master inventory endpoint", a
     last_seen_at: "2026-09-02T10:00:02Z",
     expires_at: "2026-09-02T10:05:02Z",
     stale: false,
+    bootstrap_beacon: {
+      wrapper: defaultBranchWrapper,
+      expires_at: 1_800_000_000
+    },
     snapshot: {
       service_name: "branch-node",
       service_version: "0.0.0-test",
@@ -262,6 +271,7 @@ void test("relay monitor adapter fetches protected master inventory endpoint", a
   assert(observation !== undefined);
   assert.equal(observation.relay_id, "relay01");
   assert.equal(observation.snapshot.sessions_active, 2);
+  assert.equal(observation.bootstrap_beacon?.wrapper, defaultBranchWrapper);
 });
 
 void test("relay monitor adapter rejects forbidden and malformed responses", async () => {
@@ -281,6 +291,10 @@ void test("relay monitor adapter rejects forbidden and malformed responses", asy
       last_seen_at: "2026-09-02T10:00:02Z",
       expires_at: "2026-09-02T10:05:02Z",
       stale: false,
+      bootstrap_beacon: {
+        wrapper: "BRANCH0.not valid",
+        expires_at: 1_800_000_000
+      },
       snapshot: {
         service_name: "branch-node",
         service_version: "0.0.0-test",

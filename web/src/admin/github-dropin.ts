@@ -21,6 +21,12 @@ export interface GitHubDropInFile {
   readonly content: string;
 }
 
+export interface GitHubDropInBundle {
+  readonly records: readonly string[];
+  readonly files: readonly GitHubDropInFile[];
+  readonly archive: Uint8Array<ArrayBuffer>;
+}
+
 export interface ParseBranchRecordsOptions {
   readonly mode?: GitHubDropInMode;
 }
@@ -103,6 +109,20 @@ export async function makeGitHubFiles(
       content: makeWorkflow()
     }
   ];
+}
+
+export async function makeLiveGitHubDropInBundleFromWrapper(
+  wrapper: string,
+  sourceCommit: string,
+  generatedAt: number
+): Promise<GitHubDropInBundle> {
+  const records = await parseBranchRecords(wrapper, { mode: "live" });
+  const files = await makeGitHubFiles(records, sourceCommit.trim(), generatedAt, "live");
+  return {
+    records,
+    files,
+    archive: makeGitHubArchive(files)
+  };
 }
 
 export function makeBundle(files: readonly GitHubDropInFile[]): string {

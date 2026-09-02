@@ -21,6 +21,12 @@ export interface RelayMonitorObservation {
   readonly expires_at: string;
   readonly stale: boolean;
   readonly snapshot: RelayMonitorSnapshot;
+  readonly bootstrap_beacon?: RelayMonitorBootstrapBeacon;
+}
+
+export interface RelayMonitorBootstrapBeacon {
+  readonly wrapper: string;
+  readonly expires_at: number;
 }
 
 export interface FetchRelayMonitorOptions {
@@ -80,7 +86,17 @@ function isRelayMonitorObservation(value: unknown): value is RelayMonitorObserva
     isISOTime(value["last_seen_at"]) &&
     isISOTime(value["expires_at"]) &&
     typeof value["stale"] === "boolean" &&
-    isRelayMonitorSnapshot(value["snapshot"]);
+    isRelayMonitorSnapshot(value["snapshot"]) &&
+    (value["bootstrap_beacon"] === undefined || isRelayMonitorBootstrapBeacon(value["bootstrap_beacon"]));
+}
+
+function isRelayMonitorBootstrapBeacon(value: unknown): value is RelayMonitorBootstrapBeacon {
+  return isRecord(value) &&
+    isSafeText(value["wrapper"], 9, 8192) &&
+    value["wrapper"].startsWith("BRANCH0.") &&
+    typeof value["expires_at"] === "number" &&
+    Number.isSafeInteger(value["expires_at"]) &&
+    value["expires_at"] > 0;
 }
 
 function isRelayMonitorSnapshot(value: unknown): value is RelayMonitorSnapshot {

@@ -4,11 +4,14 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+
+	protocol "github.com/code4bones/branch/protocol/v0"
 )
 
 const (
@@ -23,11 +26,13 @@ const (
 	maxRelayMonitorItems          = 16
 	maxRelayMonitorItemLength     = 96
 	maxRelayMonitorCounter        = 1_000_000_000
+	maxRelayMonitorWrapperLength  = 8192
 )
 
 var (
 	ErrRelayMonitorInvalidReport = errors.New("relay monitor invalid report")
 	ErrRelayMonitorFull          = errors.New("relay monitor registry full")
+	relayMonitorWrapperPattern   = regexp.MustCompile(`^BRANCH0\.[A-Za-z0-9_-]+$`)
 )
 
 // RelayMonitorConfig controls the process-local in-memory relay observation
@@ -40,21 +45,30 @@ type RelayMonitorConfig struct {
 
 // RelayMonitorReport is the bounded status envelope pushed by one relay node.
 type RelayMonitorReport struct {
-	RelayID        string         `json:"relay_id"`
-	PublicEndpoint string         `json:"public_endpoint"`
-	ReportedAt     time.Time      `json:"reported_at"`
-	Snapshot       StatusSnapshot `json:"snapshot"`
+	RelayID         string                       `json:"relay_id"`
+	PublicEndpoint  string                       `json:"public_endpoint"`
+	ReportedAt      time.Time                    `json:"reported_at"`
+	Snapshot        StatusSnapshot               `json:"snapshot"`
+	BootstrapBeacon *RelayMonitorBootstrapBeacon `json:"bootstrap_beacon,omitempty"`
 }
 
 // RelayMonitorObservation is the MASTER-side operator view of one relay report.
 type RelayMonitorObservation struct {
-	RelayID        string         `json:"relay_id"`
-	PublicEndpoint string         `json:"public_endpoint"`
-	ReportedAt     time.Time      `json:"reported_at"`
-	LastSeenAt     time.Time      `json:"last_seen_at"`
-	ExpiresAt      time.Time      `json:"expires_at"`
-	Stale          bool           `json:"stale"`
-	Snapshot       StatusSnapshot `json:"snapshot"`
+	RelayID         string                       `json:"relay_id"`
+	PublicEndpoint  string                       `json:"public_endpoint"`
+	ReportedAt      time.Time                    `json:"reported_at"`
+	LastSeenAt      time.Time                    `json:"last_seen_at"`
+	ExpiresAt       time.Time                    `json:"expires_at"`
+	Stale           bool                         `json:"stale"`
+	Snapshot        StatusSnapshot               `json:"snapshot"`
+	BootstrapBeacon *RelayMonitorBootstrapBeacon `json:"bootstrap_beacon,omitempty"`
+}
+
+// RelayMonitorBootstrapBeacon is a public, relay-owned signed carrier record
+// cached in the in-memory monitor registry for operator publication tooling.
+type RelayMonitorBootstrapBeacon struct {
+	Wrapper   string `json:"wrapper"`
+	ExpiresAt int64  `json:"expires_at"`
 }
 
 // RelayMonitorRegistry stores recent relay observations in memory only. A
@@ -105,13 +119,14 @@ func (registry *RelayMonitorRegistry) Accept(report RelayMonitorReport, now time
 		report.ReportedAt = now.UTC()
 	}
 	registry.entries[report.RelayID] = RelayMonitorObservation{
-		RelayID:        report.RelayID,
-		PublicEndpoint: report.PublicEndpoint,
-		ReportedAt:     report.ReportedAt.UTC(),
-		LastSeenAt:     now.UTC(),
-		ExpiresAt:      now.Add(registry.ttl).UTC(),
-		Stale:          false,
-		Snapshot:       report.Snapshot,
+		RelayID:         report.RelayID,
+		PublicEndpoint:  report.PublicEndpoint,
+		ReportedAt:      report.ReportedAt.UTC(),
+		LastSeenAt:      now.UTC(),
+		ExpiresAt:       now.Add(registry.ttl).UTC(),
+		Stale:           false,
+		Snapshot:        report.Snapshot,
+		BootstrapBeacon: cloneRelayMonitorBootstrapBeacon(report.BootstrapBeacon),
 	}
 	return nil
 }
@@ -160,6 +175,9 @@ func validateRelayMonitorReport(report RelayMonitorReport) error {
 	if !validRelayMonitorItems(report.Snapshot.ProtocolVersions) || !validRelayMonitorItems(report.Snapshot.Capabilities) {
 		return ErrRelayMonitorInvalidReport
 	}
+	if report.BootstrapBeacon != nil && !validRelayMonitorBootstrapBeacon(*report.BootstrapBeacon) {
+		return ErrRelayMonitorInvalidReport
+	}
 	for _, counter := range []int{
 		report.Snapshot.SessionsActive,
 		report.Snapshot.RoutesActive,
@@ -171,6 +189,29 @@ func validateRelayMonitorReport(report RelayMonitorReport) error {
 		}
 	}
 	return nil
+}
+
+func validRelayMonitorBootstrapBeacon(beacon RelayMonitorBootstrapBeacon) bool {
+	if beacon.ExpiresAt <= 0 {
+		return false
+	}
+	if len(beacon.Wrapper) == 0 || len(beacon.Wrapper) > maxRelayMonitorWrapperLength {
+		return false
+	}
+	if !strings.HasPrefix(beacon.Wrapper, protocol.BranchTextWrapperPrefix) {
+		return false
+	}
+	return relayMonitorWrapperPattern.MatchString(beacon.Wrapper)
+}
+
+func cloneRelayMonitorBootstrapBeacon(beacon *RelayMonitorBootstrapBeacon) *RelayMonitorBootstrapBeacon {
+	if beacon == nil {
+		return nil
+	}
+	return &RelayMonitorBootstrapBeacon{
+		Wrapper:   beacon.Wrapper,
+		ExpiresAt: beacon.ExpiresAt,
+	}
 }
 
 func validRelayMonitorID(value string) bool {

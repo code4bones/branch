@@ -336,11 +336,13 @@ Restarting the MASTER forgets all relay observations.
 
 Allowed report fields are limited to relay instance id, public relay endpoint,
 report timestamp, service name and version, readiness, supported protocol
-versions, advertised aggregate capabilities, and aggregate counters such as
-active sessions, routes, presence, and queue depth. Reports must not include
-message bodies, files, keys, signed identity material, capability tokens, admin
-tokens, GitLab or GitHub tokens, cookies, mailbox state, repository contents, IP
-addresses, peer identifiers, session identifiers, or durable route state.
+versions, advertised aggregate capabilities, aggregate counters such as active
+sessions, routes, presence, and queue depth, and an optional public signed
+relay-owned `bootstrap.beacon` wrapper with its expiry for operator publication
+tooling. Reports must not include message bodies, files, private keys, raw key
+exports, capability tokens, admin tokens, GitLab or GitHub tokens, cookies,
+mailbox state, repository contents, IP addresses, peer identifiers, session
+identifiers, or durable route state.
 
 ## 12. Testing
 

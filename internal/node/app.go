@@ -88,10 +88,11 @@ func New(config Config) (*App, error) {
 	}
 	statusProvider := admin.NewRelayStatusProvider(baseStatus, hub)
 	relayMonitorRegistry := admin.NewRelayMonitorRegistry(admin.RelayMonitorConfig{})
+	bootstrapProvider := newBootstrapBeaconProvider(nodeIdentity)
 	adminMux := admin.NewHTTPHandler(
 		admin.NewHandler(
 			statusProvider,
-			admin.WithBootstrapBeaconProvider(newBootstrapBeaconProvider(nodeIdentity)),
+			admin.WithBootstrapBeaconProvider(bootstrapProvider),
 			admin.WithRelayMonitorRegistry(relayMonitorRegistry),
 		),
 		admin.AuthorizerFunc(func(request *http.Request) bool {
@@ -101,7 +102,7 @@ func New(config Config) (*App, error) {
 			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
 		})),
 	)
-	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider)
+	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider)
 	if err != nil {
 		return nil, err
 	}

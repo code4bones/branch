@@ -29,6 +29,9 @@ func TestRelayMonitorRegistryListsFreshAndStaleObservations(t *testing.T) {
 	if fresh[0].Stale {
 		t.Fatal("fresh observation marked stale")
 	}
+	if fresh[0].BootstrapBeacon == nil || fresh[0].BootstrapBeacon.Wrapper != "BRANCH0.relay01" {
+		t.Fatalf("missing bootstrap beacon: %+v", fresh[0].BootstrapBeacon)
+	}
 
 	stale := registry.List(now.Add(11 * time.Second))
 	if len(stale) != 1 {
@@ -58,6 +61,16 @@ func TestRelayMonitorRegistryRejectsUnboundedReports(t *testing.T) {
 	report.Snapshot.Capabilities = make([]string, maxRelayMonitorItems+1)
 	for index := range report.Snapshot.Capabilities {
 		report.Snapshot.Capabilities[index] = "relay.forward.live/0"
+	}
+	err = registry.Accept(report, time.Now())
+	if err != ErrRelayMonitorInvalidReport {
+		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
+	}
+
+	report = validRelayMonitorReport()
+	report.BootstrapBeacon = &RelayMonitorBootstrapBeacon{
+		Wrapper:   "BRANCH0.not valid",
+		ExpiresAt: 1800000000,
 	}
 	err = registry.Accept(report, time.Now())
 	if err != ErrRelayMonitorInvalidReport {
@@ -128,6 +141,9 @@ func TestRelayMonitorHTTPIngestAndList(t *testing.T) {
 	if !strings.Contains(bodyText, `"relay_id":"relay01"`) {
 		t.Fatalf("missing relay report: %s", bodyText)
 	}
+	if !strings.Contains(bodyText, `"bootstrap_beacon"`) || !strings.Contains(bodyText, `"wrapper":"BRANCH0.relay01"`) {
+		t.Fatalf("missing relay bootstrap beacon: %s", bodyText)
+	}
 	for _, forbidden := range []string{"monitor-token", "admin-token", "payload", "public_key", "cookie"} {
 		if strings.Contains(bodyText, forbidden) {
 			t.Fatalf("relay monitor list leaked %q in %s", forbidden, bodyText)
@@ -157,6 +173,10 @@ func validRelayMonitorReport() RelayMonitorReport {
 		RelayID:        "relay01",
 		PublicEndpoint: "wss://relay01.undoo.ru:443/relay/v0",
 		ReportedAt:     time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC),
+		BootstrapBeacon: &RelayMonitorBootstrapBeacon{
+			Wrapper:   "BRANCH0.relay01",
+			ExpiresAt: 1800000000,
+		},
 		Snapshot: StatusSnapshot{
 			ServiceName:      "branch-node",
 			ServiceVersion:   "0.0.0-test",
