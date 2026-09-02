@@ -170,6 +170,7 @@ Set these in GitLab project CI/CD variables:
 | `BRANCH_RELAY02_ADMIN_TOKEN` | `deploy:relay02` | Masked and protected. Use a different value from relay01. |
 | `BRANCH_RELAY04_ADMIN_TOKEN` | `deploy:relay04` | Masked and protected. Use a different value from other relays. |
 | `BRANCH_RELAY05_ADMIN_TOKEN` | `deploy:relay05` | Masked and protected. Use a different value from other relays. |
+| `BRANCH_WSS_ORIGIN_PATTERNS` | relay WSS | Optional comma-separated browser Origin host allowlist. CI defaults beta deploy jobs to `branch.undoo.ru`; leave empty for same-origin/default non-browser clients. |
 | `BRANCH_MONITOR_MASTER_URL` | relay monitor | Optional. MASTER webhook URL, usually `https://branch.undoo.ru/node-admin/relay-monitor/reports`. |
 | `BRANCH_MONITOR_PUSH_TOKEN` | relay monitor | Optional. Masked and protected. Must match MASTER `BRANCH_MONITOR_INGEST_TOKEN`. |
 
@@ -181,10 +182,12 @@ Optional variables:
 | `BRANCH_RELAY01_PROXY_BIND`, `BRANCH_RELAY02_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
 | `BRANCH_RELAY01_PROXY_PORT`, `BRANCH_RELAY02_PROXY_PORT` | `8088` / `8089` | Host port NPM forwards to. |
 | `BRANCH_RELAY01_ADMIN_HOST_PORT`, `BRANCH_RELAY02_ADMIN_HOST_PORT` | `18081` / `18082` | Loopback admin ports used by deploy checks. |
+| `BRANCH_RELAY01_WSS_ORIGIN_PATTERNS`, `BRANCH_RELAY02_WSS_ORIGIN_PATTERNS` | `BRANCH_WSS_ORIGIN_PATTERNS` | Per-relay browser Origin host allowlist override. |
 | `BRANCH_RELAY04_GOARCH`, `BRANCH_RELAY05_GOARCH` | `amd64` | Use `arm64` for ARM builder/runtime hosts. |
 | `BRANCH_RELAY04_PROXY_BIND`, `BRANCH_RELAY05_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
 | `BRANCH_RELAY04_PROXY_PORT`, `BRANCH_RELAY05_PROXY_PORT` | `8092` / `8093` | Host port NPM forwards to. |
 | `BRANCH_RELAY04_ADMIN_HOST_PORT`, `BRANCH_RELAY05_ADMIN_HOST_PORT` | `18084` / `18085` | Loopback admin ports used by deploy checks. |
+| `BRANCH_RELAY04_WSS_ORIGIN_PATTERNS`, `BRANCH_RELAY05_WSS_ORIGIN_PATTERNS` | `BRANCH_WSS_ORIGIN_PATTERNS` | Per-relay browser Origin host allowlist override. |
 | `BRANCH_RELAY01_MONITOR_MASTER_URL`, `BRANCH_RELAY02_MONITOR_MASTER_URL` | `BRANCH_MONITOR_MASTER_URL` | Per-relay MASTER webhook override. |
 | `BRANCH_RELAY01_MONITOR_PUSH_TOKEN`, `BRANCH_RELAY02_MONITOR_PUSH_TOKEN` | `BRANCH_MONITOR_PUSH_TOKEN` | Per-relay monitor token override. |
 | `BRANCH_RELAY01_MONITOR_RELAY_ID`, `BRANCH_RELAY02_MONITOR_RELAY_ID` | `relay01` / `relay02` | Per-relay monitor id override. |

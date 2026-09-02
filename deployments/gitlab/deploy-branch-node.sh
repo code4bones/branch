@@ -62,9 +62,12 @@ relay_var() {
   local suffix="$1"
   local fallback_name="BRANCH_${suffix}"
   local prefixed_name="${BRANCH_RELAY_ENV_PREFIX}_${suffix}"
-  local value="${!fallback_name:-}"
-  if [ -z "$value" ] && [ -n "$BRANCH_RELAY_ENV_PREFIX" ]; then
+  local value=""
+  if [ -n "$BRANCH_RELAY_ENV_PREFIX" ]; then
     value="${!prefixed_name:-}"
+  fi
+  if [ -z "$value" ]; then
+    value="${!fallback_name:-}"
   fi
   printf '%s' "$value"
 }
@@ -73,9 +76,12 @@ monitor_var() {
   local suffix="$1"
   local fallback_name="BRANCH_MONITOR_${suffix}"
   local prefixed_name="${BRANCH_RELAY_ENV_PREFIX}_MONITOR_${suffix}"
-  local value="${!fallback_name:-}"
-  if [ -z "$value" ] && [ -n "$BRANCH_RELAY_ENV_PREFIX" ]; then
+  local value=""
+  if [ -n "$BRANCH_RELAY_ENV_PREFIX" ]; then
     value="${!prefixed_name:-}"
+  fi
+  if [ -z "$value" ]; then
+    value="${!fallback_name:-}"
   fi
   printf '%s' "$value"
 }
@@ -86,6 +92,7 @@ BRANCH_GOARCH="$(relay_var GOARCH)"
 BRANCH_PROXY_BIND="$(relay_var PROXY_BIND)"
 BRANCH_PROXY_PORT="$(relay_var PROXY_PORT)"
 BRANCH_ADMIN_HOST_PORT="$(relay_var ADMIN_HOST_PORT)"
+BRANCH_WSS_ORIGIN_PATTERNS="$(relay_var WSS_ORIGIN_PATTERNS)"
 BRANCH_MONITOR_RELAY_ID="$(monitor_var RELAY_ID)"
 BRANCH_MONITOR_PUBLIC_ENDPOINT="$(monitor_var PUBLIC_ENDPOINT)"
 BRANCH_MONITOR_MASTER_URL="$(monitor_var MASTER_URL)"
@@ -171,6 +178,7 @@ chmod 0600 "$compose_env_file"
   printf 'BRANCH_PROXY_BIND=%s\n' "$BRANCH_PROXY_BIND"
   printf 'BRANCH_PROXY_PORT=%s\n' "$BRANCH_PROXY_PORT"
   printf 'BRANCH_ADMIN_HOST_PORT=%s\n' "$BRANCH_ADMIN_HOST_PORT"
+  printf 'BRANCH_WSS_ORIGIN_PATTERNS=%s\n' "$BRANCH_WSS_ORIGIN_PATTERNS"
   printf 'BRANCH_MONITOR_RELAY_ID=%s\n' "$BRANCH_MONITOR_RELAY_ID"
   printf 'BRANCH_MONITOR_PUBLIC_ENDPOINT=%s\n' "$BRANCH_MONITOR_PUBLIC_ENDPOINT"
   printf 'BRANCH_MONITOR_MASTER_URL=%s\n' "$BRANCH_MONITOR_MASTER_URL"

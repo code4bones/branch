@@ -26,6 +26,7 @@ type Config struct {
 	Version      string
 	Monitor      RelayMonitorConfig
 	MonitorToken string
+	WSSOrigins   []string
 }
 
 // DefaultConfig returns development-safe defaults for a relay behind a local
@@ -68,6 +69,7 @@ func New(config Config) (*App, error) {
 	relayHandler, err := wss.NewHandler(wss.Config{
 		Hub:              hub,
 		Identity:         nodeIdentity,
+		OriginPatterns:   config.WSSOrigins,
 		MaxFrameBytes:    int64(config.Relay.MaxFrameBytes),
 		HandshakeTimeout: 10 * time.Second,
 		WriteTimeout:     5 * time.Second,

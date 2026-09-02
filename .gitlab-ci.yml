@@ -55,6 +55,8 @@ build:branch-node:
   needs:
     - job: build:branch-node
       artifacts: true
+  variables:
+    BRANCH_WSS_ORIGIN_PATTERNS: branch.undoo.ru
   script:
     - deployments/gitlab/deploy-branch-node.sh
   artifacts:

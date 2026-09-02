@@ -44,6 +44,61 @@ func TestHandlerRejectsWrongPathAndNonUpgrade(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsUnauthorizedBrowserOrigin(t *testing.T) {
+	_, handler := newTestHubAndHandler(t)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+Path, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://branch.undoo.ru"}},
+	})
+	if err == nil {
+		conn.Close(websocket.StatusNormalClosure, "")
+		t.Fatal("expected unauthorized browser origin to be rejected")
+	}
+	if response == nil || response.StatusCode != http.StatusForbidden {
+		t.Fatalf("origin rejection response = %+v, err = %v", response, err)
+	}
+}
+
+func TestHandlerAcceptsConfiguredBrowserOrigin(t *testing.T) {
+	_, handler := newTestHubAndHandlerWithOrigins(t, []string{"branch.undoo.ru"})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+Path, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://branch.undoo.ru"}},
+	})
+	if err != nil {
+		t.Fatalf("dial with configured origin: %v", err)
+	}
+	conn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestHandlerRejectsWildcardOriginPattern(t *testing.T) {
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	nodeIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate identity: %v", err)
+	}
+
+	_, err = NewHandler(Config{
+		Hub:            hub,
+		Identity:       nodeIdentity,
+		OriginPatterns: []string{"*"},
+	})
+	if err == nil {
+		t.Fatal("expected wildcard origin pattern to be rejected")
+	}
+}
+
 func TestHandlerAttachesTwoPeersAndForwardsOpaqueEnvelope(t *testing.T) {
 	hub, handler := newTestHubAndHandler(t)
 	server := httptest.NewServer(handler)
@@ -190,6 +245,11 @@ func (client testClient) Close(code websocket.StatusCode, reason string) {
 
 func newTestHubAndHandler(t *testing.T) (*relay.Hub, http.Handler) {
 	t.Helper()
+	return newTestHubAndHandlerWithOrigins(t, nil)
+}
+
+func newTestHubAndHandlerWithOrigins(t *testing.T, originPatterns []string) (*relay.Hub, http.Handler) {
+	t.Helper()
 	hub, err := relay.NewHub(relay.Config{
 		MaxSessions:         8,
 		MaxQueueDepth:       8,
@@ -210,6 +270,7 @@ func newTestHubAndHandler(t *testing.T) (*relay.Hub, http.Handler) {
 		Identity:         nodeIdentity,
 		Random:           bytes.NewReader(countingBytes(512)),
 		Now:              func() time.Time { return time.Unix(1_789_000_000, 0) },
+		OriginPatterns:   originPatterns,
 		MaxFrameBytes:    49_152,
 		HandshakeTimeout: time.Second,
 		WriteTimeout:     time.Second,

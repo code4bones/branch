@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,7 @@ type Config struct {
 	Identity         *identity.NodeIdentity
 	Random           io.Reader
 	Now              func() time.Time
+	OriginPatterns   []string
 	MaxFrameBytes    int64
 	HandshakeTimeout time.Duration
 	WriteTimeout     time.Duration
@@ -48,6 +50,7 @@ type Handler struct {
 	identity         *identity.NodeIdentity
 	random           io.Reader
 	now              func() time.Time
+	originPatterns   []string
 	maxFrameBytes    int64
 	handshakeTimeout time.Duration
 	writeTimeout     time.Duration
@@ -73,11 +76,16 @@ func NewHandler(config Config) (*Handler, error) {
 	if config.WriteTimeout <= 0 {
 		config.WriteTimeout = 5 * time.Second
 	}
+	originPatterns, err := cleanOriginPatterns(config.OriginPatterns)
+	if err != nil {
+		return nil, err
+	}
 	return &Handler{
 		hub:              config.Hub,
 		identity:         config.Identity,
 		random:           config.Random,
 		now:              config.Now,
+		originPatterns:   originPatterns,
 		maxFrameBytes:    config.MaxFrameBytes,
 		handshakeTimeout: config.HandshakeTimeout,
 		writeTimeout:     config.WriteTimeout,
@@ -91,7 +99,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		http.NotFound(response, request)
 		return
 	}
-	conn, err := websocket.Accept(response, request, nil)
+	conn, err := websocket.Accept(response, request, &websocket.AcceptOptions{
+		OriginPatterns: handler.originPatterns,
+	})
 	if err != nil {
 		return
 	}
@@ -102,6 +112,28 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if err := handler.run(request.Context(), attachment); err != nil {
 		_ = conn.Close(websocket.StatusPolicyViolation, err.Error())
 	}
+}
+
+func cleanOriginPatterns(patterns []string) ([]string, error) {
+	const (
+		maxOriginPatterns = 16
+		maxOriginPattern  = 256
+	)
+	if len(patterns) > maxOriginPatterns {
+		return nil, fmt.Errorf("%w: too many origin patterns", ErrInvalidConfig)
+	}
+	cleaned := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if pattern == "*" || len(pattern) > maxOriginPattern || strings.ContainsAny(pattern, " \t\r\n") {
+			return nil, fmt.Errorf("%w: invalid origin pattern", ErrInvalidConfig)
+		}
+		cleaned = append(cleaned, pattern)
+	}
+	return cleaned, nil
 }
 
 type connection struct {

@@ -52,12 +52,15 @@ func parseConfig() (node.Config, error) {
 	flag.StringVar(&config.Monitor.PublicEndpoint, "monitor-public-endpoint", os.Getenv("BRANCH_MONITOR_PUBLIC_ENDPOINT"), "relay monitor public endpoint; defaults to BRANCH_MONITOR_PUBLIC_ENDPOINT")
 	flag.StringVar(&config.Monitor.MasterURL, "monitor-master-url", os.Getenv("BRANCH_MONITOR_MASTER_URL"), "relay monitor MASTER webhook URL; defaults to BRANCH_MONITOR_MASTER_URL")
 	flag.StringVar(&config.Monitor.PushToken, "monitor-push-token", os.Getenv("BRANCH_MONITOR_PUSH_TOKEN"), "relay monitor push bearer token; defaults to BRANCH_MONITOR_PUSH_TOKEN")
+	wssOriginPatterns := os.Getenv("BRANCH_WSS_ORIGIN_PATTERNS")
+	flag.StringVar(&wssOriginPatterns, "wss-origin-patterns", wssOriginPatterns, "comma-separated WebSocket Origin host patterns; defaults to BRANCH_WSS_ORIGIN_PATTERNS")
 	monitorInterval, err := envDuration("BRANCH_MONITOR_INTERVAL")
 	if err != nil {
 		return node.Config{}, err
 	}
 	flag.DurationVar(&config.Monitor.Interval, "monitor-interval", monitorInterval, "relay monitor reporter interval; defaults to BRANCH_MONITOR_INTERVAL")
 	flag.Parse()
+	config.WSSOrigins = splitCSV(wssOriginPatterns)
 	return config, nil
 }
 
@@ -80,4 +83,15 @@ func envDuration(name string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid %s: %w", name, err)
 	}
 	return value, nil
+}
+
+func splitCSV(raw string) []string {
+	values := []string{}
+	for _, part := range strings.Split(raw, ",") {
+		value := strings.TrimSpace(part)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }

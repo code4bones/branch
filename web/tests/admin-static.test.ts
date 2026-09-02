@@ -421,6 +421,10 @@ void test("nginx csp permits local cover image object urls", async () => {
   assert.match(source, /location = \/admin \{\n\s+return 301 \/admin\/;/);
   assert.match(source, /location \/admin\/ \{[\s\S]*style-src 'self' 'unsafe-inline'; script-src 'self'/);
   assert.match(source, /connect-src 'self' https:\/\/api\.github\.com https:\/\/gitlab\.com/);
+  assert.match(source, /wss:\/\/relay01\.undoo\.ru:443/);
+  assert.match(source, /wss:\/\/relay02\.undoo\.ru:443/);
+  assert.match(source, /wss:\/\/relay04\.undoo\.ru:443/);
+  assert.match(source, /wss:\/\/relay05\.undoo\.ru:443/);
   assert.match(source, /location \/node-admin\//);
   assert.match(source, /proxy_pass http:\/\/127\.0\.0\.1:8081\//);
   assert.match(source, /worker-src 'self'/);

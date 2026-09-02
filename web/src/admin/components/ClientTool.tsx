@@ -178,7 +178,7 @@ export function ClientTool(): React.JSX.Element {
           <div className="client-route">
             <span>Route</span>
             <strong>{transport.route?.endpointUri ?? "-"}</strong>
-            <small>{client.routeMode === "manual" ? "manual route material" : client.relaySource === "" ? "no accepted relay route" : client.relaySource}</small>
+            <small>{routeSourceLabel(client.routeMode, transport.route?.endpointUri ?? null, client.relaySource)}</small>
           </div>
           <div className="client-route-controls">
             <div className="control-row">
@@ -352,6 +352,16 @@ function formatUnixSeconds(value: number | null): string {
 
 function shortId(value: string): string {
   return value.length <= 14 ? value : `${value.slice(0, 14)}...`;
+}
+
+function routeSourceLabel(routeMode: "discovery" | "manual", endpointUri: string | null, relaySource: string): string {
+  if (routeMode === "manual") {
+    return "manual route material";
+  }
+  if (relaySource !== "") {
+    return relaySource;
+  }
+  return endpointUri === null ? "no accepted relay route" : "discovery route selected";
 }
 
 function errorMessage(error: unknown): string {
