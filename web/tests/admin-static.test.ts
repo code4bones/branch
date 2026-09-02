@@ -398,8 +398,10 @@ void test("static build bundles the React admin app from local dependencies", as
 
 void test("nginx csp permits local cover image object urls", async () => {
   const source = await readFile(nginxConfigPath, "utf8");
+  const firstCsp = source.match(/add_header Content-Security-Policy "([^"]+)"/)?.[1] ?? "";
 
   assert.match(source, /img-src 'self' data: blob:/);
+  assert.match(firstCsp, /style-src 'self' 'unsafe-inline'; script-src 'self'/);
   assert.match(source, /location = \/admin \{\n\s+return 301 \/admin\/;/);
   assert.match(source, /location \/admin\/ \{[\s\S]*style-src 'self' 'unsafe-inline'; script-src 'self'/);
   assert.match(source, /connect-src 'self' https:\/\/api\.github\.com https:\/\/gitlab\.com/);
