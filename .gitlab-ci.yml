@@ -64,29 +64,29 @@ build:branch-node:
       when: manual
   allow_failure: false
 
-deploy:relay_nd:
+deploy:relay01:
   extends: .deploy_branch_node
   tags:
     - branch_nd
   variables:
-    BRANCH_RELAY_NAME: relay_nd
-    BRANCH_RELAY_ENV_PREFIX: BRANCH_ND
+    BRANCH_RELAY_NAME: relay01
+    BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY01
     BRANCH_PROXY_PORT: "8088"
     BRANCH_ADMIN_HOST_PORT: "18081"
   environment:
-    name: relay/nd
+    name: relay/relay01
 
-deploy:relay_fr_on_nd:
+deploy:relay02:
   extends: .deploy_branch_node
   tags:
     - branch_nd
   variables:
-    BRANCH_RELAY_NAME: relay_fr
-    BRANCH_RELAY_ENV_PREFIX: BRANCH_FR
+    BRANCH_RELAY_NAME: relay02
+    BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY02
     BRANCH_PROXY_PORT: "8089"
     BRANCH_ADMIN_HOST_PORT: "18082"
   environment:
-    name: relay/fr-on-nd
+    name: relay/relay02
 
 .cleanup_docker:
   stage: cleanup
@@ -101,12 +101,12 @@ deploy:relay_fr_on_nd:
       when: manual
   allow_failure: true
 
-cleanup:relay_nd:
+cleanup:relay01:
   extends: .cleanup_docker
   tags:
     - branch_nd
 
-cleanup:relay_fr_on_nd:
+cleanup:relay02:
   extends: .cleanup_docker
   tags:
     - branch_nd

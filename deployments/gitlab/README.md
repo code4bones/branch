@@ -13,15 +13,16 @@ identity volume and operator configuration.
 
 ## Runner model
 
-The beta path starts with a shell GitLab Runner on the ND VPS:
+The beta path starts with a shell GitLab Runner on the relay VPS:
 
 - `branch_nd`
 
 The current CI can run two relay instances on that same host:
 
-- `deploy:relay_nd`: public endpoint `nd.relay.undoo.ru`, NPM target port
+- `deploy:relay01`: public endpoint `relay01.undoo.ru`, NPM target port
   `8088`;
-- `deploy:relay_fr_on_nd`: future FR-named beta relay, NPM target port `8089`.
+- `deploy:relay02`: public endpoint `relay02.undoo.ru`, NPM target port
+  `8089`.
 
 Two containers on one VPS give separate relay identities and separate live
 processes, but they remain one physical failure domain. The existing local
@@ -40,28 +41,41 @@ Host prerequisites:
   `/opt/branch/relays`.
 - NPM forwards the public host to the per-relay host port with WebSocket support
   enabled.
-- Admin ports bind to loopback only: `127.0.0.1:18081` for ND and
-  `127.0.0.1:18082` for FR-on-ND.
+- Admin ports bind to loopback only: `127.0.0.1:18081` for relay01 and
+  `127.0.0.1:18082` for relay02.
 
-For the first ND relay, set:
+For the two relay instances, set:
 
 ~~~text
-BRANCH_ND_PUBLIC_ENDPOINT=wss://nd.relay.undoo.ru:443/relay/v0
+BRANCH_RELAY01_PUBLIC_ENDPOINT=wss://relay01.undoo.ru:443/relay/v0
+BRANCH_RELAY02_PUBLIC_ENDPOINT=wss://relay02.undoo.ru:443/relay/v0
+BRANCH_RELAY01_ADMIN_TOKEN=<masked protected secret>
+BRANCH_RELAY02_ADMIN_TOKEN=<masked protected secret>
 ~~~
 
-Configure NPM:
+Configure NPM for relay01:
 
 ~~~text
-Domain: nd.relay.undoo.ru
-Forward Hostname / IP: <ND VPS IP or hostname>
+Domain: relay01.undoo.ru
+Forward Hostname / IP: <relay VPS IP or hostname>
 Forward Port: 8088
 Websockets Support: enabled
 SSL: existing certificate
 ~~~
 
 The compose stack publishes nginx on `0.0.0.0:8088` by default so NPM can live
-on another host. If NPM runs on the same VPS, set `BRANCH_ND_PROXY_BIND` to
+on another host. If NPM runs on the same VPS, set `BRANCH_RELAY01_PROXY_BIND` to
 `127.0.0.1`.
+
+Configure NPM for relay02:
+
+~~~text
+Domain: relay02.undoo.ru
+Forward Hostname / IP: <relay VPS IP or hostname>
+Forward Port: 8089
+Websockets Support: enabled
+SSL: existing certificate
+~~~
 
 ## Required CI/CD variables
 
@@ -69,19 +83,19 @@ Set these in GitLab project CI/CD variables:
 
 | Variable | Scope | Notes |
 | --- | --- | --- |
-| `BRANCH_ND_PUBLIC_ENDPOINT` | `deploy:relay_nd` | Public relay URL, initially `wss://nd.relay.undoo.ru:443/relay/v0`. |
-| `BRANCH_FR_PUBLIC_ENDPOINT` | `deploy:relay_fr_on_nd` | Public relay URL when the FR-named host is ready. |
-| `BRANCH_ND_ADMIN_TOKEN` | branch_nd deploy | Masked and protected. Used only against the local admin listener. |
-| `BRANCH_FR_ADMIN_TOKEN` | FR-on-ND deploy | Masked and protected. Use a different value from ND. |
+| `BRANCH_RELAY01_PUBLIC_ENDPOINT` | `deploy:relay01` | Public relay URL, initially `wss://relay01.undoo.ru:443/relay/v0`. |
+| `BRANCH_RELAY02_PUBLIC_ENDPOINT` | `deploy:relay02` | Public relay URL, initially `wss://relay02.undoo.ru:443/relay/v0`. |
+| `BRANCH_RELAY01_ADMIN_TOKEN` | `deploy:relay01` | Masked and protected. Used only against the local admin listener. |
+| `BRANCH_RELAY02_ADMIN_TOKEN` | `deploy:relay02` | Masked and protected. Use a different value from relay01. |
 
 Optional variables:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `BRANCH_ND_GOARCH`, `BRANCH_FR_GOARCH` | `amd64` | Use `arm64` for ARM VPS hosts. |
-| `BRANCH_ND_PROXY_BIND`, `BRANCH_FR_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
-| `BRANCH_ND_PROXY_PORT`, `BRANCH_FR_PROXY_PORT` | `8088` / `8089` | Host port NPM forwards to. |
-| `BRANCH_ND_ADMIN_HOST_PORT`, `BRANCH_FR_ADMIN_HOST_PORT` | `18081` / `18082` | Loopback admin ports used by deploy checks. |
+| `BRANCH_RELAY01_GOARCH`, `BRANCH_RELAY02_GOARCH` | `amd64` | Use `arm64` for ARM VPS hosts. |
+| `BRANCH_RELAY01_PROXY_BIND`, `BRANCH_RELAY02_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
+| `BRANCH_RELAY01_PROXY_PORT`, `BRANCH_RELAY02_PROXY_PORT` | `8088` / `8089` | Host port NPM forwards to. |
+| `BRANCH_RELAY01_ADMIN_HOST_PORT`, `BRANCH_RELAY02_ADMIN_HOST_PORT` | `18081` / `18082` | Loopback admin ports used by deploy checks. |
 | `BRANCH_DOCKER_PRUNE_UNTIL` | `24h` | Manual cleanup age filter. |
 | `BRANCH_DOCKER_PRUNE_ALL` | `0` | Set to `1` only when manual cleanup may remove unused non-dangling images. |
 
@@ -90,7 +104,7 @@ Optional variables:
 1. Push to `main`.
 2. `build:branch-node` builds `linux/amd64` and `linux/arm64` binaries in
    Docker and keeps artifacts for one day.
-3. Run `deploy:relay_nd` manually.
+3. Run `deploy:relay01` manually.
 4. The deploy job writes `/opt/branch/relays/<relay>/`, starts the compose
    project, checks `/readyz`, and creates relay beacon artifacts.
 5. Publish the generated `relay-artifacts/*-records.br0` content through the
