@@ -1786,6 +1786,16 @@ database. A client may carry signed beacons between relay islands; authenticity
 comes from issuer signatures and freshness checks, not from the relay that
 transported the record.
 
+The executable beta federation slice uses a bounded static WSS peer-relay list
+configured by the operator. A relay may probe a configured peer relay with the
+same draft `LOOKUP`, `RENDEZVOUS`, and `ENVELOPE` frames used by clients, and
+may expose the result to its local hub only as short-lived federated presence.
+This does not add a new published frame type, does not advertise a new
+mandatory capability, does not create a global presence directory, and does not
+authorize store-and-forward. A local sender receives `relay.forwarded` only
+after the remote relay accepted the live forward; otherwise it receives a
+transient error and keeps retry state locally.
+
 ### Path migration boundary
 
 A session is bound to authenticated peer identity and session state, not to a

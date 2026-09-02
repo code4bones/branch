@@ -54,6 +54,8 @@ func parseConfig() (node.Config, error) {
 	flag.StringVar(&config.Monitor.PushToken, "monitor-push-token", os.Getenv("BRANCH_MONITOR_PUSH_TOKEN"), "relay monitor push bearer token; defaults to BRANCH_MONITOR_PUSH_TOKEN")
 	wssOriginPatterns := os.Getenv("BRANCH_WSS_ORIGIN_PATTERNS")
 	flag.StringVar(&wssOriginPatterns, "wss-origin-patterns", wssOriginPatterns, "comma-separated WebSocket Origin host patterns; defaults to BRANCH_WSS_ORIGIN_PATTERNS")
+	federationPeers := os.Getenv("BRANCH_FEDERATION_PEERS")
+	flag.StringVar(&federationPeers, "federation-peers", federationPeers, "comma-separated peer relay WSS endpoints; defaults to BRANCH_FEDERATION_PEERS")
 	monitorInterval, err := envDuration("BRANCH_MONITOR_INTERVAL")
 	if err != nil {
 		return node.Config{}, err
@@ -61,6 +63,7 @@ func parseConfig() (node.Config, error) {
 	flag.DurationVar(&config.Monitor.Interval, "monitor-interval", monitorInterval, "relay monitor reporter interval; defaults to BRANCH_MONITOR_INTERVAL")
 	flag.Parse()
 	config.WSSOrigins = splitCSV(wssOriginPatterns)
+	config.FederationPeers = splitCSV(federationPeers)
 	return config, nil
 }
 

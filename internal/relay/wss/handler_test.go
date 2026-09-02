@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -161,6 +162,267 @@ func TestHandlerAttachesTwoPeersAndForwardsOpaqueEnvelope(t *testing.T) {
 	}
 }
 
+func TestHandlerSkipsRelayAckWhenEnvelopeDoesNotRequestIt(t *testing.T) {
+	_, handler := newTestHubAndHandler(t)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	bob := dialAndReady(t, server.URL)
+	defer bob.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, bob.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  bob.Ready.SessionID,
+		"route_id":    bob.Ready.RouteID,
+		"peer_id":     testPeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+
+	alice := dialAndReady(t, server.URL)
+	defer alice.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": alice.Ready.SessionID,
+		"route_id":   alice.Ready.RouteID,
+		"peer_id":    testPeerID,
+		"sequence":   2,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":          "ENVELOPE",
+		"session_id":    alice.Ready.SessionID,
+		"route_id":      alice.Ready.RouteID,
+		"path_epoch":    0,
+		"stream_id":     0,
+		"delivery_id":   testB64x16,
+		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("opaque no ack")),
+		"ack_requested": false,
+	})
+
+	envelope := readObject(t, bob.Conn)
+	if envelope["type"] != "ENVELOPE" || envelope["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("opaque no ack")) {
+		t.Fatalf("unexpected forwarded envelope: %+v", envelope)
+	}
+	assertNoImmediateFrame(t, alice.Conn)
+}
+
+func TestHandlerFederatesLivePeerAcrossTwoRelays(t *testing.T) {
+	rightHub, rightHandler := newTestHubAndHandler(t)
+	rightServer := httptest.NewServer(rightHandler)
+	defer rightServer.Close()
+	rightBridge := attachBridgeSession(t, rightHub, "bridge-right")
+
+	bob := dialAndReady(t, rightServer.URL)
+	defer bob.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, bob.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  bob.Ready.SessionID,
+		"route_id":    bob.Ready.RouteID,
+		"peer_id":     testPeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+
+	leftHub, leftHandler := newTestHubAndHandlerWithPeerRouter(t, testFederationRouter{
+		targetHub: rightHub,
+		bridge:    rightBridge,
+		now:       time.Unix(1_789_000_000, 0),
+	})
+	leftServer := httptest.NewServer(leftHandler)
+	defer leftServer.Close()
+
+	alice := dialAndReady(t, leftServer.URL)
+	defer alice.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "LOOKUP",
+		"session_id": alice.Ready.SessionID,
+		"peer_id":    testPeerID,
+		"sequence":   2,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": alice.Ready.SessionID,
+		"route_id":   alice.Ready.RouteID,
+		"peer_id":    testPeerID,
+		"sequence":   3,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":          "ENVELOPE",
+		"session_id":    alice.Ready.SessionID,
+		"route_id":      alice.Ready.RouteID,
+		"path_epoch":    0,
+		"stream_id":     0,
+		"delivery_id":   testB64x16,
+		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("opaque federated bytes")),
+		"ack_requested": true,
+	})
+
+	ack := readObject(t, alice.Conn)
+	if ack["type"] != "ACK" || ack["ack_type"] != "relay.forwarded" || ack["durable"] != false {
+		t.Fatalf("unexpected federated ack: %+v", ack)
+	}
+	envelope := readObject(t, bob.Conn)
+	if envelope["type"] != "ENVELOPE" || envelope["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("opaque federated bytes")) {
+		t.Fatalf("unexpected federated envelope: %+v", envelope)
+	}
+
+	leftSnapshot := leftHub.Snapshot()
+	if leftSnapshot.SessionsActive != 1 || leftSnapshot.RoutesActive != 1 || leftSnapshot.PresenceActive != 0 || leftSnapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected left hub snapshot: %+v", leftSnapshot)
+	}
+	rightSnapshot := rightHub.Snapshot()
+	if rightSnapshot.SessionsActive != 2 || rightSnapshot.RoutesActive != 1 || rightSnapshot.PresenceActive != 1 || rightSnapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected right hub snapshot: %+v", rightSnapshot)
+	}
+}
+
+func TestStaticPeerRouterFederatesThroughRemoteWSS(t *testing.T) {
+	rightHub, rightHandler := newTestHubAndHandler(t)
+	rightServer := httptest.NewServer(rightHandler)
+	defer rightServer.Close()
+
+	bob := dialAndReady(t, rightServer.URL)
+	defer bob.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, bob.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  bob.Ready.SessionID,
+		"route_id":    bob.Ready.RouteID,
+		"peer_id":     testPeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+
+	leftHub, leftHandler := newTestHubAndHandlerWithStaticFederation(t, wssURL(rightServer.URL))
+	leftServer := httptest.NewServer(leftHandler)
+	defer leftServer.Close()
+
+	alice := dialAndReady(t, leftServer.URL)
+	defer alice.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": alice.Ready.SessionID,
+		"route_id":   alice.Ready.RouteID,
+		"peer_id":    testPeerID,
+		"sequence":   2,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":          "ENVELOPE",
+		"session_id":    alice.Ready.SessionID,
+		"route_id":      alice.Ready.RouteID,
+		"path_epoch":    0,
+		"stream_id":     0,
+		"delivery_id":   testB64x16,
+		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("static federation bytes")),
+		"ack_requested": true,
+	})
+
+	ack := readObject(t, alice.Conn)
+	if ack["type"] != "ACK" || ack["ack_type"] != "relay.forwarded" || ack["durable"] != false {
+		t.Fatalf("unexpected static federation ack: %+v", ack)
+	}
+	envelope := readObject(t, bob.Conn)
+	if envelope["type"] != "ENVELOPE" || envelope["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("static federation bytes")) {
+		t.Fatalf("unexpected static federation envelope: %+v", envelope)
+	}
+	federatedRouteID, ok := envelope["route_id"].(string)
+	if !ok || federatedRouteID == "" {
+		t.Fatalf("forwarded envelope missing route id: %+v", envelope)
+	}
+	sendJSON(t, bob.Conn, map[string]any{
+		"type":          "ENVELOPE",
+		"session_id":    bob.Ready.SessionID,
+		"route_id":      federatedRouteID,
+		"path_epoch":    0,
+		"stream_id":     0,
+		"delivery_id":   testB64x16,
+		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("static federation reply")),
+		"ack_requested": true,
+	})
+	bobAck := readObject(t, bob.Conn)
+	if bobAck["type"] != "ACK" || bobAck["ack_type"] != "relay.forwarded" || bobAck["durable"] != false {
+		t.Fatalf("unexpected static federation reply ack: %+v", bobAck)
+	}
+	reply := readObject(t, alice.Conn)
+	if reply["type"] != "ENVELOPE" || reply["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("static federation reply")) {
+		t.Fatalf("unexpected static federation reply: %+v", reply)
+	}
+	if snapshot := leftHub.Snapshot(); snapshot.SessionsActive != 1 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 0 || snapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected left hub snapshot: %+v", snapshot)
+	}
+	if snapshot := rightHub.Snapshot(); snapshot.PresenceActive != 1 || snapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected right hub snapshot: %+v", snapshot)
+	}
+}
+
+func TestHandlerFederatedRouteReturnsUnavailableWithoutAckOrMailbox(t *testing.T) {
+	rightHub, rightHandler := newTestHubAndHandler(t)
+	rightServer := httptest.NewServer(rightHandler)
+	defer rightServer.Close()
+	rightBridge := attachBridgeSession(t, rightHub, "bridge-right")
+
+	bob := dialAndReady(t, rightServer.URL)
+	sendJSON(t, bob.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  bob.Ready.SessionID,
+		"route_id":    bob.Ready.RouteID,
+		"peer_id":     testPeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+
+	leftHub, leftHandler := newTestHubAndHandlerWithPeerRouter(t, testFederationRouter{
+		targetHub: rightHub,
+		bridge:    rightBridge,
+		now:       time.Unix(1_789_000_000, 0),
+	})
+	leftServer := httptest.NewServer(leftHandler)
+	defer leftServer.Close()
+	alice := dialAndReady(t, leftServer.URL)
+	defer alice.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "LOOKUP",
+		"session_id": alice.Ready.SessionID,
+		"peer_id":    testPeerID,
+		"sequence":   2,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": alice.Ready.SessionID,
+		"route_id":   alice.Ready.RouteID,
+		"peer_id":    testPeerID,
+		"sequence":   3,
+	})
+
+	bob.Close(websocket.StatusNormalClosure, "")
+	waitForDetachedPeer(t, rightHub)
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":          "ENVELOPE",
+		"session_id":    alice.Ready.SessionID,
+		"route_id":      alice.Ready.RouteID,
+		"path_epoch":    0,
+		"stream_id":     0,
+		"delivery_id":   testB64x16,
+		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("not queued")),
+		"ack_requested": true,
+	})
+
+	errFrame := readObject(t, alice.Conn)
+	if errFrame["type"] != "ERROR" || errFrame["code"] != "peer_unavailable" || errFrame["retryable"] != true {
+		t.Fatalf("unexpected federated unavailable frame: %+v", errFrame)
+	}
+	leftSnapshot := leftHub.Snapshot()
+	if leftSnapshot.QueueDepth != 0 || leftSnapshot.ForwardedFrames != 0 || leftSnapshot.ForwardedBytes != 0 {
+		t.Fatalf("left hub stored unavailable frame: %+v", leftSnapshot)
+	}
+	rightSnapshot := rightHub.Snapshot()
+	if rightSnapshot.QueueDepth != 0 || rightSnapshot.ForwardedFrames != 0 || rightSnapshot.ForwardedBytes != 0 {
+		t.Fatalf("right hub stored unavailable frame: %+v", rightSnapshot)
+	}
+}
+
 func TestHandlerReturnsPeerUnavailableWithoutStoreAndForward(t *testing.T) {
 	hub, handler := newTestHubAndHandler(t)
 	server := httptest.NewServer(handler)
@@ -250,6 +512,61 @@ func newTestHubAndHandler(t *testing.T) (*relay.Hub, http.Handler) {
 
 func newTestHubAndHandlerWithOrigins(t *testing.T, originPatterns []string) (*relay.Hub, http.Handler) {
 	t.Helper()
+	return newTestHubAndHandlerWithOptions(t, originPatterns, nil)
+}
+
+func newTestHubAndHandlerWithPeerRouter(t *testing.T, peerRouter PeerRouter) (*relay.Hub, http.Handler) {
+	t.Helper()
+	return newTestHubAndHandlerWithOptions(t, nil, peerRouter)
+}
+
+func newTestHubAndHandlerWithStaticFederation(t *testing.T, endpoint string) (*relay.Hub, http.Handler) {
+	t.Helper()
+	hub, err := relay.NewHub(relay.Config{
+		MaxSessions:         8,
+		MaxQueueDepth:       8,
+		MaxFrameBytes:       49_152,
+		MaxFramesPerSession: 32,
+		MaxBytesPerSession:  1 << 20,
+		PresenceTTL:         30 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	peerRouter, err := NewStaticPeerRouter(StaticPeerRouterConfig{
+		Endpoints:     []string{endpoint},
+		LocalHub:      hub,
+		Random:        bytes.NewReader(countingBytes(4096)),
+		Now:           func() time.Time { return time.Unix(1_789_000_000, 0) },
+		MaxFrameBytes: 49_152,
+		DialTimeout:   time.Second,
+		WriteTimeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new static peer router: %v", err)
+	}
+	nodeIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate identity: %v", err)
+	}
+	handler, err := NewHandler(Config{
+		Hub:              hub,
+		Identity:         nodeIdentity,
+		PeerRouter:       peerRouter,
+		Random:           bytes.NewReader(countingBytes(512)),
+		Now:              func() time.Time { return time.Unix(1_789_000_000, 0) },
+		MaxFrameBytes:    49_152,
+		HandshakeTimeout: time.Second,
+		WriteTimeout:     time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	return hub, handler
+}
+
+func newTestHubAndHandlerWithOptions(t *testing.T, originPatterns []string, peerRouter PeerRouter) (*relay.Hub, http.Handler) {
+	t.Helper()
 	hub, err := relay.NewHub(relay.Config{
 		MaxSessions:         8,
 		MaxQueueDepth:       8,
@@ -268,6 +585,7 @@ func newTestHubAndHandlerWithOrigins(t *testing.T, originPatterns []string) (*re
 	handler, err := NewHandler(Config{
 		Hub:              hub,
 		Identity:         nodeIdentity,
+		PeerRouter:       peerRouter,
 		Random:           bytes.NewReader(countingBytes(512)),
 		Now:              func() time.Time { return time.Unix(1_789_000_000, 0) },
 		OriginPatterns:   originPatterns,
@@ -420,6 +738,15 @@ func readRaw(t *testing.T, conn *websocket.Conn) []byte {
 	return data
 }
 
+func assertNoImmediateFrame(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, _, err := conn.Read(ctx); err == nil {
+		t.Fatal("unexpected websocket frame")
+	}
+}
+
 func mustMarshal(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)
@@ -431,4 +758,48 @@ func mustMarshal(t *testing.T, value any) []byte {
 
 func decodeTestBase64(value string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(value)
+}
+
+func wssURL(serverURL string) string {
+	return "ws" + strings.TrimPrefix(serverURL, "http") + Path
+}
+
+func attachBridgeSession(t *testing.T, hub *relay.Hub, sessionID relay.SessionID) *relay.Session {
+	t.Helper()
+	session, err := hub.Attach(sessionID)
+	if err != nil {
+		t.Fatalf("attach bridge session: %v", err)
+	}
+	return session
+}
+
+type testFederationRouter struct {
+	targetHub *relay.Hub
+	bridge    *relay.Session
+	now       time.Time
+}
+
+func (router testFederationRouter) LookupFederatedPeer(_ context.Context, peerID relay.PeerID, _ time.Time) (relay.FederatedForwarder, bool) {
+	if _, ok := router.targetHub.Lookup(peerID, router.now); !ok {
+		return nil, false
+	}
+	return testFederationForwarder{
+		target:     router.bridge,
+		targetPeer: peerID,
+		now:        router.now,
+	}, true
+}
+
+type testFederationForwarder struct {
+	target     *relay.Session
+	targetPeer relay.PeerID
+	now        time.Time
+}
+
+func (forwarder testFederationForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte) error {
+	err := forwarder.target.Rendezvous(routeID, forwarder.targetPeer, forwarder.now)
+	if err != nil && !errors.Is(err, relay.ErrRouteExists) {
+		return err
+	}
+	return forwarder.target.Send(ctx, routeID, payload)
 }

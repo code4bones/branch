@@ -35,6 +35,7 @@ var (
 type Config struct {
 	Hub              *relay.Hub
 	Identity         *identity.NodeIdentity
+	PeerRouter       PeerRouter
 	Random           io.Reader
 	Now              func() time.Time
 	OriginPatterns   []string
@@ -43,11 +44,18 @@ type Config struct {
 	WriteTimeout     time.Duration
 }
 
+// PeerRouter locates a live remote relay path for one peer lookup. It is an
+// adapter boundary for beta federation, not a global presence directory.
+type PeerRouter interface {
+	LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, now time.Time) (relay.FederatedForwarder, bool)
+}
+
 // Handler adapts a live non-durable relay Hub to the /relay/v0 WebSocket
 // attachment surface.
 type Handler struct {
 	hub              *relay.Hub
 	identity         *identity.NodeIdentity
+	peerRouter       PeerRouter
 	random           io.Reader
 	now              func() time.Time
 	originPatterns   []string
@@ -83,6 +91,7 @@ func NewHandler(config Config) (*Handler, error) {
 	return &Handler{
 		hub:              config.Hub,
 		identity:         config.Identity,
+		peerRouter:       config.PeerRouter,
 		random:           config.Random,
 		now:              config.Now,
 		originPatterns:   originPatterns,
@@ -274,20 +283,66 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	case "HEARTBEAT":
 		return session.Heartbeat(handler.now())
 	case "LOOKUP":
-		if _, ok := handler.hub.Lookup(relay.PeerID(frame["peer_id"].(string)), handler.now()); !ok {
-			return relay.ErrPeerUnavailable
+		peerID := relay.PeerID(frame["peer_id"].(string))
+		now := handler.now()
+		if _, ok := handler.hub.Lookup(peerID, now); ok {
+			return nil
+		}
+		if forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, now); ok {
+			closeFederatedForwarder(forwarder)
+			return nil
+		}
+		return relay.ErrPeerUnavailable
+	case "RENDEZVOUS":
+		routeID := relay.RouteID(frame["route_id"].(string))
+		peerID := relay.PeerID(frame["peer_id"].(string))
+		now := handler.now()
+		if err := session.Rendezvous(routeID, peerID, now); err != nil {
+			if !errors.Is(err, relay.ErrPeerUnavailable) {
+				return err
+			}
+			if federatedErr := handler.announceFederatedPeer(ctx, peerID, now); federatedErr != nil {
+				return err
+			}
+			return session.Rendezvous(routeID, peerID, now)
 		}
 		return nil
-	case "RENDEZVOUS":
-		return session.Rendezvous(relay.RouteID(frame["route_id"].(string)), relay.PeerID(frame["peer_id"].(string)), handler.now())
 	case "ENVELOPE":
 		routeID := relay.RouteID(frame["route_id"].(string))
 		if err := session.Send(ctx, routeID, raw); err != nil {
 			return err
 		}
-		return handler.writeAck(ctx, conn, string(sessionID), frame["delivery_id"].(string), "relay.forwarded")
+		if ackRequested, _ := frame["ack_requested"].(bool); ackRequested {
+			return handler.writeAck(ctx, conn, string(sessionID), frame["delivery_id"].(string), "relay.forwarded")
+		}
+		return nil
 	default:
 		return nil
+	}
+}
+
+func (handler *Handler) announceFederatedPeer(ctx context.Context, peerID relay.PeerID, now time.Time) error {
+	forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, now)
+	if !ok {
+		return relay.ErrPeerUnavailable
+	}
+	return handler.hub.AnnounceFederatedPresence(peerID, forwarder, now)
+}
+
+func (handler *Handler) lookupFederatedPeer(ctx context.Context, peerID relay.PeerID, now time.Time) (relay.FederatedForwarder, bool) {
+	if handler.peerRouter == nil {
+		return nil, false
+	}
+	forwarder, ok := handler.peerRouter.LookupFederatedPeer(ctx, peerID, now)
+	if !ok {
+		return nil, false
+	}
+	return forwarder, true
+}
+
+func closeFederatedForwarder(forwarder relay.FederatedForwarder) {
+	if closer, ok := forwarder.(interface{ Close() }); ok {
+		closer.Close()
 	}
 }
 

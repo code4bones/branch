@@ -179,6 +179,152 @@ func TestHubPresenceHeartbeatLookupAndRendezvousAreEphemeral(t *testing.T) {
 	}
 }
 
+func TestHubFederatedPresenceForwardsAcrossLiveRelays(t *testing.T) {
+	now := time.Unix(1_789_000_000, 0)
+	leftHub := newTestHub(t, Config{
+		MaxSessions:         2,
+		MaxQueueDepth:       2,
+		MaxFrameBytes:       16,
+		MaxFramesPerSession: 4,
+		MaxBytesPerSession:  64,
+		PresenceTTL:         10 * time.Second,
+	})
+	rightHub := newTestHub(t, Config{
+		MaxSessions:         2,
+		MaxQueueDepth:       2,
+		MaxFrameBytes:       16,
+		MaxFramesPerSession: 4,
+		MaxBytesPerSession:  64,
+		PresenceTTL:         10 * time.Second,
+	})
+	alice := attach(t, leftHub, "alice-left")
+	bob := attach(t, rightHub, "bob-right")
+	rightBridge := attach(t, rightHub, "bridge-right")
+	if err := bob.AnnouncePresence("bob-peer", now); err != nil {
+		t.Fatalf("announce bob presence: %v", err)
+	}
+	forwarder := liveFederatedForwarder{
+		target:     rightBridge,
+		targetPeer: "bob-peer",
+		now:        now,
+	}
+	if err := leftHub.AnnounceFederatedPresence("bob-peer", forwarder, now); err != nil {
+		t.Fatalf("announce federated presence: %v", err)
+	}
+	presence, ok := leftHub.Lookup("bob-peer", now)
+	if !ok || !presence.Federated || presence.SessionID != "" {
+		t.Fatalf("unexpected federated presence: %+v", presence)
+	}
+
+	if err := alice.Rendezvous("route-federated", "bob-peer", now); err != nil {
+		t.Fatalf("federated rendezvous: %v", err)
+	}
+	payload := []byte("left-to-right")
+	if err := alice.Send(context.Background(), "route-federated", payload); err != nil {
+		t.Fatalf("federated send: %v", err)
+	}
+	payload[0] = 'X'
+	if frame := receive(t, bob); frame.RouteID != "route-federated" || string(frame.Payload) != "left-to-right" {
+		t.Fatalf("unexpected bob frame: %+v", frame)
+	}
+
+	if err := bob.Send(context.Background(), "route-federated", []byte("right-to-left")); err != nil {
+		t.Fatalf("bob reply: %v", err)
+	}
+	reply := receive(t, rightBridge)
+	if err := leftHub.DeliverFromFederated(context.Background(), reply.RouteID, reply.Payload); err != nil {
+		t.Fatalf("deliver from federated: %v", err)
+	}
+	if frame := receive(t, alice); frame.RouteID != "route-federated" || string(frame.Payload) != "right-to-left" {
+		t.Fatalf("unexpected alice frame: %+v", frame)
+	}
+
+	leftSnapshot := leftHub.Snapshot()
+	if leftSnapshot.SessionsActive != 1 || leftSnapshot.RoutesActive != 1 || leftSnapshot.PresenceActive != 0 || leftSnapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected left snapshot: %+v", leftSnapshot)
+	}
+	rightSnapshot := rightHub.Snapshot()
+	if rightSnapshot.SessionsActive != 2 || rightSnapshot.RoutesActive != 1 || rightSnapshot.PresenceActive != 1 || rightSnapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected right snapshot: %+v", rightSnapshot)
+	}
+}
+
+func TestHubFederatedPresenceReturnsUnavailableWithoutMailbox(t *testing.T) {
+	now := time.Unix(1_789_000_000, 0)
+	leftHub := newTestHub(t, Config{
+		MaxSessions:         1,
+		MaxQueueDepth:       1,
+		MaxFrameBytes:       16,
+		MaxFramesPerSession: 4,
+		MaxBytesPerSession:  64,
+		PresenceTTL:         10 * time.Second,
+	})
+	rightHub := newTestHub(t, Config{
+		MaxSessions:         1,
+		MaxQueueDepth:       1,
+		MaxFrameBytes:       16,
+		MaxFramesPerSession: 4,
+		MaxBytesPerSession:  64,
+		PresenceTTL:         10 * time.Second,
+	})
+	alice := attach(t, leftHub, "alice-left")
+	rightBridge := attach(t, rightHub, "bridge-right")
+	if err := leftHub.AnnounceFederatedPresence("bob-peer", liveFederatedForwarder{
+		target:     rightBridge,
+		targetPeer: "bob-peer",
+		now:        now,
+	}, now); err != nil {
+		t.Fatalf("announce federated presence: %v", err)
+	}
+	if err := alice.Rendezvous("route-federated", "bob-peer", now); err != nil {
+		t.Fatalf("federated rendezvous: %v", err)
+	}
+
+	if err := alice.Send(context.Background(), "route-federated", []byte("not queued")); !errors.Is(err, ErrPeerUnavailable) {
+		t.Fatalf("unavailable send error = %v", err)
+	}
+	leftSnapshot := leftHub.Snapshot()
+	if leftSnapshot.QueueDepth != 0 || leftSnapshot.ForwardedFrames != 0 || leftSnapshot.ForwardedBytes != 0 {
+		t.Fatalf("left hub stored unavailable frame: %+v", leftSnapshot)
+	}
+	rightSnapshot := rightHub.Snapshot()
+	if rightSnapshot.QueueDepth != 0 || rightSnapshot.ForwardedFrames != 0 || rightSnapshot.ForwardedBytes != 0 {
+		t.Fatalf("right hub stored unavailable frame: %+v", rightSnapshot)
+	}
+
+	restarted := newTestHub(t, leftHub.config)
+	if snapshot := restarted.Snapshot(); snapshot.PresenceActive != 0 || snapshot.RoutesActive != 0 || snapshot.QueueDepth != 0 {
+		t.Fatalf("new hub restored federated state: %+v", snapshot)
+	}
+}
+
+func TestHubFederatedPresenceExpiresWithoutRouteState(t *testing.T) {
+	now := time.Unix(1_789_000_000, 0)
+	hub := newTestHub(t, Config{
+		MaxSessions:         1,
+		MaxQueueDepth:       1,
+		MaxFrameBytes:       16,
+		MaxFramesPerSession: 4,
+		MaxBytesPerSession:  64,
+		PresenceTTL:         10 * time.Second,
+	})
+	if err := hub.AnnounceFederatedPresence("bob-peer", failingFederatedForwarder{}, now); err != nil {
+		t.Fatalf("announce federated presence: %v", err)
+	}
+	if snapshot := hub.Snapshot(); snapshot.PresenceActive != 1 || snapshot.RoutesActive != 0 {
+		t.Fatalf("unexpected federated presence snapshot: %+v", snapshot)
+	}
+	if removed := hub.SweepExpired(now.Add(11 * time.Second)); removed != 1 {
+		t.Fatalf("removed federated presence = %d", removed)
+	}
+	if _, ok := hub.Lookup("bob-peer", now.Add(11*time.Second)); ok {
+		t.Fatal("federated presence survived expiry")
+	}
+	if snapshot := hub.Snapshot(); snapshot.PresenceActive != 0 || snapshot.RoutesActive != 0 || snapshot.QueueDepth != 0 {
+		t.Fatalf("expired federated presence left state: %+v", snapshot)
+	}
+}
+
 func TestHubShutdownDetachesAllSessions(t *testing.T) {
 	hub := newTestHub(t, DefaultConfig())
 	alice := attach(t, hub, "alice")
@@ -251,4 +397,24 @@ func receive(t *testing.T, session *Session) Frame {
 		t.Fatalf("receive: %v", err)
 	}
 	return frame
+}
+
+type liveFederatedForwarder struct {
+	target     *Session
+	targetPeer PeerID
+	now        time.Time
+}
+
+func (forwarder liveFederatedForwarder) Forward(ctx context.Context, routeID RouteID, payload []byte) error {
+	err := forwarder.target.Rendezvous(routeID, forwarder.targetPeer, forwarder.now)
+	if err != nil && !errors.Is(err, ErrRouteExists) {
+		return err
+	}
+	return forwarder.target.Send(ctx, routeID, payload)
+}
+
+type failingFederatedForwarder struct{}
+
+func (failingFederatedForwarder) Forward(context.Context, RouteID, []byte) error {
+	return ErrPeerUnavailable
 }

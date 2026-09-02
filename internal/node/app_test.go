@@ -63,6 +63,17 @@ func TestNewRejectsMissingIdentityPath(t *testing.T) {
 	}
 }
 
+func TestNewRejectsInvalidFederationPeerEndpoint(t *testing.T) {
+	config := DefaultConfig()
+	config.PublicAddr = "127.0.0.1:0"
+	config.AdminAddr = "127.0.0.1:0"
+	config.IdentityPath = filepath.Join(t.TempDir(), "node-identity.json")
+	config.FederationPeers = []string{"https://relay.example.test/relay/v0"}
+	if _, err := New(config); err == nil {
+		t.Fatal("expected invalid federation peer endpoint error")
+	}
+}
+
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	config := DefaultConfig()
