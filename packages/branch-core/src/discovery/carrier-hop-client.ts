@@ -5,6 +5,7 @@ import {
 import {
   parseRelayEndpointDescriptor,
   type BrowserRelaySocketFactory,
+  type RelayRouteHint,
   type RelayRouteMaterial
 } from "../connectivity/same-relay.js";
 import {
@@ -21,6 +22,7 @@ export interface DiscoveredCarrierHopOptions {
   readonly fallbackQuery?: string | null;
   readonly includeFallback?: boolean;
   readonly includeForks?: boolean;
+  readonly includeRouteHints?: boolean;
   readonly page?: number;
   readonly perPage?: number;
   readonly signal?: AbortSignal;
@@ -34,6 +36,7 @@ export interface DiscoveredCarrierHopOptions {
 export interface DiscoveredCarrierHopReport {
   readonly discovery: ClientDiscoveryReport;
   readonly routeSnapshot: readonly RelayRouteMaterial[];
+  readonly routeHintsSnapshot: readonly RelayRouteHint[];
   readonly transport: CarrierHoppingPoCReport;
 }
 
@@ -42,9 +45,11 @@ const maxRouteSnapshot = 4;
 export async function runDiscoveredCarrierHopPoC(options: DiscoveredCarrierHopOptions): Promise<DiscoveredCarrierHopReport> {
   const discovery = await discoverClientBootstrapBeacons(discoveryRequest(options));
   const routeSnapshot = routesFromBeaconObservations(discovery.observations);
+  const routeHintsSnapshot = routeHintsFromBeaconObservations(discovery.observations);
   options.onDiscoveryReport?.(discovery);
   const transport = await runCarrierHoppingPoC({
     routes: routeSnapshot,
+    ...(options.includeRouteHints === false ? {} : { routeHints: routeHintsSnapshot }),
     ...(options.socketFactory === undefined ? {} : { socketFactory: options.socketFactory }),
     ...(options.crypto === undefined ? {} : { crypto: options.crypto }),
     ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
@@ -53,6 +58,7 @@ export async function runDiscoveredCarrierHopPoC(options: DiscoveredCarrierHopOp
   return {
     discovery,
     routeSnapshot,
+    routeHintsSnapshot,
     transport
   };
 }
@@ -88,6 +94,40 @@ export function routesFromBeaconObservations(observations: readonly BeaconObserv
     }
   }
   return routes;
+}
+
+export function routeHintsFromBeaconObservations(observations: readonly BeaconObservation[]): readonly RelayRouteHint[] {
+  const routeHints: RelayRouteHint[] = [];
+  const seen = new Set<string>();
+  for (const observation of observations) {
+    if (
+      observation.validation !== "accepted" ||
+      observation.relayEndpoint === null ||
+      observation.senderPublicKey === null ||
+      observation.profileMultihash === null
+    ) {
+      continue;
+    }
+    const endpoint = parseRelayEndpointDescriptor(observation.relayEndpoint);
+    if (endpoint === null) {
+      continue;
+    }
+    const dedupeKey = `${endpoint.transport}\n${endpoint.uri}\n${observation.senderPublicKey}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    routeHints.push({
+      transport: endpoint.transport,
+      uri: endpoint.uri,
+      relayPublicKey: observation.senderPublicKey,
+      priority: routeHints.length
+    });
+    if (routeHints.length >= maxRouteSnapshot) {
+      break;
+    }
+  }
+  return routeHints;
 }
 
 function discoveryRequest(options: DiscoveredCarrierHopOptions): ClientDiscoveryRequest {

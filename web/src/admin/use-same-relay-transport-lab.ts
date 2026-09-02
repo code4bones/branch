@@ -14,7 +14,7 @@ import {
   sealBetaPayload,
   type BetaPayloadKeyPair
 } from "@code4bones/branch-core/connectivity/payload-crypto.js";
-import { runDiscoveredCarrierHopPoC, routesFromBeaconObservations } from "@code4bones/branch-core/discovery/carrier-hop-client.js";
+import { routeHintsFromBeaconObservations, runDiscoveredCarrierHopPoC, routesFromBeaconObservations } from "@code4bones/branch-core/discovery/carrier-hop-client.js";
 import type { BeaconObservation } from "@code4bones/branch-core/discovery/client.js";
 import { createGitHubSearchCarrier, gitHubReportsFromCarrierReports, mergeGitHubDiscoveryReports } from "@code4bones/branch-core/discovery/github.js";
 import { encodeBase64URL } from "@code4bones/branch-core/protocol/v0/base64url.js";
@@ -261,7 +261,7 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
           const gitHubReport = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
           setClientDiscoveryResults(gitHubReport.results, gitHubReport.rateLimitRemaining, gitHubReport.incompleteResults);
           setClientDiscoveryStatus(
-            `${discovery.message}; route snapshot ${String(routesFromBeaconObservations(discovery.observations).length)}`,
+            `${discovery.message}; route snapshot ${String(routesFromBeaconObservations(discovery.observations).length)}; route hints ${String(routeHintsFromBeaconObservations(discovery.observations).length)}`,
             discovery.status === "ok" || discovery.status === "partial" ? "status-good" : "status-warn"
           );
         },
@@ -453,7 +453,7 @@ function handleTransportEvent(
       appendClientTransportEvent(`${side}: lookup ${shortId(event.peerId)}`);
       return;
     case "rendezvous_ready":
-      appendClientTransportEvent(`${side}: rendezvous ${shortId(event.routeId)}`);
+      appendClientTransportEvent(`${side}: rendezvous ${shortId(event.routeId)}${event.routeHintCount > 0 ? ` hints=${String(event.routeHintCount)}` : ""}`);
       return;
     case "envelope_sent":
       setClientTransportState({ pendingCount: alice.pendingCount });

@@ -80,6 +80,7 @@ void test("discovered carrier-hop runner works against two local branch-node rel
     carrier,
     primaryQuery: "branchbootstrapv0",
     includeFallback: false,
+    includeRouteHints: false,
     socketFactory: mappedSocketFactory(new Map([
       [routeA.endpointUri, `ws://${relayA.publicAddr}/relay/v0`],
       [routeB.endpointUri, `ws://${relayB.publicAddr}/relay/v0`]
@@ -131,6 +132,7 @@ void test("GitLab-discovered carrier-hop runner uses relay-owned branch-node bea
     fallbackQuery: null,
     includeFallback: false,
     includeForks: false,
+    includeRouteHints: false,
     socketFactory: mappedSocketFactory(new Map([
       [routeA.endpointUri, `ws://${relayA.publicAddr}/relay/v0`],
       [routeB.endpointUri, `ws://${relayB.publicAddr}/relay/v0`]

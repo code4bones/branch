@@ -16,6 +16,7 @@ import {
   runCarrierHoppingPoC
 } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
 import {
+  routeHintsFromBeaconObservations,
   routesFromBeaconObservations,
   runDiscoveredCarrierHopPoC
 } from "@code4bones/branch-core/discovery/carrier-hop-client.js";
@@ -149,6 +150,16 @@ void test("client transport route uses validated bootstrap observations only", (
     relayPublicKey: fixedToken(32, 7),
     profileMultihash: developmentProfileMultihash
   });
+  assert.deepEqual(routeHintsFromBeaconObservations([beaconObservation("github", "code4bones/br_test01", {
+    endpointUri: "wss://branch.undoo.ru:443/relay/v0",
+    relayPublicKey: fixedToken(32, 7),
+    validation: "accepted"
+  })]), [{
+    transport: "wss",
+    uri: "wss://branch.undoo.ru:443/relay/v0",
+    relayPublicKey: fixedToken(32, 7),
+    priority: 0
+  }]);
   assert.equal(routeFromDiscoveryResults([{ ...result, records: [{ ...acceptedRecord, validation: "rejected" }] }]), null);
 });
 
@@ -246,6 +257,46 @@ void test("carrier-hopping PoC migrates client-owned pending envelope to a secon
   assert(report.events.some((event) => event.includes("route.migration.completed")));
 });
 
+void test("carrier-hopping PoC uses route hints for live relay federation before migration", async () => {
+  const relayA = await FakeRelay.create();
+  const relayB = await FakeRelay.create();
+  const routes = [
+    {
+      endpointUri: "wss://relay-a.test:443/relay/v0",
+      relayPublicKey: relayA.publicKey,
+      profileMultihash: developmentProfileMultihash
+    },
+    {
+      endpointUri: "wss://relay-b.test:443/relay/v0",
+      relayPublicKey: relayB.publicKey,
+      profileMultihash: developmentProfileMultihash
+    }
+  ];
+  const secondaryRoute = routes[1];
+  assert(secondaryRoute !== undefined);
+
+  const report = await runCarrierHoppingPoC({
+    routes,
+    routeHints: [{
+      transport: "wss",
+      uri: secondaryRoute.endpointUri,
+      relayPublicKey: secondaryRoute.relayPublicKey,
+      priority: 0
+    }],
+    socketFactory: multiplexRelays({
+      "relay-a.test": relayA,
+      "relay-b.test": relayB
+    }),
+    stepTimeoutMs: 1_000
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.migrated, true);
+  assert(report.peerReceiptCount >= 3);
+  assert(report.events.some((event) => event.includes("route.federation.delivery completed")));
+  assert(report.events.some((event) => event.includes("rendezvous") && event.includes("hints=1")));
+});
+
 void test("discovered carrier-hop runner snapshots generic observations before transport", async () => {
   const relayA = await FakeRelay.create();
   const relayB = await FakeRelay.create();
@@ -291,6 +342,7 @@ void test("discovered carrier-hop runner snapshots generic observations before t
   assert.equal(searchCount, 1);
   assert.equal(report.discovery.acceptedCount, 2);
   assert.equal(report.routeSnapshot.length, 2);
+  assert.equal(report.routeHintsSnapshot.length, 2);
   const firstRoute = report.routeSnapshot[0];
   const secondRoute = report.routeSnapshot[1];
   assert(firstRoute !== undefined);
@@ -300,6 +352,7 @@ void test("discovered carrier-hop runner snapshots generic observations before t
   assert.equal(report.transport.status, "ok");
   assert.equal(report.transport.migrated, true);
   assert.equal(report.transport.unavailableCount, 1);
+  assert(report.transport.events.some((event) => event.includes("route.federation.delivery completed")));
 });
 
 void test("beacon observation route snapshot dedupes without carrier-specific result shapes", () => {
@@ -341,6 +394,9 @@ function makePayloadTestAAD(deliveryId: string): Uint8Array {
 }
 
 function multiplexRelays(relays: Readonly<Record<string, FakeRelay>>): BrowserRelaySocketFactory {
+  for (const relay of Object.values(relays)) {
+    relay.setFederationResolver((uri) => relays[new URL(uri).hostname] ?? null);
+  }
   return (url) => {
     const host = new URL(url).hostname;
     const relay = relays[host];
@@ -394,6 +450,7 @@ class FakeRelay {
   private readonly states = new Map<FakeRelaySocket, FakeRelayState>();
   private readonly presence = new Map<string, FakeRelaySocket>();
   private readonly routes = new Map<string, { readonly left: FakeRelaySocket; readonly right: FakeRelaySocket }>();
+  private federationResolver: ((uri: string) => FakeRelay | null) | null = null;
   private sequence = 0;
 
   private constructor(
@@ -406,6 +463,10 @@ class FakeRelay {
     const keyPair = asCryptoKeyPair(generated);
     const publicKey = encodeBase64URL(new Uint8Array(await globalThis.crypto.subtle.exportKey("raw", keyPair.publicKey)));
     return new FakeRelay(publicKey, keyPair.privateKey);
+  }
+
+  setFederationResolver(resolver: (uri: string) => FakeRelay | null): void {
+    this.federationResolver = resolver;
   }
 
   async receive(socket: FakeRelaySocket, data: string): Promise<void> {
@@ -507,12 +568,47 @@ class FakeRelay {
   }
 
   private rendezvous(socket: FakeRelaySocket, frame: Record<string, unknown>): void {
-    const target = this.presence.get(readString(frame, "peer_id"));
-    if (target === undefined || !target.isOpen()) {
-      this.error(socket, "peer_unavailable");
+    const peerId = readString(frame, "peer_id");
+    const routeId = readString(frame, "route_id");
+    const target = this.presence.get(peerId);
+    if (target !== undefined && target.isOpen()) {
+      this.routes.set(routeId, { left: socket, right: target });
       return;
     }
-    this.routes.set(readString(frame, "route_id"), { left: socket, right: target });
+    if (this.connectFederatedRoute(socket, frame, routeId, peerId)) {
+      return;
+    }
+    this.error(socket, "peer_unavailable");
+  }
+
+  private connectFederatedRoute(socket: FakeRelaySocket, frame: Record<string, unknown>, routeId: string, peerId: string): boolean {
+    const hints = frame.route_hints;
+    if (!Array.isArray(hints) || this.federationResolver === null) {
+      return false;
+    }
+    for (const hint of hints) {
+      if (!isRecord(hint)) {
+        continue;
+      }
+      const transport = stringValue(hint, "transport");
+      const uri = stringValue(hint, "uri");
+      const relayPublicKey = stringValue(hint, "relay_public_key");
+      if (transport !== "wss" || uri === null || relayPublicKey === null) {
+        continue;
+      }
+      const remoteRelay = this.federationResolver(uri);
+      if (remoteRelay === null || remoteRelay.publicKey !== relayPublicKey) {
+        continue;
+      }
+      const target = remoteRelay.presence.get(peerId);
+      if (target === undefined || !target.isOpen()) {
+        continue;
+      }
+      this.routes.set(routeId, { left: socket, right: target });
+      remoteRelay.routes.set(routeId, { left: target, right: socket });
+      return true;
+    }
+    return false;
   }
 
   private forwardEnvelope(socket: FakeRelaySocket, data: string, frame: Record<string, unknown>): void {
@@ -668,6 +764,11 @@ function readString(record: Record<string, unknown>, key: string): string {
     throw new Error(`invalid ${key}`);
   }
   return value;
+}
+
+function stringValue(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === "string" ? value : null;
 }
 
 function fixedToken(size: number, seed: number): string {

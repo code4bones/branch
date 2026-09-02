@@ -1,6 +1,7 @@
 import {
   SameRelayTransportClient,
   type BrowserRelaySocketFactory,
+  type RelayRouteHint,
   type RelayRouteMaterial,
   type SameRelayIdentity,
   type SameRelayPendingEnvelope,
@@ -33,6 +34,7 @@ export interface CarrierHoppingPoCReport {
 
 export interface CarrierHoppingPoCOptions {
   readonly routes: readonly RelayRouteMaterial[];
+  readonly routeHints?: readonly RelayRouteHint[];
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
   readonly stepTimeoutMs?: number;
@@ -83,6 +85,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
   if (primaryRoute === undefined) {
     return makeReport("failed", "no accepted relay route from discovery", null, null, false, counters, 0, events);
   }
+  const routeHints = options.routeHints ?? [];
 
   const [aliceIdentity, bobIdentity] = await Promise.all([
     SameRelayTransportClient.createIdentity(options.crypto),
@@ -96,7 +99,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
 
   try {
     record(`route.selected ${routeLabel(primaryRoute)}`);
-    activePair = await attachPair(primaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, [], options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
+    activePair = await attachPair(primaryRoute, undefined, [], [], aliceIdentity, bobIdentity, bobPayloadKey, options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
     record("carrier.disabled discovery snapshot retained");
     const carrierOffDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "carrier disabled opaque payload", options.crypto);
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === carrierOffDeliveryId, timeoutMs);
@@ -128,6 +131,31 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
       );
     }
 
+    const federatedRouteHints = routeHintsForRoute(routeHints, secondaryRoute);
+    if (federatedRouteHints.length > 0) {
+      activePair.unsubscribe();
+      activePair.alice.disconnect();
+      activePair.bob.disconnect();
+      record(`route.federation.started ${routeLabel(primaryRoute)} -> ${routeLabel(secondaryRoute)}`);
+      activePair = await attachPair(
+        primaryRoute,
+        secondaryRoute,
+        federatedRouteHints,
+        [],
+        aliceIdentity,
+        bobIdentity,
+        bobPayloadKey,
+        options.socketFactory,
+        options.crypto,
+        relayPropagationWaitMs,
+        record,
+        counters
+      );
+      const federatedDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "route-hinted federation opaque payload", options.crypto);
+      await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === federatedDeliveryId, timeoutMs);
+      record("route.federation.delivery completed");
+    }
+
     activePair.bob.disconnect();
     await settle();
     const migrationDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "client-owned migration retry payload", options.crypto);
@@ -139,7 +167,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
     activePair.bob.disconnect();
 
     record(`route.migration.started ${routeLabel(secondaryRoute)}`);
-    activePair = await attachPair(secondaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, pendingAfterUnavailable, options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
+    activePair = await attachPair(secondaryRoute, undefined, [], pendingAfterUnavailable, aliceIdentity, bobIdentity, bobPayloadKey, options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
     activePair.alice.retryPending();
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === migrationDeliveryId, timeoutMs);
     record("route.migration.completed");
@@ -174,11 +202,13 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
 }
 
 async function attachPair(
-  route: RelayRouteMaterial,
+  aliceRoute: RelayRouteMaterial,
+  bobRoute: RelayRouteMaterial | undefined,
+  routeHints: readonly RelayRouteHint[],
+  alicePending: readonly SameRelayPendingEnvelope[],
   aliceIdentity: SameRelayIdentity,
   bobIdentity: SameRelayIdentity,
   bobPayloadKey: BetaPayloadKeyPair,
-  alicePending: readonly SameRelayPendingEnvelope[],
   socketFactory: BrowserRelaySocketFactory | undefined,
   crypto: Crypto | undefined,
   relayPropagationWaitMs: number,
@@ -186,14 +216,14 @@ async function attachPair(
   counters: CarrierHoppingCounters
 ): Promise<TransportPair> {
   const alice = new SameRelayTransportClient({
-    route,
+    route: aliceRoute,
     identity: aliceIdentity,
     pendingEnvelopes: alicePending,
     ...(socketFactory === undefined ? {} : { socketFactory }),
     ...(crypto === undefined ? {} : { crypto })
   });
   const bob = new SameRelayTransportClient({
-    route,
+    route: bobRoute ?? aliceRoute,
     identity: bobIdentity,
     ...(socketFactory === undefined ? {} : { socketFactory }),
     ...(crypto === undefined ? {} : { crypto })
@@ -210,7 +240,7 @@ async function attachPair(
         void openBetaPayload({
           recipientPrivateKey: bobPayloadKey.privateKey,
           sealedPayload: event.ciphertext,
-          aad: makeEnvelopeAAD(route, alice.peerId, bob.peerId, event.deliveryId)
+          aad: makeEnvelopeAAD(aliceRoute, alice.peerId, bob.peerId, event.deliveryId)
         }).then(() => {
           alice.markPeerReceipt(event.deliveryId);
         }).catch((error: unknown) => {
@@ -225,7 +255,7 @@ async function attachPair(
   bob.heartbeat();
   await sleep(relayPropagationWaitMs);
   alice.lookup(bob.peerId);
-  alice.rendezvous(bob.peerId);
+  alice.rendezvous(bob.peerId, { routeHints });
   return {
     alice,
     bob,
@@ -302,7 +332,7 @@ function recordTransportEvent(
       record(`${side}: lookup ${shortId(event.peerId)}`);
       return;
     case "rendezvous_ready":
-      record(`${side}: rendezvous ${shortId(event.routeId)}`);
+      record(`${side}: rendezvous ${shortId(event.routeId)}${event.routeHintCount > 0 ? ` hints=${String(event.routeHintCount)}` : ""}`);
       return;
     case "envelope_sent":
       record(`${side}: envelope ${shortId(event.deliveryId)}`);
@@ -377,6 +407,12 @@ function boundedRelayPropagationWait(value: number): number {
 
 function routeLabel(route: RelayRouteMaterial): string {
   return route.endpointUri;
+}
+
+function routeHintsForRoute(hints: readonly RelayRouteHint[], route: RelayRouteMaterial): readonly RelayRouteHint[] {
+  return hints
+    .filter((hint) => hint.uri === route.endpointUri && hint.relayPublicKey === route.relayPublicKey)
+    .slice(0, 8);
 }
 
 function shortId(value: string): string {
