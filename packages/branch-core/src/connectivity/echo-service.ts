@@ -1,5 +1,10 @@
 import { decodeBase64URL, encodeBase64URL } from "../protocol/v0/base64url.js";
+import {
+  validateBranchTextBootstrapBeacon,
+  type BootstrapBeaconValidationReason
+} from "../protocol/v0/bootstrap-beacon.js";
 import { protocolID } from "../protocol/v0/envelope.js";
+import { developmentProfileMultihash } from "../protocol/v0/profile.js";
 import {
   importBetaPayloadKeyPair,
   makeBetaPayloadAAD,
@@ -9,6 +14,7 @@ import {
 } from "./payload-crypto.js";
 import {
   SameRelayTransportClient,
+  validateRouteMaterial,
   type BrowserRelaySocketFactory,
   type RelayRouteMaterial,
   type SameRelayIdentity,
@@ -45,6 +51,41 @@ export interface EchoTestServiceOptions {
   readonly onEvent?: (event: EchoServiceEvent) => void;
 }
 
+export interface MultiRouteEchoTestServiceOptions {
+  readonly routes: readonly RelayRouteMaterial[];
+  readonly keys: BetaEchoServiceKeyMaterial;
+  readonly socketFactory?: BrowserRelaySocketFactory;
+  readonly crypto?: Crypto;
+  readonly heartbeatIntervalMs?: number;
+  readonly onEvent?: (event: MultiRouteEchoServiceEvent) => void;
+}
+
+export interface MultiRouteEchoStartReport {
+  readonly startedRoutes: readonly RelayRouteMaterial[];
+  readonly failedRoutes: readonly EchoRouteFailure[];
+}
+
+export interface EchoRouteFailure {
+  readonly route: RelayRouteMaterial;
+  readonly message: string;
+}
+
+export interface EchoRouteDiscoveryInput {
+  readonly wrapper: string;
+  readonly source?: string;
+}
+
+export interface EchoRouteDiscoveryReport {
+  readonly routes: readonly RelayRouteMaterial[];
+  readonly rejected: readonly EchoRouteDiscoveryRejection[];
+}
+
+export interface EchoRouteDiscoveryRejection {
+  readonly source: string;
+  readonly wrapperPreview: string;
+  readonly reason: BootstrapBeaconValidationReason | "missing_route" | "invalid_route" | "duplicate_route";
+}
+
 export type EchoServiceEvent =
   | { readonly type: "started"; readonly peerId: string; readonly endpointUri: string }
   | { readonly type: "stopped"; readonly peerId: string }
@@ -52,6 +93,11 @@ export type EchoServiceEvent =
   | { readonly type: "response_sent"; readonly recipientPeerId: string; readonly deliveryId: string }
   | { readonly type: "request_rejected"; readonly reason: string; readonly senderPeerId: string | null; readonly deliveryId: string | null }
   | { readonly type: "transport_error"; readonly message: string };
+
+export type MultiRouteEchoServiceEvent =
+  | { readonly type: "route_started"; readonly endpointUri: string; readonly peerId: string }
+  | { readonly type: "route_failed"; readonly endpointUri: string; readonly message: string }
+  | { readonly type: "route_event"; readonly endpointUri: string; readonly event: EchoServiceEvent };
 
 export interface EchoRequestPayload {
   readonly type: typeof betaEchoRequestType;
@@ -66,6 +112,8 @@ interface WireEchoRequestPayload {
 }
 
 const defaultEchoHeartbeatIntervalMs = 10_000;
+const maxEchoRouteWrappers = 64;
+const maxEchoRoutes = 32;
 const maxEchoBodyBytes = 3_072;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -145,6 +193,126 @@ export function makeEchoPayloadAAD(fields: {
     frameType: "ENVELOPE",
     ackRequested: true
   });
+}
+
+export async function echoRoutesFromBootstrapBeaconWrappers(
+  inputs: readonly (string | EchoRouteDiscoveryInput)[]
+): Promise<EchoRouteDiscoveryReport> {
+  if (inputs.length > maxEchoRouteWrappers) {
+    throw new Error("too many echo route wrappers");
+  }
+  const routes: RelayRouteMaterial[] = [];
+  const rejected: EchoRouteDiscoveryRejection[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, input] of inputs.entries()) {
+    const source = typeof input === "string" ? `wrapper:${String(index)}` : input.source ?? `wrapper:${String(index)}`;
+    const wrapper = typeof input === "string" ? input : input.wrapper;
+    const validation = await validateBranchTextBootstrapBeacon(wrapper);
+    if (!validation.accepted || validation.beacon === undefined) {
+      rejected.push({ source, wrapperPreview: previewWrapper(wrapper), reason: validation.reason });
+      continue;
+    }
+
+    const relayPublicKey = encodeBase64URL(validation.beacon.envelope.sender.publicKey);
+    const candidates = validation.beacon.payload.relayEndpoints
+      .filter((endpoint) => endpoint.transport === "wss")
+      .sort((left, right) => left.priority - right.priority || left.uri.localeCompare(right.uri));
+    if (candidates.length === 0) {
+      rejected.push({ source, wrapperPreview: previewWrapper(wrapper), reason: "missing_route" });
+      continue;
+    }
+
+    for (const endpoint of candidates) {
+      const route = {
+        endpointUri: endpoint.uri,
+        relayPublicKey,
+        profileMultihash: developmentProfileMultihash
+      } satisfies RelayRouteMaterial;
+      const key = routeKey(route);
+      if (seen.has(key)) {
+        rejected.push({ source, wrapperPreview: previewWrapper(wrapper), reason: "duplicate_route" });
+        continue;
+      }
+      try {
+        routes.push(validateRouteMaterial(route));
+        seen.add(key);
+      } catch {
+        rejected.push({ source, wrapperPreview: previewWrapper(wrapper), reason: "invalid_route" });
+      }
+      if (routes.length >= maxEchoRoutes) {
+        return { routes, rejected };
+      }
+    }
+  }
+
+  return { routes, rejected };
+}
+
+export class MultiRouteEchoTestService {
+  private readonly routes: readonly RelayRouteMaterial[];
+  private readonly keys: BetaEchoServiceKeyMaterial;
+  private readonly socketFactory: BrowserRelaySocketFactory | undefined;
+  private readonly crypto: Crypto | undefined;
+  private readonly heartbeatIntervalMs: number | undefined;
+  private readonly onEvent: ((event: MultiRouteEchoServiceEvent) => void) | undefined;
+  private readonly services = new Map<string, EchoTestService>();
+
+  constructor(options: MultiRouteEchoTestServiceOptions) {
+    this.routes = validateRoutes(options.routes);
+    this.keys = options.keys;
+    this.socketFactory = options.socketFactory;
+    this.crypto = options.crypto;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs;
+    this.onEvent = options.onEvent;
+  }
+
+  get activeRouteCount(): number {
+    return this.services.size;
+  }
+
+  async start(): Promise<MultiRouteEchoStartReport> {
+    this.stop();
+    const startedRoutes: RelayRouteMaterial[] = [];
+    const failedRoutes: EchoRouteFailure[] = [];
+
+    for (const route of this.routes) {
+      const service = new EchoTestService({
+        route,
+        keys: this.keys,
+        ...(this.socketFactory === undefined ? {} : { socketFactory: this.socketFactory }),
+        ...(this.crypto === undefined ? {} : { crypto: this.crypto }),
+        ...(this.heartbeatIntervalMs === undefined ? {} : { heartbeatIntervalMs: this.heartbeatIntervalMs }),
+        onEvent: (event) => {
+          this.emit({ type: "route_event", endpointUri: route.endpointUri, event });
+        }
+      });
+      try {
+        await service.start();
+        this.services.set(routeKey(route), service);
+        startedRoutes.push(route);
+        this.emit({ type: "route_started", endpointUri: route.endpointUri, peerId: this.keys.identity.peerId });
+      } catch (error) {
+        service.stop();
+        const message = errorMessage(error);
+        failedRoutes.push({ route, message });
+        this.emit({ type: "route_failed", endpointUri: route.endpointUri, message });
+      }
+    }
+
+    return { startedRoutes, failedRoutes };
+  }
+
+  stop(): void {
+    for (const service of this.services.values()) {
+      service.stop();
+    }
+    this.services.clear();
+  }
+
+  private emit(event: MultiRouteEchoServiceEvent): void {
+    this.onEvent?.(event);
+  }
 }
 
 export class EchoTestService {
@@ -287,6 +455,35 @@ function randomToken(size: number): string {
   const bytes = new Uint8Array(size);
   globalThis.crypto.getRandomValues(bytes);
   return encodeBase64URL(bytes);
+}
+
+function validateRoutes(routes: readonly RelayRouteMaterial[]): readonly RelayRouteMaterial[] {
+  if (routes.length === 0) {
+    throw new Error("at least one echo route is required");
+  }
+  if (routes.length > maxEchoRoutes) {
+    throw new Error("too many echo routes");
+  }
+  const seen = new Set<string>();
+  const validated: RelayRouteMaterial[] = [];
+  for (const route of routes) {
+    const normalized = validateRouteMaterial(route);
+    const key = routeKey(normalized);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    validated.push(normalized);
+  }
+  return validated;
+}
+
+function routeKey(route: RelayRouteMaterial): string {
+  return `${route.endpointUri}\0${route.relayPublicKey}\0${route.profileMultihash}`;
+}
+
+function previewWrapper(wrapper: string): string {
+  return wrapper.length <= 28 ? wrapper : `${wrapper.slice(0, 22)}...${wrapper.slice(-6)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

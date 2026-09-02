@@ -17,7 +17,10 @@ import {
 } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
 import {
   EchoTestService,
+  MultiRouteEchoTestService,
   betaEchoRequestType,
+  decodeEchoRequestPayload,
+  echoRoutesFromBootstrapBeaconWrappers,
   encodeEchoRequestPayload,
   makeEchoPayloadAAD
 } from "@code4bones/branch-core/connectivity/echo-service.js";
@@ -34,6 +37,7 @@ import {
   sealBetaPayload
 } from "@code4bones/branch-core/connectivity/payload-crypto.js";
 import { protocolID } from "@code4bones/branch-core/protocol/v0/envelope.js";
+import { createBootstrapBeaconWrapper } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
 import type { BeaconObservation, SearchCarrier } from "@code4bones/branch-core/discovery/client.js";
 import { routeFromDiscoveryResults, routeFromManualFields } from "../src/admin/use-same-relay-transport-lab.js";
 import type { GitHubDiscoveryResult } from "@code4bones/branch-core/discovery/github.js";
@@ -206,6 +210,138 @@ void test("echo service returns the same HPKE plaintext to the attributed sender
     assert(echoEvents.some((event) => isEventType(event, "request_received")));
     assert(echoEvents.some((event) => isEventType(event, "response_sent")));
     assert(!JSON.stringify(echoEvents).includes("hello echo"));
+  } finally {
+    caller.disconnect();
+    echo.stop();
+  }
+});
+
+void test("echo route discovery accepts signed beacon routes and reports rejected wrappers", async () => {
+  const wrapper = await createBootstrapBeaconWrapper({
+    relayEndpoints: [{
+      transport: "wss",
+      uri: "wss://relay-a.test:443/relay/v0",
+      priority: 0
+    }]
+  });
+
+  const report = await echoRoutesFromBootstrapBeaconWrappers([
+    { source: "monitor-a", wrapper },
+    { source: "duplicate", wrapper },
+    { source: "malformed", wrapper: "BRANCH0.not-valid" }
+  ]);
+
+  assert.equal(report.routes.length, 1);
+  assert.equal(report.routes[0]?.endpointUri, "wss://relay-a.test:443/relay/v0");
+  assert.equal(report.routes[0]?.profileMultihash, developmentProfileMultihash);
+  assert.equal(report.rejected.length, 2);
+  assert(report.rejected.some((item) => item.source === "duplicate" && item.reason === "duplicate_route"));
+  assert(report.rejected.some((item) => item.source === "malformed"));
+
+  await assert.rejects(
+    echoRoutesFromBootstrapBeaconWrappers(Array.from({ length: 65 }, () => "BRANCH0.not-valid")),
+    /too many echo route wrappers/u
+  );
+});
+
+void test("multi-route echo keeps answering when one route fails", async () => {
+  const relayA = await FakeRelay.create();
+  const relayB = await FakeRelay.create();
+  const routeA = {
+    endpointUri: "wss://relay-a.test:443/relay/v0",
+    relayPublicKey: relayA.publicKey,
+    profileMultihash: developmentProfileMultihash
+  };
+  const routeB = {
+    endpointUri: "wss://relay-b.test:443/relay/v0",
+    relayPublicKey: relayB.publicKey,
+    profileMultihash: developmentProfileMultihash
+  };
+  const failedRoute = {
+    endpointUri: "wss://relay-missing.test:443/relay/v0",
+    relayPublicKey: fixedToken(32, 41),
+    profileMultihash: developmentProfileMultihash
+  };
+  const [callerIdentity, echoIdentity, callerPayloadKey, echoPayloadKey] = await Promise.all([
+    SameRelayTransportClient.createIdentity(),
+    SameRelayTransportClient.createIdentity(),
+    createBetaPayloadKeyPair(),
+    createBetaPayloadKeyPair()
+  ]);
+  const events: unknown[] = [];
+  const echo = new MultiRouteEchoTestService({
+    routes: [failedRoute, routeA, routeB],
+    keys: {
+      identity: echoIdentity,
+      payloadKey: echoPayloadKey
+    },
+    socketFactory: multiplexRelays({
+      "relay-a.test": relayA,
+      "relay-b.test": relayB
+    }),
+    heartbeatIntervalMs: 1_000,
+    onEvent: (event) => {
+      events.push(event);
+    }
+  });
+  const caller = new SameRelayTransportClient({ route: routeB, identity: callerIdentity, socketFactory: relayB.socketFactory });
+  const echoedPayloads: Uint8Array[] = [];
+  caller.addEventListener((event) => {
+    if (event.type !== "envelope_received") {
+      return;
+    }
+    assert.equal(event.senderPeerId, echoIdentity.peerId);
+    void openBetaPayload({
+      recipientPrivateKey: callerPayloadKey.privateKey,
+      sealedPayload: event.ciphertext,
+      aad: makeEchoPayloadAAD({
+        route: routeB,
+        senderPeerId: echoIdentity.peerId,
+        recipientPeerId: caller.peerId,
+        deliveryId: event.deliveryId
+      })
+    }).then((plaintext) => {
+      echoedPayloads.push(plaintext);
+      caller.markPeerReceipt(event.deliveryId);
+    });
+  });
+
+  try {
+    const startReport = await echo.start();
+    assert.equal(startReport.startedRoutes.length, 2);
+    assert.equal(startReport.failedRoutes.length, 1);
+    assert.equal(echo.activeRouteCount, 2);
+
+    await caller.attach();
+    caller.announcePresence();
+    caller.heartbeat();
+    await settle();
+    caller.lookup(echoIdentity.peerId);
+    caller.rendezvous(echoIdentity.peerId);
+    const plaintext = encodeEchoRequestPayload({
+      type: betaEchoRequestType,
+      replyHpkePublicKey: callerPayloadKey.publicKey,
+      body: "hello multi-route echo"
+    });
+    const deliveryId = fixedToken(16, 31);
+    const sealed = await sealBetaPayload({
+      recipientPublicKey: echoPayloadKey.publicKey,
+      plaintext,
+      aad: makeEchoPayloadAAD({
+        route: routeB,
+        senderPeerId: caller.peerId,
+        recipientPeerId: echoIdentity.peerId,
+        deliveryId
+      })
+    });
+    caller.sendSealedEnvelope(sealed, { deliveryId });
+
+    await waitFor(() => echoedPayloads.length === 1);
+
+    assert.equal(decodeEchoRequestPayload(echoedPayloads[0] as Uint8Array).body, "hello multi-route echo");
+    assert(events.some((event) => isEventType(event, "route_failed")));
+    assert(events.some((event) => isEventType(event, "route_started")));
+    assert(!JSON.stringify(events).includes("hello multi-route echo"));
   } finally {
     caller.disconnect();
     echo.stop();
