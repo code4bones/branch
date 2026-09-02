@@ -107,7 +107,7 @@ func TestHandlerAttachesTwoPeersAndForwardsOpaqueEnvelope(t *testing.T) {
 }
 
 func TestHandlerReturnsPeerUnavailableWithoutStoreAndForward(t *testing.T) {
-	_, handler := newTestHubAndHandler(t)
+	hub, handler := newTestHubAndHandler(t)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -134,6 +134,7 @@ func TestHandlerReturnsPeerUnavailableWithoutStoreAndForward(t *testing.T) {
 		"sequence":   2,
 	})
 	bob.Close(websocket.StatusNormalClosure, "")
+	waitForDetachedPeer(t, hub)
 
 	sendJSON(t, alice.Conn, map[string]any{
 		"type":          "ENVELOPE",
@@ -152,6 +153,24 @@ func TestHandlerReturnsPeerUnavailableWithoutStoreAndForward(t *testing.T) {
 	}
 	if _, err := protocol.DecodeDraftRelayAttachmentFrame(mustMarshal(t, errFrame)); err != nil {
 		t.Fatalf("error frame does not match shared schema: %v", err)
+	}
+}
+
+func waitForDetachedPeer(t *testing.T, hub *relay.Hub) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		snapshot := hub.Snapshot()
+		if snapshot.SessionsActive == 1 && snapshot.RoutesActive == 0 && snapshot.PresenceActive == 0 {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("peer still attached: %+v", snapshot)
+		case <-ticker.C:
+		}
 	}
 }
 
