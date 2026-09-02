@@ -48,6 +48,32 @@ The previous `/var/www/branch` artifact root remains useful for production-like
 copy deployments, but it is intentionally not used by this local development
 config.
 
+The local beta UI can be protected with nginx Basic Auth without blocking relay
+traffic. Keep the external Nginx Proxy Manager host-level Access List disabled
+for `branch.undoo.ru`; local nginx protects static UI paths and explicitly
+leaves `/node-admin/` and `/relay/v0` outside Basic Auth. `/node-admin/` remains
+protected by the branch-node bearer token, and relay monitor ingestion remains
+protected by the dedicated monitor bearer token.
+
+For the local ignored two-line `.basicauth` file:
+
+~~~text
+USERNAME=<operator user>
+PASSWORD=<operator password>
+~~~
+
+create the ignored htpasswd file used by nginx:
+
+~~~sh
+u=$(sed -n 's/^USERNAME=//p' .basicauth | head -n 1)
+p=$(sed -n 's/^PASSWORD=//p' .basicauth | head -n 1)
+htpasswd -bcB .branch.htpasswd "$u" "$p"
+chgrp www-data .branch.htpasswd
+chmod 0640 .branch.htpasswd
+sudo nginx -t
+sudo systemctl reload nginx
+~~~
+
 The `/node-admin/` location proxies to the protected local `branch-node` admin
 listener on `127.0.0.1:8081`. It exists so the open developer admin front can
 request relay-owned BootstrapBeacon wrappers through same-origin browser fetches

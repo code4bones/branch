@@ -35,3 +35,6 @@ web/coverage/
 *.swp
 *.swo
 samples/
+
+.basicauth
+.branch.htpasswd
