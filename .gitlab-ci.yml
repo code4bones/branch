@@ -13,14 +13,14 @@ variables:
 go:
   stage: test
   tags:
-    - branch_nd
+    - branch_lc
   script:
     - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache -e GOPATH=/tmp/gopath "$BRANCH_BUILDER_IMAGE" deployments/gitlab/go-checks.sh
 
 web:
   stage: test
   tags:
-    - branch_nd
+    - branch_lc
   cache:
     key:
       files:
@@ -36,7 +36,7 @@ web:
 build:branch-node:
   stage: build
   tags:
-    - branch_nd
+    - branch_lc
   script:
     - mkdir -p dist
     - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache "$BRANCH_BUILDER_IMAGE" go build -trimpath -ldflags="-s -w" -o "dist/${BRANCH_BINARY_NAME}-linux-amd64" ./cmd/branch-node

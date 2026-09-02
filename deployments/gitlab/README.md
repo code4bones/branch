@@ -13,9 +13,11 @@ identity volume and operator configuration.
 
 ## Runner model
 
-The beta path starts with a shell GitLab Runner on the relay VPS:
+The beta path uses separate shell GitLab Runners for heavy CI work and runtime
+deployment:
 
-- `branch_nd`
+- `branch_lc`: builder VM for Dockerized Go and web test/build jobs;
+- `branch_nd`: relay VPS for Docker Compose deploy and cleanup jobs.
 
 The current CI can run two relay instances on that same host:
 
@@ -30,10 +32,17 @@ processes, but they remain one physical failure domain. The existing local
 independent host for beta checks.
 
 The deploy jobs run on the target host and operate Docker Compose locally. Test
-and build jobs use `docker run` with `golang:1.25` and `node:24`, so Go and Node
-do not need to be installed on the VPS.
+and build jobs run on `branch_lc` using `docker run` with `golang:1.25` and
+`node:24`, so Go and Node do not need to be installed on the relay VPS.
 
-Host prerequisites:
+Builder host prerequisites:
+
+- GitLab Runner registered with tag `branch_lc`.
+- Docker CLI/daemon reachable by the runner user.
+- Enough memory for TypeScript, lint, tests, Go race tests, staticcheck, and
+  govulncheck.
+
+Relay VPS prerequisites:
 
 - Docker CLI/daemon and Docker Compose v2, or legacy `docker-compose`.
 - `curl`.
@@ -107,7 +116,8 @@ sudo systemctl restart gitlab-runner
 
 Then rerun the failed pipeline. The CI scripts also fall back to `sudo docker`
 when passwordless sudo allows it, but docker-group access is the simpler steady
-state for this shell runner.
+state for relay deploy jobs. The builder runner should use direct Docker access
+and should not host runtime relay containers.
 
 ## Required CI/CD variables
 
@@ -141,12 +151,13 @@ Optional variables:
 ## Deploy flow
 
 1. Push to `main`.
-2. `build:branch-node` builds `linux/amd64` and `linux/arm64` binaries in
-   Docker and keeps artifacts for one day.
-3. Run `deploy:relay01` manually.
-4. The deploy job writes `/opt/branch/relays/<relay>/`, starts the compose
+2. `go` and optional `web` run on `branch_lc`.
+3. `build:branch-node` builds `linux/amd64` and `linux/arm64` binaries on
+   `branch_lc` in Docker and keeps artifacts for one day.
+4. Run `deploy:relay01` manually on `branch_nd`.
+5. The deploy job writes `/opt/branch/relays/<relay>/`, starts the compose
    project, checks `/readyz`, and creates relay beacon artifacts.
-5. Publish the generated `relay-artifacts/*-records.br0` content through the
+6. Publish the generated `relay-artifacts/*-records.br0` content through the
    chosen carrier repository.
 
 ## Disk cleanup
