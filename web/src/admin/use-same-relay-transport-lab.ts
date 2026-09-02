@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
   SameRelayTransportClient,
+  parseRelayEndpointDescriptor,
+  validateRouteMaterial,
   type RelayRouteMaterial,
   type SameRelayTransportEvent
 } from "../connectivity/same-relay.js";
@@ -60,7 +62,10 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
     peerReceiptCount: 0,
     unavailableCount: 0
   });
-  const route = useMemo(() => routeFromDiscoveryResults(clientState.discoveryResults), [clientState.discoveryResults]);
+  const route = useMemo(
+    () => selectedClientRoute(clientState),
+    [clientState.discoveryResults, clientState.manualProfileMultihash, clientState.manualRelayEndpointUri, clientState.manualRelayPublicKey, clientState.routeMode]
+  );
 
   const reset = useCallback((): void => {
     aliceRef.current?.disconnect();
@@ -316,6 +321,54 @@ export function routeFromDiscoveryResults(results: readonly AdminDiscoveryRouteR
     });
   });
   return routesFromBeaconObservations(observations)[0] ?? null;
+}
+
+export function routeFromManualFields(
+  endpointValue: string,
+  relayPublicKey: string,
+  profileMultihash: string
+): RelayRouteMaterial | null {
+  const endpoint = parseManualEndpoint(endpointValue);
+  if (endpoint === null || relayPublicKey.trim() === "" || profileMultihash.trim() === "") {
+    return null;
+  }
+  try {
+    return validateRouteMaterial({
+      endpointUri: endpoint,
+      relayPublicKey: relayPublicKey.trim(),
+      profileMultihash: profileMultihash.trim()
+    });
+  } catch {
+    return null;
+  }
+}
+
+function selectedClientRoute(clientState: {
+  readonly routeMode: "discovery" | "manual";
+  readonly discoveryResults: readonly AdminDiscoveryRouteResult[];
+  readonly manualRelayEndpointUri: string;
+  readonly manualRelayPublicKey: string;
+  readonly manualProfileMultihash: string;
+}): RelayRouteMaterial | null {
+  if (clientState.routeMode === "manual") {
+    return routeFromManualFields(
+      clientState.manualRelayEndpointUri,
+      clientState.manualRelayPublicKey,
+      clientState.manualProfileMultihash
+    );
+  }
+  return routeFromDiscoveryResults(clientState.discoveryResults);
+}
+
+function parseManualEndpoint(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  if (trimmed.startsWith("wss://")) {
+    return trimmed;
+  }
+  return parseRelayEndpointDescriptor(trimmed)?.uri ?? null;
 }
 
 async function sendEncryptedEnvelope(

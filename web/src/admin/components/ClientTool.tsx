@@ -16,6 +16,8 @@ export function ClientTool(): React.JSX.Element {
   const setClientDiscoveryRunning = useAdminStore((state) => state.setClientDiscoveryRunning);
   const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
   const setClientDiscoveryStatus = useAdminStore((state) => state.setClientDiscoveryStatus);
+  const setClientManualRouteField = useAdminStore((state) => state.setClientManualRouteField);
+  const setClientRouteMode = useAdminStore((state) => state.setClientRouteMode);
   const transport = useSameRelayTransportLab();
 
   const runDiscovery = useCallback(async (): Promise<void> => {
@@ -101,7 +103,51 @@ export function ClientTool(): React.JSX.Element {
         <div className="client-route">
           <span>Route</span>
           <strong>{transport.route?.endpointUri ?? "-"}</strong>
-          <small>{client.relaySource === "" ? "no accepted relay route" : client.relaySource}</small>
+          <small>{client.routeMode === "manual" ? "manual route material" : client.relaySource === "" ? "no accepted relay route" : client.relaySource}</small>
+        </div>
+        <div className="client-route-controls">
+          <div className="control-row">
+            <label htmlFor="client-route-mode">Route source</label>
+            <select
+              id="client-route-mode"
+              name="client-route-mode"
+              value={client.routeMode}
+              onChange={(event) => { setClientRouteMode(event.currentTarget.value === "manual" ? "manual" : "discovery"); }}
+            >
+              <option value="discovery">Discovery</option>
+              <option value="manual">Manual</option>
+            </select>
+          </div>
+          <div className="control-row">
+            <label htmlFor="client-manual-endpoint">Endpoint</label>
+            <input
+              id="client-manual-endpoint"
+              name="client-manual-endpoint"
+              type="text"
+              value={client.manualRelayEndpointUri}
+              onChange={(event) => { setClientManualRouteField("manualRelayEndpointUri", event.currentTarget.value); }}
+            />
+          </div>
+          <div className="control-row">
+            <label htmlFor="client-manual-relay-key">Relay public key</label>
+            <input
+              id="client-manual-relay-key"
+              name="client-manual-relay-key"
+              type="text"
+              value={client.manualRelayPublicKey}
+              onChange={(event) => { setClientManualRouteField("manualRelayPublicKey", event.currentTarget.value); }}
+            />
+          </div>
+          <div className="control-row">
+            <label htmlFor="client-manual-profile">Profile</label>
+            <input
+              id="client-manual-profile"
+              name="client-manual-profile"
+              type="text"
+              value={client.manualProfileMultihash}
+              onChange={(event) => { setClientManualRouteField("manualProfileMultihash", event.currentTarget.value); }}
+            />
+          </div>
         </div>
       </section>
 
@@ -114,6 +160,7 @@ export function ClientTool(): React.JSX.Element {
               <th>Records</th>
               <th>Validation</th>
               <th>Relay endpoint</th>
+              <th>Relay key</th>
               <th>Expiry</th>
               <th>Profile</th>
             </tr>
@@ -134,6 +181,7 @@ export function ClientTool(): React.JSX.Element {
                   ))}
                 </td>
                 <td>{firstAcceptedValue(result.records, "relayEndpoint") ?? "-"}</td>
+                <td>{firstAcceptedValue(result.records, "senderPublicKey") ?? "-"}</td>
                 <td>{formatUnixSeconds(firstAcceptedValue(result.records, "expiresAt"))}</td>
                 <td>{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</td>
               </tr>
@@ -213,7 +261,7 @@ function sumResults(results: readonly { readonly acceptedCount: number; readonly
   return results.reduce((total, result) => total + result[key], 0);
 }
 
-function firstAcceptedValue<K extends "relayEndpoint" | "expiresAt" | "profileMultihash">(
+function firstAcceptedValue<K extends "relayEndpoint" | "expiresAt" | "profileMultihash" | "senderPublicKey">(
   records: readonly GitHubValidatedRecord[],
   key: K
 ): K extends "expiresAt" ? number | null : string | null {

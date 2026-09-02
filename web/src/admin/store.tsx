@@ -10,6 +10,7 @@ import type { GitLabDropInFile } from "./gitlab-dropin.js";
 import type { RelayMonitorObservation } from "./relay-monitor.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import { defaultBootstrapRelayEndpointUri } from "../protocol/v0/bootstrap-beacon.js";
+import { developmentProfileMultihash } from "../protocol/v0/profile.js";
 import type { LoadedBrowserImage } from "../visual/canvas-image.js";
 
 export type AdminTab = "ribbon" | "github" | "gitlab" | "relays" | "client";
@@ -84,6 +85,10 @@ export interface GitLabState {
 }
 
 export interface ClientState {
+  readonly routeMode: "discovery" | "manual";
+  readonly manualRelayEndpointUri: string;
+  readonly manualRelayPublicKey: string;
+  readonly manualProfileMultihash: string;
   readonly discoveryRunning: boolean;
   readonly discoveryStatus: string;
   readonly discoveryStatusClass: StatusClass;
@@ -217,6 +222,11 @@ export interface AdminActions {
     incompleteResults: boolean
   ) => void;
   readonly setClientDiscoveryStatus: (status: string, statusClass: StatusClass) => void;
+  readonly setClientRouteMode: (routeMode: ClientState["routeMode"]) => void;
+  readonly setClientManualRouteField: <K extends "manualRelayEndpointUri" | "manualRelayPublicKey" | "manualProfileMultihash">(
+    field: K,
+    value: ClientState[K]
+  ) => void;
   readonly setClientTransportState: (patch: ClientTransportStatePatch) => void;
   readonly appendClientTransportEvent: (event: string) => void;
   readonly resetClientTransport: () => void;
@@ -331,6 +341,10 @@ function createAdminStore(): AdminStoreApi {
       lastRefreshAt: null
     },
     client: {
+      routeMode: "discovery",
+      manualRelayEndpointUri: defaultBootstrapRelayEndpointUri,
+      manualRelayPublicKey: "",
+      manualProfileMultihash: developmentProfileMultihash,
       discoveryRunning: false,
       discoveryStatus: "idle",
       discoveryStatusClass: "status-warn",
@@ -706,6 +720,20 @@ function createAdminStore(): AdminStoreApi {
           ...state.client,
           discoveryStatus,
           discoveryStatusClass
+        }
+      })); },
+    setClientRouteMode: (routeMode) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          routeMode
+        }
+      })); },
+    setClientManualRouteField: (field, value) =>
+      { set((state) => ({
+        client: {
+          ...state.client,
+          [field]: value
         }
       })); },
     setClientTransportState: (patch) =>

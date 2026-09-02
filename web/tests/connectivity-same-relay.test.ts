@@ -28,7 +28,7 @@ import {
 } from "../src/connectivity/payload-crypto.js";
 import { protocolID } from "../src/protocol/v0/envelope.js";
 import type { BeaconObservation, SearchCarrier } from "../src/discovery/client.js";
-import { routeFromDiscoveryResults } from "../src/admin/use-same-relay-transport-lab.js";
+import { routeFromDiscoveryResults, routeFromManualFields } from "../src/admin/use-same-relay-transport-lab.js";
 import type { GitHubDiscoveryResult } from "../src/discovery/github.js";
 
 void test("same-relay browser transport handles live forwarding, unavailable, and client retry", async () => {
@@ -150,6 +150,26 @@ void test("client transport route uses validated bootstrap observations only", (
     profileMultihash: developmentProfileMultihash
   });
   assert.equal(routeFromDiscoveryResults([{ ...result, records: [{ ...acceptedRecord, validation: "rejected" }] }]), null);
+});
+
+void test("client transport manual route requires full validated route material", () => {
+  const relayPublicKey = fixedToken(32, 7);
+
+  assert.deepEqual(
+    routeFromManualFields("wss://relay01.undoo.ru:443/relay/v0", relayPublicKey, developmentProfileMultihash),
+    {
+      endpointUri: "wss://relay01.undoo.ru:443/relay/v0",
+      relayPublicKey,
+      profileMultihash: developmentProfileMultihash
+    }
+  );
+  assert.equal(
+    routeFromManualFields(`wss wss://relay02.undoo.ru:443/relay/v0`, relayPublicKey, developmentProfileMultihash)?.endpointUri,
+    "wss://relay02.undoo.ru:443/relay/v0"
+  );
+  assert.equal(routeFromManualFields("https://relay01.undoo.ru/relay/v0", relayPublicKey, developmentProfileMultihash), null);
+  assert.equal(routeFromManualFields("wss://relay01.undoo.ru:443/relay/v0", "bad-key", developmentProfileMultihash), null);
+  assert.equal(routeFromManualFields("wss://relay01.undoo.ru:443/relay/v0", relayPublicKey, "uEiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), null);
 });
 
 void test("carrier-hopping PoC reports no accepted route", async () => {
