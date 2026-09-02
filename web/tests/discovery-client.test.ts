@@ -7,7 +7,9 @@ import {
   type SearchCarrier,
   type SearchCarrierSearchRequest
 } from "@code4bones/branch-core/discovery/client.js";
+import { discoverClientIdentityContacts } from "@code4bones/branch-core/discovery/identity-contact.js";
 import {
+  createGitHubIdentityContactSearchCarrier,
   createGitHubSearchCarrier,
   gitHubReportsFromCarrierReports,
   githubDiscoveryDefaultQuery,
@@ -21,6 +23,7 @@ import {
   mergeGitLabDiscoveryReports
 } from "@code4bones/branch-core/discovery/gitlab.js";
 import { createBootstrapBeaconWrapper } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
+import { createIdentityContactWrapper, validateBranchTextIdentityContact } from "@code4bones/branch-core/protocol/v0/identity-contact.js";
 
 void test("client discovery runs GitHub canonical locator then legacy fallback", async () => {
   const now = Math.floor(Date.now() / 1000);
@@ -250,6 +253,77 @@ void test("client discovery clamps carrier request bounds and dedupes accepted b
   assert.equal(firstRequest.page, 10);
   assert.equal(report.status, "ok");
   assert.equal(report.observations.length, 1);
+});
+
+void test("client identity discovery reads exact BranchID from direct GitHub carrier", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createIdentityContactWrapper({ now, expiresAt: now + 3600 });
+  const validation = await validateBranchTextIdentityContact(wrapper, { now });
+  assert(validation.accepted && validation.contact !== undefined);
+  const branchID = validation.contact.payload.branchId;
+  const fetched: string[] = [];
+  const fetcher = (input: string): Promise<Response> => {
+    fetched.push(input);
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 1,
+        incomplete_results: false,
+        items: [repositoryItem("alice/contact-carrier")]
+      }));
+    }
+    return Promise.resolve(recordsResponse(wrapper));
+  };
+
+  const discovery = await discoverClientIdentityContacts({
+    carrier: createGitHubIdentityContactSearchCarrier(fetcher),
+    branchID,
+    primaryQuery: githubDiscoveryDefaultQuery,
+    fallbackQuery: null,
+    includeFallback: false,
+    perPage: 5,
+    page: 1
+  });
+
+  assert.equal(discovery.status, "ok");
+  assert.equal(discovery.acceptedCount, 1);
+  assert.equal(discovery.observations[0]?.branchID, branchID);
+  assert.equal(discovery.observations[0]?.evidence.source, "alice/contact-carrier");
+  assert.match(fetched[0] ?? "", /topic%3Abranchbootstrapv0|topic:branchbootstrapv0/);
+  assert.match(fetched[1] ?? "", /\.branch%2Frecords\.br0|\.branch\/records\.br0/);
+});
+
+void test("client identity discovery keeps non-matching direct carrier records rejected", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createIdentityContactWrapper({ now, expiresAt: now + 3600 });
+  const validation = await validateBranchTextIdentityContact(wrapper, { now });
+  assert(validation.accepted && validation.contact !== undefined);
+  const otherBranchID = "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw";
+  const bootstrapWrapper = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const fetcher = (input: string): Promise<Response> => {
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 1,
+        incomplete_results: false,
+        items: [repositoryItem("alice/wrong-contact")]
+      }));
+    }
+    return Promise.resolve(recordsResponse(`${wrapper}\n${bootstrapWrapper}\n`));
+  };
+
+  const discovery = await discoverClientIdentityContacts({
+    carrier: createGitHubIdentityContactSearchCarrier(fetcher),
+    branchID: otherBranchID,
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false,
+    perPage: 5,
+    page: 1
+  });
+
+  assert.equal(discovery.status, "empty");
+  assert.equal(discovery.acceptedCount, 0);
+  assert.equal(discovery.rejectedCount, 2);
+  assert(discovery.observations.some((observation) => observation.reason === "branch_id_mismatch"));
+  assert(discovery.observations.some((observation) => observation.reason === "unsupported_event_type"));
 });
 
 function acceptedObservation(observationId: string, carrier: string, source: string): BeaconObservation {

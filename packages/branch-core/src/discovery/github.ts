@@ -1,7 +1,14 @@
 import { encodeBase64URL } from "../protocol/v0/base64url.js";
 import { validateBranchTextBootstrapBeacon } from "../protocol/v0/bootstrap-beacon.js";
+import { parseBranchID, validateBranchTextIdentityContact } from "../protocol/v0/identity-contact.js";
 import { extractBranchTextWrappers } from "../protocol/v0/text-carrier.js";
 import type { BeaconObservation, SearchCarrier, SearchCarrierSearchReport } from "./client.js";
+import type {
+  IdentityContactObservation,
+  IdentityContactSearchCarrier,
+  IdentityContactSearchReport,
+  IdentityContactSearchRequest
+} from "./identity-contact.js";
 import { githubLegacyMarkerQuery, githubPrimaryLocatorQuery } from "./publication-profile.js";
 
 export const githubDiscoveryDefaultQuery = githubPrimaryLocatorQuery;
@@ -62,6 +69,51 @@ export interface GitHubDiscoveryReport {
   readonly rateLimitReset: string | null;
   readonly results: readonly GitHubDiscoveryResult[];
   readonly message: string;
+}
+
+export interface GitHubIdentityContactDiscoveryReport {
+  readonly status: GitHubDiscoveryStatus;
+  readonly query: string;
+  readonly branchID: string;
+  readonly searchUrl: string;
+  readonly totalCount: number | null;
+  readonly incompleteResults: boolean;
+  readonly rateLimitRemaining: string | null;
+  readonly rateLimitReset: string | null;
+  readonly results: readonly GitHubIdentityContactDiscoveryResult[];
+  readonly message: string;
+}
+
+export interface GitHubIdentityContactDiscoveryResult {
+  readonly repository: string;
+  readonly defaultBranch: string;
+  readonly fork: boolean;
+  readonly htmlUrl: string;
+  readonly recordsUrl: string;
+  readonly wrapperCount: number;
+  readonly acceptedCount: number;
+  readonly rejectedCount: number;
+  readonly firstWrapperPreview: string | null;
+  readonly records: readonly GitHubIdentityContactValidatedRecord[];
+  readonly status: "candidate" | "no_records" | "error";
+  readonly reason: string | null;
+}
+
+export interface GitHubIdentityContactValidatedRecord {
+  readonly wrapperPreview: string;
+  readonly validation: "accepted" | "rejected";
+  readonly reason: IdentityContactObservation["reason"];
+  readonly branchID: string | null;
+  readonly expiresAt: number | null;
+  readonly sequence: number | null;
+  readonly routeHints: readonly {
+    readonly transport: string;
+    readonly uri: string;
+    readonly relayPublicKey: string;
+    readonly profileMultihash: string;
+    readonly priority: number;
+  }[];
+  readonly profileMultihashes: readonly string[];
 }
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -169,6 +221,23 @@ export function createGitHubSearchCarrier(fetcher?: Fetcher): SearchCarrier {
   };
 }
 
+export function createGitHubIdentityContactSearchCarrier(fetcher?: Fetcher): IdentityContactSearchCarrier {
+  return {
+    id: "github",
+    search: async (request) => gitHubIdentityContactReportToSearchCarrierReport(
+      await discoverGitHubIdentityContacts({
+        query: request.query,
+        branchID: request.branchID,
+        includeForks: request.includeForks ?? false,
+        perPage: request.perPage,
+        page: request.page,
+        ...(request.signal === undefined ? {} : { signal: request.signal })
+      }, fetcher),
+      "github"
+    )
+  };
+}
+
 export function gitHubReportToSearchCarrierReport(report: GitHubDiscoveryReport, carrier: string): SearchCarrierSearchReport {
   return {
     carrier,
@@ -181,8 +250,30 @@ export function gitHubReportToSearchCarrierReport(report: GitHubDiscoveryReport,
   };
 }
 
+export function gitHubIdentityContactReportToSearchCarrierReport(
+  report: GitHubIdentityContactDiscoveryReport,
+  carrier: string
+): IdentityContactSearchReport {
+  return {
+    carrier,
+    status: report.status,
+    query: report.query,
+    branchID: report.branchID,
+    message: report.message,
+    observations: report.results.flatMap((result) => gitHubIdentityContactResultToObservations(result, carrier, report.query)),
+    evidenceCount: report.results.length,
+    raw: report
+  };
+}
+
 export function gitHubReportsFromCarrierReports(reports: readonly SearchCarrierSearchReport[]): readonly GitHubDiscoveryReport[] {
   return reports.map((report) => report.raw).filter(isGitHubDiscoveryReport);
+}
+
+export function gitHubIdentityContactReportsFromCarrierReports(
+  reports: readonly IdentityContactSearchReport[]
+): readonly GitHubIdentityContactDiscoveryReport[] {
+  return reports.map((report) => report.raw).filter(isGitHubIdentityContactDiscoveryReport);
 }
 
 export function mergeGitHubDiscoveryReports(reports: readonly GitHubDiscoveryReport[]): GitHubDiscoveryReport {
@@ -229,6 +320,88 @@ export function makeGitHubRepositorySearchUrl(request: GitHubDiscoveryRequest): 
   url.searchParams.set("per_page", String(normalized.perPage));
   url.searchParams.set("page", String(normalized.page));
   return url.toString();
+}
+
+export async function discoverGitHubIdentityContacts(
+  request: IdentityContactSearchRequest,
+  fetcher: Fetcher = globalThis.fetch.bind(globalThis)
+): Promise<GitHubIdentityContactDiscoveryReport> {
+  const branchID = request.branchID.trim();
+  parseBranchID(branchID);
+  const normalized = normalizeDiscoveryRequest({
+    query: request.query,
+    includeForks: request.includeForks ?? false,
+    perPage: request.perPage,
+    page: request.page,
+    ...(request.signal === undefined ? {} : { signal: request.signal })
+  });
+  const searchUrl = makeGitHubRepositorySearchUrl(normalized);
+  const searchResponse = await fetcher(searchUrl, makeGitHubRequestInit(normalized.signal));
+  const rateLimitRemaining = searchResponse.headers.get("x-ratelimit-remaining");
+  const rateLimitReset = searchResponse.headers.get("x-ratelimit-reset");
+
+  if (searchResponse.status === 403 || searchResponse.status === 429) {
+    return {
+      status: "rate_limited",
+      query: normalized.query,
+      branchID,
+      searchUrl,
+      totalCount: null,
+      incompleteResults: false,
+      rateLimitRemaining,
+      rateLimitReset,
+      results: [],
+      message: `GitHub identity search rate limited (${String(searchResponse.status)})`
+    };
+  }
+  if (!searchResponse.ok) {
+    return {
+      status: "failed",
+      query: normalized.query,
+      branchID,
+      searchUrl,
+      totalCount: null,
+      incompleteResults: false,
+      rateLimitRemaining,
+      rateLimitReset,
+      results: [],
+      message: `GitHub identity search failed (${String(searchResponse.status)})`
+    };
+  }
+
+  const searchPayload = await readJson(searchResponse);
+  if (!isRepositorySearchResponse(searchPayload)) {
+    return {
+      status: "failed",
+      query: normalized.query,
+      branchID,
+      searchUrl,
+      totalCount: null,
+      incompleteResults: false,
+      rateLimitRemaining,
+      rateLimitReset,
+      results: [],
+      message: "GitHub identity search response rejected"
+    };
+  }
+
+  const results: GitHubIdentityContactDiscoveryResult[] = [];
+  for (const repository of searchPayload.items.slice(0, maxGitHubSearchItems)) {
+    results.push(await readRepositoryIdentityContactRecords(repository, branchID, normalized.signal, fetcher));
+  }
+
+  return {
+    status: results.some((result) => result.acceptedCount > 0) ? "ok" : "empty",
+    query: normalized.query,
+    branchID,
+    searchUrl,
+    totalCount: searchPayload.total_count,
+    incompleteResults: searchPayload.incomplete_results,
+    rateLimitRemaining,
+    rateLimitReset,
+    results,
+    message: `${String(results.reduce((total, result) => total + result.acceptedCount, 0))} accepted identity records from ${String(results.filter((result) => result.status === "candidate").length)} candidate repositories`
+  };
 }
 
 export const githubDiscoveryConstraints = [
@@ -306,11 +479,82 @@ async function readRepositoryRecords(
   };
 }
 
+async function readRepositoryIdentityContactRecords(
+  repository: GitHubRepositorySearchItem,
+  branchID: string,
+  signal: AbortSignal | undefined,
+  fetcher: Fetcher
+): Promise<GitHubIdentityContactDiscoveryResult> {
+  const recordsUrl = makeGitHubContentsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch);
+  const base = {
+    repository: repository.full_name,
+    defaultBranch: repository.default_branch,
+    fork: repository.fork,
+    htmlUrl: repository.html_url,
+    recordsUrl
+  };
+  const response = await fetcher(recordsUrl, makeGitHubRequestInit(signal));
+
+  if (response.status === 404) {
+    return emptyIdentityContactResult(base, "no_records", "no .branch/records.br0 on default branch");
+  }
+  if (response.status === 403 || response.status === 429) {
+    return emptyIdentityContactResult(base, "error", `GitHub content rate limited (${String(response.status)})`);
+  }
+  if (!response.ok) {
+    return emptyIdentityContactResult(base, "error", `GitHub content failed (${String(response.status)})`);
+  }
+
+  const payload = await readJson(response);
+  const content = readContentFile(payload);
+  if (content === null) {
+    return emptyIdentityContactResult(base, "error", "records.br0 response rejected");
+  }
+  if (new TextEncoder().encode(content).byteLength > maxGitHubRecordBytes) {
+    return emptyIdentityContactResult(base, "error", "records.br0 too large");
+  }
+  const wrappers = extractBranchTextWrappers(content, maxGitHubWrappersPerRecord);
+  const firstWrapper = wrappers[0]?.wrapper ?? null;
+  const records = await validateIdentityContactWrappers(wrappers.map((wrapper) => wrapper.wrapper), branchID);
+  const acceptedCount = records.filter((record) => record.validation === "accepted").length;
+  return {
+    ...base,
+    wrapperCount: wrappers.length,
+    acceptedCount,
+    rejectedCount: records.length - acceptedCount,
+    firstWrapperPreview: firstWrapper === null ? null : previewWrapper(firstWrapper),
+    records,
+    status: wrappers.length > 0 ? "candidate" : "no_records",
+    reason: wrappers.length === 0
+      ? "records.br0 has no bounded BRANCH0 wrappers"
+      : acceptedCount === 0
+        ? "records.br0 has no accepted identity.announce records for BranchID"
+        : null
+  };
+}
+
 function emptyResult(
   base: Pick<GitHubDiscoveryResult, "repository" | "defaultBranch" | "fork" | "htmlUrl" | "recordsUrl">,
   status: GitHubDiscoveryResult["status"],
   reason: string
 ): GitHubDiscoveryResult {
+  return {
+    ...base,
+    wrapperCount: 0,
+    acceptedCount: 0,
+    rejectedCount: 0,
+    firstWrapperPreview: null,
+    records: [],
+    status,
+    reason
+  };
+}
+
+function emptyIdentityContactResult(
+  base: Pick<GitHubIdentityContactDiscoveryResult, "repository" | "defaultBranch" | "fork" | "htmlUrl" | "recordsUrl">,
+  status: GitHubIdentityContactDiscoveryResult["status"],
+  reason: string
+): GitHubIdentityContactDiscoveryResult {
   return {
     ...base,
     wrapperCount: 0,
@@ -357,6 +601,54 @@ async function validateWrappers(wrappers: readonly string[]): Promise<readonly G
   return records;
 }
 
+async function validateIdentityContactWrappers(
+  wrappers: readonly string[],
+  branchID: string
+): Promise<readonly GitHubIdentityContactValidatedRecord[]> {
+  const records: GitHubIdentityContactValidatedRecord[] = [];
+  for (const wrapper of wrappers) {
+    const result = await validateBranchTextIdentityContact(wrapper);
+    if (!result.accepted || result.contact === undefined) {
+      records.push({
+        wrapperPreview: previewWrapper(wrapper),
+        validation: "rejected",
+        reason: result.reason,
+        branchID: null,
+        expiresAt: null,
+        sequence: null,
+        routeHints: [],
+        profileMultihashes: []
+      });
+      continue;
+    }
+    const contactBranchID = result.contact.payload.branchId;
+    if (contactBranchID !== branchID) {
+      records.push({
+        wrapperPreview: previewWrapper(wrapper),
+        validation: "rejected",
+        reason: "branch_id_mismatch",
+        branchID: contactBranchID,
+        expiresAt: result.contact.payload.expiresAt,
+        sequence: result.contact.payload.sequence,
+        routeHints: result.contact.payload.routeHints,
+        profileMultihashes: result.contact.payload.profileMultihashes
+      });
+      continue;
+    }
+    records.push({
+      wrapperPreview: previewWrapper(wrapper),
+      validation: "accepted",
+      reason: result.reason,
+      branchID: contactBranchID,
+      expiresAt: result.contact.payload.expiresAt,
+      sequence: result.contact.payload.sequence,
+      routeHints: result.contact.payload.routeHints,
+      profileMultihashes: result.contact.payload.profileMultihashes
+    });
+  }
+  return records;
+}
+
 function gitHubResultToObservations(result: GitHubDiscoveryResult, carrier: string, query: string): readonly BeaconObservation[] {
   return result.records.map((record, index) => ({
     observationId: `${carrier}:${result.recordsUrl}:${String(index)}`,
@@ -376,6 +668,31 @@ function gitHubResultToObservations(result: GitHubDiscoveryResult, carrier: stri
     senderPublicKey: record.senderPublicKey,
     beaconId: record.beaconId,
     sequence: record.sequence
+  }));
+}
+
+function gitHubIdentityContactResultToObservations(
+  result: GitHubIdentityContactDiscoveryResult,
+  carrier: string,
+  query: string
+): readonly IdentityContactObservation[] {
+  return result.records.map((record, index) => ({
+    observationId: `${carrier}:identity:${result.recordsUrl}:${String(index)}`,
+    validation: record.validation,
+    reason: record.reason,
+    wrapperPreview: record.wrapperPreview,
+    evidence: {
+      carrier,
+      query,
+      source: result.repository,
+      sourceUrl: result.htmlUrl,
+      recordUrl: result.recordsUrl
+    },
+    branchID: record.branchID,
+    expiresAt: record.expiresAt,
+    sequence: record.sequence,
+    routeHints: record.routeHints,
+    profileMultihashes: record.profileMultihashes
   }));
 }
 
@@ -429,6 +746,15 @@ function isGitHubDiscoveryReport(value: unknown): value is GitHubDiscoveryReport
   return isRecord(value) &&
     (value["status"] === "ok" || value["status"] === "empty" || value["status"] === "rate_limited" || value["status"] === "failed") &&
     typeof value["query"] === "string" &&
+    typeof value["searchUrl"] === "string" &&
+    Array.isArray(value["results"]);
+}
+
+function isGitHubIdentityContactDiscoveryReport(value: unknown): value is GitHubIdentityContactDiscoveryReport {
+  return isRecord(value) &&
+    (value["status"] === "ok" || value["status"] === "empty" || value["status"] === "rate_limited" || value["status"] === "failed") &&
+    typeof value["query"] === "string" &&
+    typeof value["branchID"] === "string" &&
     typeof value["searchUrl"] === "string" &&
     Array.isArray(value["results"]);
 }

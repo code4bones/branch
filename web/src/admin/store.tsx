@@ -11,6 +11,7 @@ import type { IdentityContactLookupResponse } from "./identity-lookup.js";
 import type { RelayMonitorObservation } from "./relay-monitor.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
 import type { CarrierHoppingTraceEvent } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
+import type { IdentityContactObservation as DirectIdentityContactObservation } from "@code4bones/branch-core/discovery/identity-contact.js";
 import { defaultBootstrapRelayEndpointUri } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
 import { developmentProfileMultihash } from "@code4bones/branch-core/protocol/v0/profile.js";
 import type { LoadedBrowserImage } from "@code4bones/branch-core/visual/canvas-image.js";
@@ -122,6 +123,7 @@ export interface IdentityLookupState {
   readonly status: string;
   readonly statusClass: StatusClass;
   readonly result: IdentityContactLookupResponse | null;
+  readonly directObservations: readonly DirectIdentityContactObservation[];
 }
 
 export interface ClientFederationTraceState {
@@ -257,7 +259,10 @@ export interface AdminActions {
     value: IdentityLookupState[K]
   ) => void;
   readonly setClientIdentityLookupRunning: (running: boolean) => void;
-  readonly setClientIdentityLookupResult: (result: IdentityContactLookupResponse | null) => void;
+  readonly setClientIdentityLookupResult: (
+    result: IdentityContactLookupResponse | null,
+    directObservations?: readonly DirectIdentityContactObservation[]
+  ) => void;
   readonly setClientIdentityLookupStatus: (status: string, statusClass: StatusClass) => void;
   readonly appendClientTransportEvent: (event: string) => void;
   readonly resetClientTransport: () => void;
@@ -410,7 +415,8 @@ function createAdminStore(): AdminStoreApi {
         running: false,
         status: "idle",
         statusClass: "status-warn",
-        result: null
+        result: null,
+        directObservations: []
       }
     },
     setActiveTab: (tab) => { set({ activeTab: tab }); },
@@ -811,13 +817,14 @@ function createAdminStore(): AdminStoreApi {
           }
         }
       })); },
-    setClientIdentityLookupResult: (result) =>
+    setClientIdentityLookupResult: (result, directObservations = []) =>
       { set((state) => ({
         client: {
           ...state.client,
           identityLookup: {
             ...state.client.identityLookup,
-            result
+            result,
+            directObservations
           }
         }
       })); },

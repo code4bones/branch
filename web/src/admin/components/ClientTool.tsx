@@ -5,7 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discovery/client.js";
 import type { CarrierHoppingTraceEvent, CarrierHoppingTraceStatus } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
 import {
+  discoverClientIdentityContacts,
+  type IdentityContactObservation as DirectIdentityContactObservation
+} from "@code4bones/branch-core/discovery/identity-contact.js";
+import {
   createGitHubSearchCarrier,
+  createGitHubIdentityContactSearchCarrier,
   gitHubReportsFromCarrierReports,
   mergeGitHubDiscoveryReports,
   type GitHubDiscoveryResult,
@@ -88,6 +93,17 @@ export function ClientTool(): React.JSX.Element {
     setClientIdentityLookupRunning(true);
     setClientIdentityLookupResult(null);
     setClientIdentityLookupStatus("querying exact BranchID through relay mesh", "status-warn");
+    const runDirectCarrierLookup = async () => discoverClientIdentityContacts({
+      carrier: createGitHubIdentityContactSearchCarrier(),
+      branchID: client.identityLookup.branchID,
+      primaryQuery: client.discoveryQuery,
+      fallbackQuery: null,
+      includeFallback: false,
+      includeForks: false,
+      perPage: 5,
+      page: 1,
+      signal: controller.signal
+    });
     try {
       const result = await fetchIdentityContactLookup({
         adminBaseUrl: client.identityLookup.adminBaseUrl,
@@ -98,19 +114,48 @@ export function ClientTool(): React.JSX.Element {
       if (identityLookupAbortRef.current !== controller) {
         return;
       }
-      setClientIdentityLookupResult(result);
-      setClientIdentityLookupStatus(identityLookupStatusText(result.accepted, result.trace.length), result.accepted ? "status-good" : "status-warn");
+      if (result.accepted) {
+        setClientIdentityLookupResult(result, []);
+        setClientIdentityLookupStatus(identityLookupStatusText(result.accepted, result.trace.length, 0), "status-good");
+        return;
+      }
+      const direct = await runDirectCarrierLookup();
+      if (identityLookupAbortRef.current !== controller) {
+        return;
+      }
+      setClientIdentityLookupResult(result, direct.observations);
+      setClientIdentityLookupStatus(
+        identityLookupStatusText(direct.acceptedCount > 0, result.trace.length, direct.observations.length),
+        direct.acceptedCount > 0 ? "status-good" : "status-warn"
+      );
     } catch (error) {
       if (identityLookupAbortRef.current !== controller) {
         return;
       }
-      setClientIdentityLookupStatus(controller.signal.aborted ? "cancelled" : errorMessage(error), controller.signal.aborted ? "status-warn" : "status-bad");
+      if (controller.signal.aborted) {
+        setClientIdentityLookupStatus("cancelled", "status-warn");
+        return;
+      }
+      try {
+        const direct = await runDirectCarrierLookup();
+        if (identityLookupAbortRef.current !== controller) {
+          return;
+        }
+        setClientIdentityLookupResult(null, direct.observations);
+        setClientIdentityLookupStatus(
+          `relay lookup failed: ${errorMessage(error)}; ${identityLookupStatusText(direct.acceptedCount > 0, 0, direct.observations.length)}`,
+          direct.acceptedCount > 0 ? "status-good" : "status-bad"
+        );
+      } catch (directError) {
+        setClientIdentityLookupStatus(`relay lookup failed: ${errorMessage(error)}; direct carrier failed: ${errorMessage(directError)}`, "status-bad");
+      }
     } finally {
       if (identityLookupAbortRef.current === controller) {
         setClientIdentityLookupRunning(false);
       }
     }
   }, [
+    client.discoveryQuery,
     client.identityLookup.adminBaseUrl,
     client.identityLookup.adminToken,
     client.identityLookup.branchID,
@@ -133,6 +178,59 @@ export function ClientTool(): React.JSX.Element {
     () => filterIdentityLookupTrace(client.identityLookup.result?.trace ?? [], identityTraceSearch),
     [client.identityLookup.result?.trace, identityTraceSearch]
   );
+  const identityDirectColumns = useMemo<TableColumnsType<DirectIdentityContactObservation>>(() => [
+    {
+      title: "Carrier",
+      key: "carrier",
+      sorter: (left, right) => left.evidence.carrier.localeCompare(right.evidence.carrier),
+      render: (_, item) => (
+        <Space direction="vertical" size={2}>
+          <Tag color="blue">{item.evidence.carrier}</Tag>
+          <a href={item.evidence.sourceUrl} rel="noreferrer" target="_blank">{item.evidence.source}</a>
+        </Space>
+      )
+    },
+    {
+      title: "Result",
+      key: "result",
+      sorter: (left, right) => Number(left.validation === "accepted") - Number(right.validation === "accepted") || left.reason.localeCompare(right.reason),
+      render: (_, item) => (
+        <Space direction="vertical" size={2}>
+          <Tag color={item.validation === "accepted" ? "green" : "red"}>{item.validation}</Tag>
+          <span className="table-muted">{item.reason}</span>
+        </Space>
+      )
+    },
+    {
+      title: "BranchID",
+      dataIndex: "branchID",
+      key: "branchID",
+      sorter: (left, right) => (left.branchID ?? "").localeCompare(right.branchID ?? ""),
+      render: (value: string | null) => <span className="mono-cell">{value ?? "-"}</span>
+    },
+    {
+      title: "Routes",
+      key: "routes",
+      sorter: (left, right) => left.routeHints.length - right.routeHints.length,
+      render: (_, item) => (
+        <Space direction="vertical" size={2}>
+          {item.routeHints.length === 0 ? <span className="table-muted">-</span> : item.routeHints.map((hint) => (
+            <span className="mono-cell" key={`${hint.uri}-${String(hint.priority)}`}>{hint.uri}</span>
+          ))}
+        </Space>
+      )
+    },
+    {
+      title: "Record",
+      key: "record",
+      render: (_, item) => (
+        <Space direction="vertical" size={2}>
+          <span className="mono-cell">{item.wrapperPreview}</span>
+          <span className="table-muted">{formatUnixSeconds(item.expiresAt)}</span>
+        </Space>
+      )
+    }
+  ], []);
   const traceAlice = useMemo(() => tracePeerPreview(client.federationTrace.events, "Alice", client.alicePeerId), [client.alicePeerId, client.federationTrace.events]);
   const traceBob = useMemo(() => tracePeerPreview(client.federationTrace.events, "Bob", client.bobPeerId), [client.bobPeerId, client.federationTrace.events]);
   const identityLookupTraceColumns = useMemo<TableColumnsType<IdentityContactLookupTrace>>(() => [
@@ -476,6 +574,14 @@ export function ClientTool(): React.JSX.Element {
           size="small"
         />
         <Table
+          columns={identityDirectColumns}
+          dataSource={client.identityLookup.directObservations}
+          pagination={{ pageSize: 5, showSizeChanger: true }}
+          rowKey="observationId"
+          scroll={{ x: 960 }}
+          size="small"
+        />
+        <Table
           columns={identityRouteHintColumns}
           dataSource={client.identityLookup.result?.observation?.route_hints ?? []}
           pagination={false}
@@ -794,8 +900,9 @@ function routeSourceLabel(routeMode: "discovery" | "manual", endpointUri: string
   return endpointUri === null ? "no accepted relay route" : "discovery route selected";
 }
 
-function identityLookupStatusText(accepted: boolean, traceCount: number): string {
-  return accepted ? `accepted signed observation across ${String(traceCount)} trace steps` : `no signed observation across ${String(traceCount)} trace steps`;
+function identityLookupStatusText(accepted: boolean, traceCount: number, directCount: number): string {
+  const suffix = directCount === 0 ? "" : `; direct carrier observations ${String(directCount)}`;
+  return accepted ? `accepted signed observation across ${String(traceCount)} trace steps${suffix}` : `no signed observation across ${String(traceCount)} trace steps${suffix}`;
 }
 
 function errorMessage(error: unknown): string {

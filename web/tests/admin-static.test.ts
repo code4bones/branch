@@ -19,6 +19,7 @@ const branchCorePath = resolve(process.cwd(), "../packages/branch-core/src");
 const discoveryGitHubPath = resolve(branchCorePath, "discovery/github.ts");
 const discoveryGitLabPath = resolve(branchCorePath, "discovery/gitlab.ts");
 const discoveryClientPath = resolve(branchCorePath, "discovery/client.ts");
+const discoveryIdentityContactPath = resolve(branchCorePath, "discovery/identity-contact.ts");
 const discoveryCarrierHopClientPath = resolve(branchCorePath, "discovery/carrier-hop-client.ts");
 const connectivityCarrierHopPath = resolve(branchCorePath, "connectivity/carrier-hopping-poc.ts");
 const connectivitySameRelayPath = resolve(branchCorePath, "connectivity/same-relay.ts");
@@ -63,6 +64,7 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   const identityLookup = await readFile(identityLookupPath, "utf8");
   const transportLab = await readFile(resolve(process.cwd(), "src/admin/use-same-relay-transport-lab.ts"), "utf8");
   const carrierHopClient = await readFile(discoveryCarrierHopClientPath, "utf8");
+  const identityContactDiscovery = await readFile(discoveryIdentityContactPath, "utf8");
   const publicationProfile = await readFile(publicationProfilePath, "utf8");
   const defaults = await readFile(defaultsPath, "utf8");
   const nginx = await readFile(nginxConfigPath, "utf8");
@@ -218,6 +220,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /BranchID lookup/);
   assert.match(clientTool, /id="client-identity-branch-id"/);
   assert.match(clientTool, /fetchIdentityContactLookup/);
+  assert.match(clientTool, /discoverClientIdentityContacts/);
+  assert.match(clientTool, /createGitHubIdentityContactSearchCarrier/);
+  assert.match(clientTool, /directObservations/);
   assert.match(clientTool, /identityLookupTraceColumns/);
   assert.match(clientTool, /className="federation-trace"/);
   assert.match(clientTool, /Federation trace/);
@@ -234,6 +239,10 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(identityLookup, /credentials: "omit"/);
   assert.match(identityLookup, /Bearer/);
   assert.doesNotMatch(identityLookup, /localStorage|indexedDB|WebSocket|GITHUB_TOKEN/);
+  assert.match(identityContactDiscovery, /IdentityContactSearchCarrier/);
+  assert.match(identityContactDiscovery, /discoverClientIdentityContacts/);
+  assert.match(identityContactDiscovery, /parseBranchID/);
+  assert.doesNotMatch(identityContactDiscovery, /React|use[A-Z]|WebSocket|localStorage|indexedDB/);
   assert.match(carrierHopClient, /SearchCarrier/);
   assert.match(carrierHopClient, /BeaconObservation/);
   assert.match(carrierHopClient, /runDiscoveredCarrierHopPoC/);
@@ -355,9 +364,12 @@ void test("admin github discovery uses bounded public GitHub API reads", async (
   const facade = await readFile(githubDiscoveryPath, "utf8");
   const source = await readFile(discoveryGitHubPath, "utf8");
   const client = await readFile(discoveryClientPath, "utf8");
+  const identityContact = await readFile(discoveryIdentityContactPath, "utf8");
 
   assert.match(facade, /export \* from "@code4bones\/branch-core\/discovery\/github\.js"/);
   assert.match(source, /https:\/\/api\.github\.com\/search\/repositories/);
+  assert.match(source, /createGitHubIdentityContactSearchCarrier/);
+  assert.match(source, /validateBranchTextIdentityContact/);
   assert.match(source, /githubPrimaryLocatorQuery/);
   assert.match(source, /githubLegacyMarkerQuery/);
   assert.match(source, /createGitHubSearchCarrier/);
@@ -373,6 +385,7 @@ void test("admin github discovery uses bounded public GitHub API reads", async (
   assert.match(source, /fork:true/);
   assert.match(source, /default branch/);
   assert.match(source, /extractBranchTextWrappers/);
+  assert.match(identityContact, /discoverClientIdentityContacts/);
   assert.doesNotMatch(`${source}\n${client}`, /GITHUB_TOKEN|Authorization|raw\.githubusercontent\.com|contents: write|localStorage|indexedDB|WebSocket/);
 });
 

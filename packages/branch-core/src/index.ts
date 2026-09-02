@@ -9,6 +9,7 @@ export * from "./diagnostics/observation-front.js";
 export * from "./discovery/carrier-hop-client.js";
 export * from "./discovery/client.js";
 export * from "./discovery/github.js";
+export * from "./discovery/identity-contact.js";
 export * from "./discovery/gitlab.js";
 export * from "./discovery/publication-profile.js";
 export * from "./protocol/v0/base64url.js";
