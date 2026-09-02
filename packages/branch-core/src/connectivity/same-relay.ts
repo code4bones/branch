@@ -63,7 +63,7 @@ export type SameRelayTransportEvent =
   | { readonly type: "relay_ack"; readonly deliveryId: string; readonly ackType: "relay.accepted" | "relay.forwarded"; readonly durable: false }
   | { readonly type: "peer_receipt"; readonly deliveryId: string; readonly durable: false }
   | { readonly type: "peer_unavailable"; readonly retryable: boolean; readonly pendingCount: number }
-  | { readonly type: "envelope_received"; readonly deliveryId: string; readonly ciphertext: string; readonly routeId: string }
+  | { readonly type: "envelope_received"; readonly deliveryId: string; readonly ciphertext: string; readonly routeId: string; readonly senderPeerId: string | null }
   | { readonly type: "pending_retried"; readonly count: number }
   | { readonly type: "disconnected"; readonly pendingCount: number }
   | { readonly type: "error"; readonly message: string };
@@ -431,7 +431,8 @@ export class SameRelayTransportClient {
           type: "envelope_received",
           deliveryId,
           ciphertext: readString(record, "ciphertext"),
-          routeId: readString(record, "route_id")
+          routeId: readString(record, "route_id"),
+          senderPeerId: readOptionalString(record, "sender_peer_id")
         });
         return;
       }
@@ -709,6 +710,17 @@ function readObject(record: Record<string, unknown>, key: string): Record<string
 
 function readString(record: Record<string, unknown>, key: string): string {
   const value = record[key];
+  if (typeof value !== "string") {
+    throw new Error(`invalid ${key}`);
+  }
+  return value;
+}
+
+function readOptionalString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (value === undefined) {
+    return null;
+  }
   if (typeof value !== "string") {
     throw new Error(`invalid ${key}`);
   }

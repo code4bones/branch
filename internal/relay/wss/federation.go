@@ -203,7 +203,7 @@ type federatedWSSForwarder struct {
 	closed         bool
 }
 
-func (forwarder *federatedWSSForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte) error {
+func (forwarder *federatedWSSForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte, senderPeerID relay.PeerID) error {
 	forwarder.mu.Lock()
 	defer forwarder.mu.Unlock()
 
@@ -215,7 +215,7 @@ func (forwarder *federatedWSSForwarder) Forward(ctx context.Context, routeID rel
 		forwarder.closeLocked()
 		return relay.ErrPeerUnavailable
 	}
-	if err := client.forwardEnvelope(ctx, routeID, payload); err != nil {
+	if err := client.forwardEnvelope(ctx, routeID, payload, senderPeerID); err != nil {
 		forwarder.closeLocked()
 		return normalizeFederationError(err)
 	}
@@ -381,7 +381,7 @@ func (client *federationClient) writeRendezvous(ctx context.Context, routeID rel
 	})
 }
 
-func (client *federationClient) forwardEnvelope(ctx context.Context, routeID relay.RouteID, payload []byte) error {
+func (client *federationClient) forwardEnvelope(ctx context.Context, routeID relay.RouteID, payload []byte, senderPeerID relay.PeerID) error {
 	frame, err := readFederationObject(payload)
 	if err != nil {
 		return err
@@ -389,6 +389,9 @@ func (client *federationClient) forwardEnvelope(ctx context.Context, routeID rel
 	frame["session_id"] = client.sessionID
 	frame["route_id"] = string(routeID)
 	frame["ack_requested"] = true
+	if senderPeerID != "" {
+		frame["sender_peer_id"] = string(senderPeerID)
+	}
 	if err := client.writeTyped(ctx, frame); err != nil {
 		return err
 	}
@@ -430,7 +433,7 @@ func (client *federationClient) startReadLoop(localHub *relay.Hub, routeID relay
 					return
 				}
 			case "ENVELOPE":
-				if err := localHub.DeliverFromFederated(context.Background(), routeID, raw); err != nil {
+				if err := localHub.DeliverFromFederated(context.Background(), routeID, raw, senderPeerIDFromFrame(raw)); err != nil {
 					return
 				}
 			default:

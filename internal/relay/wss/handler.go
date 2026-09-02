@@ -270,7 +270,12 @@ func (handler *Handler) writeLoop(ctx context.Context, conn *connection, session
 			errs <- err
 			return
 		}
-		if err := writeRaw(ctx, conn, handler.writeTimeout, frame.Payload); err != nil {
+		payload, err := deliveryPayload(frame)
+		if err != nil {
+			errs <- err
+			return
+		}
+		if err := writeRaw(ctx, conn, handler.writeTimeout, payload); err != nil {
 			errs <- err
 			return
 		}
@@ -332,6 +337,37 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	default:
 		return nil
 	}
+}
+
+func deliveryPayload(frame relay.Frame) ([]byte, error) {
+	if frame.SenderPeerID == "" {
+		return frame.Payload, nil
+	}
+	var object map[string]any
+	if err := json.Unmarshal(frame.Payload, &object); err != nil {
+		return nil, ErrInvalidFrame
+	}
+	if object["type"] != string(protocol.RelayFrameEnvelope) {
+		return frame.Payload, nil
+	}
+	object["sender_peer_id"] = string(frame.SenderPeerID)
+	payload, err := json.Marshal(object)
+	if err != nil {
+		return nil, ErrInvalidFrame
+	}
+	return payload, nil
+}
+
+func senderPeerIDFromFrame(payload []byte) relay.PeerID {
+	var object map[string]any
+	if err := json.Unmarshal(payload, &object); err != nil {
+		return ""
+	}
+	value, ok := object["sender_peer_id"].(string)
+	if !ok {
+		return ""
+	}
+	return relay.PeerID(value)
 }
 
 func (handler *Handler) announceFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) error {

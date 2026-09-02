@@ -140,7 +140,9 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
         })
       ];
       await Promise.all([alice.attach(), bob.attach()]);
+      alice.announcePresence();
       bob.announcePresence();
+      alice.heartbeat();
       bob.heartbeat();
       await sleep(liveRelayPropagationWaitMs);
       alice.lookup(bob.peerId);

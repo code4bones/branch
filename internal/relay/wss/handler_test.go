@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	testPeerID = "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA"
-	testB64x32 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
-	testB64x16 = "AAECAwQFBgcICQoLDA0ODw"
-	testB64x64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-Pw"
+	testAlicePeerID = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+	testPeerID      = "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA"
+	testB64x32      = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+	testB64x16      = "AAECAwQFBgcICQoLDA0ODw"
+	testB64x64      = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-Pw"
 )
 
 func TestHandlerRejectsWrongPathAndNonUpgrade(t *testing.T) {
@@ -122,6 +123,15 @@ func TestHandlerAttachesTwoPeersAndForwardsOpaqueEnvelope(t *testing.T) {
 	defer alice.Close(websocket.StatusNormalClosure, "")
 	aliceReady := alice.Ready
 	sendJSON(t, alice.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  aliceReady.SessionID,
+		"route_id":    aliceReady.RouteID,
+		"peer_id":     testAlicePeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+	sendJSON(t, alice.Conn, map[string]any{
 		"type":       "RENDEZVOUS",
 		"session_id": aliceReady.SessionID,
 		"route_id":   aliceReady.RouteID,
@@ -155,9 +165,12 @@ func TestHandlerAttachesTwoPeersAndForwardsOpaqueEnvelope(t *testing.T) {
 	if envelope["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("opaque encrypted test bytes")) {
 		t.Fatalf("ciphertext changed: %+v", envelope)
 	}
+	if envelope["sender_peer_id"] != testAlicePeerID {
+		t.Fatalf("sender peer id missing from forwarded envelope: %+v", envelope)
+	}
 
 	snapshot := hub.Snapshot()
-	if snapshot.SessionsActive != 2 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 1 || snapshot.ForwardedFrames != 1 {
+	if snapshot.SessionsActive != 2 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 2 || snapshot.ForwardedFrames != 1 {
 		t.Fatalf("unexpected hub snapshot: %+v", snapshot)
 	}
 }
@@ -910,7 +923,7 @@ type testFederationForwarder struct {
 	now        time.Time
 }
 
-func (forwarder testFederationForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte) error {
+func (forwarder testFederationForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte, _ relay.PeerID) error {
 	err := forwarder.target.Rendezvous(routeID, forwarder.targetPeer, forwarder.now)
 	if err != nil && !errors.Is(err, relay.ErrRouteExists) {
 		return err

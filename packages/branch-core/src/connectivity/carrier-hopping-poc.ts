@@ -251,7 +251,9 @@ async function attachPair(
     })
   ];
   await Promise.all([alice.attach(), bob.attach()]);
+  alice.announcePresence();
   bob.announcePresence();
+  alice.heartbeat();
   bob.heartbeat();
   await sleep(relayPropagationWaitMs);
   alice.lookup(bob.peerId);

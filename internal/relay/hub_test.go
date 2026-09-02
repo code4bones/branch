@@ -18,6 +18,9 @@ func TestHubForwardsOpaqueFramesAcrossLiveRoute(t *testing.T) {
 	})
 	alice := attach(t, hub, "alice")
 	bob := attach(t, hub, "bob")
+	if err := alice.AnnouncePresence("alice-peer", time.Unix(1_789_000_000, 0)); err != nil {
+		t.Fatalf("announce alice presence: %v", err)
+	}
 	if err := hub.Pair("route-1", alice.ID(), bob.ID()); err != nil {
 		t.Fatalf("pair route: %v", err)
 	}
@@ -31,6 +34,9 @@ func TestHubForwardsOpaqueFramesAcrossLiveRoute(t *testing.T) {
 	frame := receive(t, bob)
 	if frame.RouteID != "route-1" {
 		t.Fatalf("route id = %q", frame.RouteID)
+	}
+	if frame.SenderPeerID != "alice-peer" {
+		t.Fatalf("sender peer id = %q", frame.SenderPeerID)
 	}
 	if string(frame.Payload) != "hello" {
 		t.Fatalf("payload = %q", frame.Payload)
@@ -232,7 +238,7 @@ func TestHubFederatedPresenceForwardsAcrossLiveRelays(t *testing.T) {
 		t.Fatalf("bob reply: %v", err)
 	}
 	reply := receive(t, rightBridge)
-	if err := leftHub.DeliverFromFederated(context.Background(), reply.RouteID, reply.Payload); err != nil {
+	if err := leftHub.DeliverFromFederated(context.Background(), reply.RouteID, reply.Payload, reply.SenderPeerID); err != nil {
 		t.Fatalf("deliver from federated: %v", err)
 	}
 	if frame := receive(t, alice); frame.RouteID != "route-federated" || string(frame.Payload) != "right-to-left" {
@@ -405,7 +411,7 @@ type liveFederatedForwarder struct {
 	now        time.Time
 }
 
-func (forwarder liveFederatedForwarder) Forward(ctx context.Context, routeID RouteID, payload []byte) error {
+func (forwarder liveFederatedForwarder) Forward(ctx context.Context, routeID RouteID, payload []byte, _ PeerID) error {
 	err := forwarder.target.Rendezvous(routeID, forwarder.targetPeer, forwarder.now)
 	if err != nil && !errors.Is(err, ErrRouteExists) {
 		return err
@@ -415,6 +421,6 @@ func (forwarder liveFederatedForwarder) Forward(ctx context.Context, routeID Rou
 
 type failingFederatedForwarder struct{}
 
-func (failingFederatedForwarder) Forward(context.Context, RouteID, []byte) error {
+func (failingFederatedForwarder) Forward(context.Context, RouteID, []byte, PeerID) error {
 	return ErrPeerUnavailable
 }

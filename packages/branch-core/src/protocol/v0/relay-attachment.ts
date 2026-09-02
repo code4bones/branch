@@ -203,13 +203,16 @@ function validateRendezvous(record: Record<string, unknown>): void {
 }
 
 function validateEnvelope(record: Record<string, unknown>): void {
-  rejectUnknownKeys(record, ["type", "session_id", "route_id", "path_epoch", "stream_id", "delivery_id", "ciphertext", "ack_requested"]);
+  rejectUnknownKeys(record, ["type", "session_id", "route_id", "path_epoch", "stream_id", "delivery_id", "ciphertext", "ack_requested"], ["sender_peer_id"]);
   readBase64URLBytes(record, "session_id", 32);
   readBase64URLBytes(record, "route_id", 16);
   readBoundedInteger(record, "path_epoch", 0, maxDraftTimestamp);
   readBoundedInteger(record, "stream_id", 0, maxDraftTimestamp);
   readBase64URLBytes(record, "delivery_id", 16);
   readBase64URLString(record, "ciphertext");
+  if (record.sender_peer_id !== undefined) {
+    readBase64URLBytes(record, "sender_peer_id", 32);
+  }
   readBoolean(record, "ack_requested");
 }
 

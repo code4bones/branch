@@ -60,8 +60,9 @@ type PeerID string
 
 // Frame is an opaque encrypted payload plus its live route hint.
 type Frame struct {
-	RouteID RouteID
-	Payload []byte
+	RouteID      RouteID
+	SenderPeerID PeerID
+	Payload      []byte
 }
 
 // Presence is a detached view of one live authenticated peer.
@@ -76,7 +77,7 @@ type Presence struct {
 // relay route. It must be bounded and return transient relay errors instead of
 // storing frames when the remote side is unavailable.
 type FederatedForwarder interface {
-	Forward(ctx context.Context, routeID RouteID, payload []byte) error
+	Forward(ctx context.Context, routeID RouteID, payload []byte, senderPeerID PeerID) error
 }
 
 // Snapshot is a detached bounded operator view of in-memory relay state.
@@ -392,7 +393,8 @@ func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, pa
 		return ErrQuotaExceeded
 	}
 
-	frame := Frame{RouteID: routeID, Payload: framePayload}
+	senderPeerID := source.peerID
+	frame := Frame{RouteID: routeID, SenderPeerID: senderPeerID, Payload: framePayload}
 	if to.sessionID != "" {
 		destination, exists := hub.sessions[to.sessionID]
 		if !exists || destination.handle.isClosed() {
@@ -423,7 +425,7 @@ func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, pa
 	sourceState := source
 	hub.mu.Unlock()
 
-	err := to.forwarder.Forward(ctx, routeID, framePayload)
+	err := to.forwarder.Forward(ctx, routeID, framePayload, senderPeerID)
 
 	hub.mu.Lock()
 	if err != nil {
@@ -448,7 +450,7 @@ func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, pa
 // DeliverFromFederated injects one frame arriving from a remote relay bridge
 // into an existing live federated route. The hub accepts it only while the local
 // destination session and route are still present.
-func (hub *Hub) DeliverFromFederated(ctx context.Context, routeID RouteID, payload []byte) error {
+func (hub *Hub) DeliverFromFederated(ctx context.Context, routeID RouteID, payload []byte, senderPeerID PeerID) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -485,7 +487,7 @@ func (hub *Hub) DeliverFromFederated(ctx context.Context, routeID RouteID, paylo
 		return ErrSessionClosed
 	}
 	select {
-	case destination.inbox <- Frame{RouteID: routeID, Payload: framePayload}:
+	case destination.inbox <- Frame{RouteID: routeID, SenderPeerID: senderPeerID, Payload: framePayload}:
 		hub.stats.ForwardedFrames++
 		hub.stats.ForwardedBytes += uint64(len(payload))
 		hub.mu.Unlock()

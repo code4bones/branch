@@ -284,7 +284,7 @@ func validateRendezvousFrame(frame map[string]json.RawMessage) error {
 }
 
 func validateEnvelopeFrame(frame map[string]json.RawMessage) error {
-	if err := rejectUnknownRawKeys(frame, "type", "session_id", "route_id", "path_epoch", "stream_id", "delivery_id", "ciphertext", "ack_requested"); err != nil {
+	if err := rejectUnknownRawKeysOptional(frame, []string{"type", "session_id", "route_id", "path_epoch", "stream_id", "delivery_id", "ciphertext", "ack_requested"}, []string{"sender_peer_id"}); err != nil {
 		return err
 	}
 	if err := readBase64Field(frame, "session_id", 32); err != nil {
@@ -304,6 +304,11 @@ func validateEnvelopeFrame(frame map[string]json.RawMessage) error {
 	}
 	if err := readBase64StringField(frame, "ciphertext"); err != nil {
 		return err
+	}
+	if _, ok := frame["sender_peer_id"]; ok {
+		if err := readBase64Field(frame, "sender_peer_id", 32); err != nil {
+			return err
+		}
 	}
 	_, err := readBoolField(frame, "ack_requested")
 	return err

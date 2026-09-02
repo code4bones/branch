@@ -325,13 +325,18 @@ from a validated signed BootstrapBeacon. The relay may dial those candidates
 for this one route attempt, but it must not retain them as a directory or scan
 outside the supplied bounded list.
 
-`ENVELOPE` contains `session_id`, `route_id`, `path_epoch`, `stream_id`,
-`delivery_id`, `ciphertext`, and `ack_requested`. The relay validates only the
-outer routing and bounds needed for live forwarding. It must not decrypt,
-persist, index, replay after restart, or log the ciphertext. If the destination
-is absent, disconnected, expired, over quota, or unreachable, the relay returns
-`ERROR` with `peer_unavailable` or another explicit transient code. It does not
-create a "you were called" event.
+`ENVELOPE` sent by a client contains `session_id`, `route_id`, `path_epoch`,
+`stream_id`, `delivery_id`, `ciphertext`, and `ack_requested`. A delivered beta
+`ENVELOPE` may also contain relay-set `sender_peer_id`, which identifies the
+live sender peer on that route so multi-contact clients and the Echo test
+service can bind HPKE AAD and reply to the correct caller. `sender_peer_id` is
+ephemeral route attribution, not a directory entry, user account, durable
+presence record, or trust authority. The relay validates only the outer routing
+and bounds needed for live forwarding. It must not decrypt, persist, index,
+replay after restart, or log the ciphertext. If the destination is absent,
+disconnected, expired, over quota, or unreachable, the relay returns `ERROR`
+with `peer_unavailable` or another explicit transient code. It does not create a
+"you were called" event.
 
 `ACK` distinguishes `relay.accepted`, `relay.forwarded`, and `peer.received`.
 The `durable` field is always `false` for relay acknowledgements in this

@@ -58,7 +58,9 @@ void test("same-relay browser transport handles live forwarding, unavailable, an
   });
 
   await Promise.all([alice.attach(), bob.attach()]);
+  alice.announcePresence();
   bob.announcePresence();
+  alice.heartbeat();
   bob.heartbeat();
   alice.lookup(bob.peerId);
   alice.rendezvous(bob.peerId);
@@ -69,7 +71,7 @@ void test("same-relay browser transport handles live forwarding, unavailable, an
   assert(bobEvents.some((event) => event.type === "presence_announced"));
   assert(aliceEvents.some((event) => event.type === "relay_ack" && event.ackType === "relay.forwarded"));
   assert(aliceEvents.some((event) => event.type === "peer_receipt" && event.deliveryId === deliveredID));
-  assert(bobEvents.some((event) => event.type === "envelope_received" && event.deliveryId === deliveredID));
+  assert(bobEvents.some((event) => event.type === "envelope_received" && event.deliveryId === deliveredID && event.senderPeerId === alice.peerId));
   assert.equal(alice.pendingCount, 0);
 
   bob.disconnect();
@@ -87,7 +89,7 @@ void test("same-relay browser transport handles live forwarding, unavailable, an
   alice.retryPending();
   await settle();
 
-  assert(bobEvents.some((event) => event.type === "envelope_received" && event.deliveryId === retryID));
+  assert(bobEvents.some((event) => event.type === "envelope_received" && event.deliveryId === retryID && event.senderPeerId === alice.peerId));
   assert(aliceEvents.some((event) => event.type === "pending_retried" && event.count === 1));
   assert(aliceEvents.some((event) => event.type === "peer_receipt" && event.deliveryId === retryID));
   assert.equal(alice.pendingCount, 0);
@@ -622,7 +624,11 @@ class FakeRelay {
       this.error(socket, "peer_unavailable");
       return;
     }
-    target.deliver(data);
+    const senderPeerId = this.states.get(socket)?.peerId;
+    target.deliver(JSON.stringify({
+      ...frame,
+      ...(senderPeerId === undefined ? {} : { sender_peer_id: senderPeerId })
+    }));
     socket.deliver(JSON.stringify({
       type: "ACK",
       session_id: readString(frame, "session_id"),
