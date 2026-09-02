@@ -36,6 +36,7 @@ export interface CarrierHoppingPoCOptions {
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
   readonly stepTimeoutMs?: number;
+  readonly relayPropagationWaitMs?: number;
   readonly onEvent?: (event: string) => void;
 }
 
@@ -55,6 +56,7 @@ interface CarrierHoppingCounters {
 const maxRoutes = 4;
 const maxEventCount = 32;
 const defaultStepTimeoutMs = 3_000;
+const defaultRelayPropagationWaitMs = 250;
 const defaultStreamID = 0;
 const defaultPathEpoch = 0;
 
@@ -88,12 +90,13 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
   ]);
   const bobPayloadKey = await createBetaPayloadKeyPair();
   const timeoutMs = boundedTimeout(options.stepTimeoutMs ?? defaultStepTimeoutMs);
+  const relayPropagationWaitMs = boundedRelayPropagationWait(options.relayPropagationWaitMs ?? defaultRelayPropagationWaitMs);
   let activePair: TransportPair | null = null;
   let pendingAfterUnavailable: readonly SameRelayPendingEnvelope[] = [];
 
   try {
     record(`route.selected ${routeLabel(primaryRoute)}`);
-    activePair = await attachPair(primaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, [], options.socketFactory, options.crypto, record, counters);
+    activePair = await attachPair(primaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, [], options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
     record("carrier.disabled discovery snapshot retained");
     const carrierOffDeliveryId = await sendEncryptedEnvelope(activePair.alice, activePair.bob, bobPayloadKey, primaryRoute, "carrier disabled opaque payload", options.crypto);
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === carrierOffDeliveryId, timeoutMs);
@@ -136,7 +139,7 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
     activePair.bob.disconnect();
 
     record(`route.migration.started ${routeLabel(secondaryRoute)}`);
-    activePair = await attachPair(secondaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, pendingAfterUnavailable, options.socketFactory, options.crypto, record, counters);
+    activePair = await attachPair(secondaryRoute, aliceIdentity, bobIdentity, bobPayloadKey, pendingAfterUnavailable, options.socketFactory, options.crypto, relayPropagationWaitMs, record, counters);
     activePair.alice.retryPending();
     await waitForEvent(activePair.events, (event) => event.type === "peer_receipt" && event.deliveryId === migrationDeliveryId, timeoutMs);
     record("route.migration.completed");
@@ -178,6 +181,7 @@ async function attachPair(
   alicePending: readonly SameRelayPendingEnvelope[],
   socketFactory: BrowserRelaySocketFactory | undefined,
   crypto: Crypto | undefined,
+  relayPropagationWaitMs: number,
   record: (event: string) => void,
   counters: CarrierHoppingCounters
 ): Promise<TransportPair> {
@@ -219,6 +223,7 @@ async function attachPair(
   await Promise.all([alice.attach(), bob.attach()]);
   bob.announcePresence();
   bob.heartbeat();
+  await sleep(relayPropagationWaitMs);
   alice.lookup(bob.peerId);
   alice.rendezvous(bob.peerId);
   return {
@@ -363,6 +368,13 @@ function boundedTimeout(value: number): number {
   return Math.max(100, Math.min(10_000, Math.trunc(value)));
 }
 
+function boundedRelayPropagationWait(value: number): number {
+  if (!Number.isFinite(value)) {
+    return defaultRelayPropagationWaitMs;
+  }
+  return Math.max(0, Math.min(1_000, Math.trunc(value)));
+}
+
 function routeLabel(route: RelayRouteMaterial): string {
   return route.endpointUri;
 }
@@ -380,6 +392,12 @@ function randomToken(crypto: Crypto, size: number): string {
 function settle(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
   });
 }
 
