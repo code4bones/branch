@@ -49,12 +49,26 @@ type StaticPeerRouter struct {
 	maxFrameBytes int64
 	dialTimeout   time.Duration
 	writeTimeout  time.Duration
+	diagMu        sync.Mutex
+	diagnostics   map[string]FederationPeerObservation
 }
 
 type federationCandidate struct {
 	endpoint       string
 	relayPublicKey []byte
 	priority       int64
+}
+
+// FederationPeerObservation is a bounded operator snapshot of one static or
+// hinted relay peer probe. It carries no payloads, peer IDs, or keys.
+type FederationPeerObservation struct {
+	Endpoint     string
+	State        string
+	LastLookupAt time.Time
+	LastReason   string
+	LookupCount  uint64
+	BridgeCount  int
+	FreshUntil   time.Time
 }
 
 // NewStaticPeerRouter creates a beta static relay federation adapter.
@@ -93,11 +107,12 @@ func NewStaticPeerRouter(config StaticPeerRouterConfig) (*StaticPeerRouter, erro
 		maxFrameBytes: config.MaxFrameBytes,
 		dialTimeout:   config.DialTimeout,
 		writeTimeout:  config.WriteTimeout,
+		diagnostics:   make(map[string]FederationPeerObservation, len(endpoints)),
 	}, nil
 }
 
 // LookupFederatedPeer probes configured peers for one currently reachable peer.
-func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, _ time.Time) (relay.FederatedForwarder, bool) {
+func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) (relay.FederatedForwarder, bool) {
 	var candidates []federationCandidate
 	if len(hints) > 0 {
 		candidates = federationCandidatesFromHints(hints)
@@ -108,7 +123,9 @@ func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID 
 		if err := ctx.Err(); err != nil {
 			return nil, false
 		}
-		if router.remotePeerAvailable(ctx, candidate, peerID) {
+		available, reason := router.remotePeerAvailable(ctx, candidate, peerID)
+		router.recordPeerObservation(candidate.endpoint, available, reason, now)
+		if available {
 			return &federatedWSSForwarder{
 				router:         router,
 				endpoint:       candidate.endpoint,
@@ -118,6 +135,40 @@ func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID 
 		}
 	}
 	return nil, false
+}
+
+// FederationSnapshot returns a detached bounded view of relay mesh probes for
+// the protected operator monitor plane.
+func (router *StaticPeerRouter) FederationSnapshot() []FederationPeerObservation {
+	router.diagMu.Lock()
+	defer router.diagMu.Unlock()
+
+	observations := make([]FederationPeerObservation, 0, len(router.endpoints)+len(router.diagnostics))
+	included := make(map[string]struct{}, len(router.endpoints)+len(router.diagnostics))
+	for _, endpoint := range router.endpoints {
+		observation, ok := router.diagnostics[endpoint]
+		if !ok {
+			observation = FederationPeerObservation{
+				Endpoint: endpoint,
+				State:    "configured",
+			}
+		}
+		observations = append(observations, observation)
+		included[endpoint] = struct{}{}
+	}
+	for endpoint, observation := range router.diagnostics {
+		if _, ok := included[endpoint]; ok {
+			continue
+		}
+		observations = append(observations, observation)
+	}
+	slices.SortFunc(observations, func(left, right FederationPeerObservation) int {
+		return strings.Compare(left.Endpoint, right.Endpoint)
+	})
+	if len(observations) > maxFederationPeers {
+		return observations[:maxFederationPeers]
+	}
+	return observations
 }
 
 func (router *StaticPeerRouter) staticFederationCandidates() []federationCandidate {
@@ -159,13 +210,39 @@ func federationCandidatesFromHints(hints []FederationRouteHint) []federationCand
 	return candidates
 }
 
-func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, candidate federationCandidate, peerID relay.PeerID) bool {
+func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, candidate federationCandidate, peerID relay.PeerID) (bool, string) {
 	client, err := router.dial(ctx, candidate)
 	if err != nil {
-		return false
+		return false, "dial_failed"
 	}
 	defer client.close()
-	return client.lookup(ctx, peerID) == nil
+	if err := client.lookup(ctx, peerID); err != nil {
+		return false, "peer_unavailable"
+	}
+	return true, "lookup_ok"
+}
+
+func (router *StaticPeerRouter) recordPeerObservation(endpoint string, reachable bool, reason string, now time.Time) {
+	router.diagMu.Lock()
+	defer router.diagMu.Unlock()
+
+	state := "unreachable"
+	bridgeCount := 0
+	var freshUntil time.Time
+	if reachable {
+		state = "reachable"
+		bridgeCount = 1
+		freshUntil = now.Add(router.localHub.PresenceTTL())
+	}
+	observation := router.diagnostics[endpoint]
+	observation.Endpoint = endpoint
+	observation.State = state
+	observation.LastLookupAt = now.UTC()
+	observation.LastReason = reason
+	observation.LookupCount++
+	observation.BridgeCount = bridgeCount
+	observation.FreshUntil = freshUntil.UTC()
+	router.diagnostics[endpoint] = observation
 }
 
 func (router *StaticPeerRouter) dial(parent context.Context, candidate federationCandidate) (*federationClient, error) {

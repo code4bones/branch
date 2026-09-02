@@ -50,6 +50,7 @@ type RelayMonitorReport struct {
 	ReportedAt      time.Time                    `json:"reported_at"`
 	Snapshot        StatusSnapshot               `json:"snapshot"`
 	BootstrapBeacon *RelayMonitorBootstrapBeacon `json:"bootstrap_beacon,omitempty"`
+	Federation      []RelayMonitorFederationLink `json:"federation,omitempty"`
 }
 
 // RelayMonitorObservation is the MASTER-side operator view of one relay report.
@@ -62,6 +63,7 @@ type RelayMonitorObservation struct {
 	Stale           bool                         `json:"stale"`
 	Snapshot        StatusSnapshot               `json:"snapshot"`
 	BootstrapBeacon *RelayMonitorBootstrapBeacon `json:"bootstrap_beacon,omitempty"`
+	Federation      []RelayMonitorFederationLink `json:"federation,omitempty"`
 }
 
 // RelayMonitorBootstrapBeacon is a public, relay-owned signed carrier record
@@ -69,6 +71,19 @@ type RelayMonitorObservation struct {
 type RelayMonitorBootstrapBeacon struct {
 	Wrapper   string `json:"wrapper"`
 	ExpiresAt int64  `json:"expires_at"`
+}
+
+// RelayMonitorFederationLink is an operator-only observation of one relay mesh
+// edge. It is not a public directory, identity proof, or routing requirement.
+type RelayMonitorFederationLink struct {
+	PeerRelayID  string     `json:"peer_relay_id,omitempty"`
+	PeerEndpoint string     `json:"peer_endpoint"`
+	State        string     `json:"state"`
+	LastLookupAt *time.Time `json:"last_lookup_at,omitempty"`
+	LastReason   string     `json:"last_reason,omitempty"`
+	LookupCount  uint64     `json:"lookup_count"`
+	BridgeCount  int        `json:"bridge_count"`
+	FreshUntil   *time.Time `json:"fresh_until,omitempty"`
 }
 
 // RelayMonitorRegistry stores recent relay observations in memory only. A
@@ -127,6 +142,7 @@ func (registry *RelayMonitorRegistry) Accept(report RelayMonitorReport, now time
 		Stale:           false,
 		Snapshot:        report.Snapshot,
 		BootstrapBeacon: cloneRelayMonitorBootstrapBeacon(report.BootstrapBeacon),
+		Federation:      cloneRelayMonitorFederationLinks(report.Federation),
 	}
 	return nil
 }
@@ -178,6 +194,9 @@ func validateRelayMonitorReport(report RelayMonitorReport) error {
 	if report.BootstrapBeacon != nil && !validRelayMonitorBootstrapBeacon(*report.BootstrapBeacon) {
 		return ErrRelayMonitorInvalidReport
 	}
+	if !validRelayMonitorFederationLinks(report.Federation) {
+		return ErrRelayMonitorInvalidReport
+	}
 	for _, counter := range []int{
 		report.Snapshot.SessionsActive,
 		report.Snapshot.RoutesActive,
@@ -212,6 +231,91 @@ func cloneRelayMonitorBootstrapBeacon(beacon *RelayMonitorBootstrapBeacon) *Rela
 		Wrapper:   beacon.Wrapper,
 		ExpiresAt: beacon.ExpiresAt,
 	}
+}
+
+func validRelayMonitorFederationLinks(links []RelayMonitorFederationLink) bool {
+	if len(links) > maxRelayMonitorItems {
+		return false
+	}
+	seen := make(map[string]struct{}, len(links))
+	for _, link := range links {
+		if link.PeerRelayID != "" && !validRelayMonitorID(link.PeerRelayID) {
+			return false
+		}
+		if !validRelayMonitorEndpoint(link.PeerEndpoint) {
+			return false
+		}
+		if !validRelayMonitorFederationState(link.State) {
+			return false
+		}
+		if link.LastReason != "" && !validRelayMonitorReason(link.LastReason) {
+			return false
+		}
+		if link.LookupCount > uint64(maxRelayMonitorCounter) || link.BridgeCount < 0 || link.BridgeCount > maxRelayMonitorCounter {
+			return false
+		}
+		if link.LastLookupAt != nil && link.LastLookupAt.IsZero() {
+			return false
+		}
+		if link.FreshUntil != nil && link.FreshUntil.IsZero() {
+			return false
+		}
+		if _, ok := seen[link.PeerEndpoint]; ok {
+			return false
+		}
+		seen[link.PeerEndpoint] = struct{}{}
+	}
+	return true
+}
+
+func validRelayMonitorFederationState(value string) bool {
+	switch value {
+	case "configured", "reachable", "unreachable":
+		return true
+	default:
+		return false
+	}
+}
+
+func validRelayMonitorReason(value string) bool {
+	if !validRelayMonitorText(value, 1, maxRelayMonitorItemLength) {
+		return false
+	}
+	for _, char := range value {
+		if unicode.IsLetter(char) || unicode.IsDigit(char) || char == '_' || char == '-' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func cloneRelayMonitorFederationLinks(links []RelayMonitorFederationLink) []RelayMonitorFederationLink {
+	if len(links) == 0 {
+		return nil
+	}
+	cloned := make([]RelayMonitorFederationLink, 0, len(links))
+	for _, link := range links {
+		cloned = append(cloned, RelayMonitorFederationLink{
+			PeerRelayID:  link.PeerRelayID,
+			PeerEndpoint: link.PeerEndpoint,
+			State:        link.State,
+			LastLookupAt: cloneTimePtr(link.LastLookupAt),
+			LastReason:   link.LastReason,
+			LookupCount:  link.LookupCount,
+			BridgeCount:  link.BridgeCount,
+			FreshUntil:   cloneTimePtr(link.FreshUntil),
+		})
+	}
+	return cloned
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	cloned := value.UTC()
+	return &cloned
 }
 
 func validRelayMonitorID(value string) bool {

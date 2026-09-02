@@ -31,13 +31,18 @@ type RelayMonitorConfig struct {
 }
 
 type relayMonitorReporter struct {
-	config            RelayMonitorConfig
-	provider          admin.SnapshotProvider
-	bootstrapProvider admin.BootstrapBeaconProvider
-	client            *http.Client
+	config             RelayMonitorConfig
+	provider           admin.SnapshotProvider
+	bootstrapProvider  admin.BootstrapBeaconProvider
+	federationProvider relayMonitorFederationProvider
+	client             *http.Client
 }
 
-func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotProvider, bootstrapProvider admin.BootstrapBeaconProvider) (*relayMonitorReporter, error) {
+type relayMonitorFederationProvider interface {
+	FederationLinks() []admin.RelayMonitorFederationLink
+}
+
+func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotProvider, bootstrapProvider admin.BootstrapBeaconProvider, federationProvider relayMonitorFederationProvider) (*relayMonitorReporter, error) {
 	if !config.enabled() {
 		return nil, nil
 	}
@@ -58,9 +63,10 @@ func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotP
 		config.Interval = minRelayMonitorInterval
 	}
 	return &relayMonitorReporter{
-		config:            config,
-		provider:          provider,
-		bootstrapProvider: bootstrapProvider,
+		config:             config,
+		provider:           provider,
+		bootstrapProvider:  bootstrapProvider,
+		federationProvider: federationProvider,
 		client: &http.Client{
 			Timeout: relayMonitorPostTimeout,
 		},
@@ -96,6 +102,7 @@ func (reporter *relayMonitorReporter) reportOnce(ctx context.Context) {
 		ReportedAt:      time.Now().UTC(),
 		Snapshot:        reporter.provider.Snapshot(),
 		BootstrapBeacon: reporter.bootstrapBeacon(),
+		Federation:      reporter.federationLinks(),
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
@@ -120,6 +127,13 @@ func (reporter *relayMonitorReporter) reportOnce(ctx context.Context) {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		slog.Warn("relay.monitor.report.failed", "reason", "unexpected_status", "status", response.StatusCode)
 	}
+}
+
+func (reporter *relayMonitorReporter) federationLinks() []admin.RelayMonitorFederationLink {
+	if reporter.federationProvider == nil {
+		return nil
+	}
+	return reporter.federationProvider.FederationLinks()
 }
 
 func (reporter *relayMonitorReporter) bootstrapBeacon() *admin.RelayMonitorBootstrapBeacon {

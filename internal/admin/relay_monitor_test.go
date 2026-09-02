@@ -32,6 +32,9 @@ func TestRelayMonitorRegistryListsFreshAndStaleObservations(t *testing.T) {
 	if fresh[0].BootstrapBeacon == nil || fresh[0].BootstrapBeacon.Wrapper != "BRANCH0.relay01" {
 		t.Fatalf("missing bootstrap beacon: %+v", fresh[0].BootstrapBeacon)
 	}
+	if len(fresh[0].Federation) != 1 || fresh[0].Federation[0].PeerEndpoint != "wss://relay02.undoo.ru:443/relay/v0" {
+		t.Fatalf("missing federation link: %+v", fresh[0].Federation)
+	}
 
 	stale := registry.List(now.Add(11 * time.Second))
 	if len(stale) != 1 {
@@ -72,6 +75,16 @@ func TestRelayMonitorRegistryRejectsUnboundedReports(t *testing.T) {
 		Wrapper:   "BRANCH0.not valid",
 		ExpiresAt: 1800000000,
 	}
+	err = registry.Accept(report, time.Now())
+	if err != ErrRelayMonitorInvalidReport {
+		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
+	}
+
+	report = validRelayMonitorReport()
+	report.Federation = []RelayMonitorFederationLink{{
+		PeerEndpoint: "wss://relay02.undoo.ru:443/relay/v0",
+		State:        "plaintext_payload_dump",
+	}}
 	err = registry.Accept(report, time.Now())
 	if err != ErrRelayMonitorInvalidReport {
 		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
@@ -177,6 +190,13 @@ func validRelayMonitorReport() RelayMonitorReport {
 			Wrapper:   "BRANCH0.relay01",
 			ExpiresAt: 1800000000,
 		},
+		Federation: []RelayMonitorFederationLink{{
+			PeerEndpoint: "wss://relay02.undoo.ru:443/relay/v0",
+			State:        "configured",
+			LastReason:   "not_probed",
+			LookupCount:  0,
+			BridgeCount:  0,
+		}},
 		Snapshot: StatusSnapshot{
 			ServiceName:      "branch-node",
 			ServiceVersion:   "0.0.0-test",

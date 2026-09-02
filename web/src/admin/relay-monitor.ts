@@ -22,11 +22,23 @@ export interface RelayMonitorObservation {
   readonly stale: boolean;
   readonly snapshot: RelayMonitorSnapshot;
   readonly bootstrap_beacon?: RelayMonitorBootstrapBeacon;
+  readonly federation?: readonly RelayMonitorFederationLink[];
 }
 
 export interface RelayMonitorBootstrapBeacon {
   readonly wrapper: string;
   readonly expires_at: number;
+}
+
+export interface RelayMonitorFederationLink {
+  readonly peer_relay_id?: string;
+  readonly peer_endpoint: string;
+  readonly state: "configured" | "reachable" | "unreachable";
+  readonly last_lookup_at?: string;
+  readonly last_reason?: string;
+  readonly lookup_count: number;
+  readonly bridge_count: number;
+  readonly fresh_until?: string;
 }
 
 export interface FetchRelayMonitorOptions {
@@ -87,7 +99,8 @@ function isRelayMonitorObservation(value: unknown): value is RelayMonitorObserva
     isISOTime(value["expires_at"]) &&
     typeof value["stale"] === "boolean" &&
     isRelayMonitorSnapshot(value["snapshot"]) &&
-    (value["bootstrap_beacon"] === undefined || isRelayMonitorBootstrapBeacon(value["bootstrap_beacon"]));
+    (value["bootstrap_beacon"] === undefined || isRelayMonitorBootstrapBeacon(value["bootstrap_beacon"])) &&
+    (value["federation"] === undefined || isRelayMonitorFederationArray(value["federation"]));
 }
 
 function isRelayMonitorBootstrapBeacon(value: unknown): value is RelayMonitorBootstrapBeacon {
@@ -97,6 +110,28 @@ function isRelayMonitorBootstrapBeacon(value: unknown): value is RelayMonitorBoo
     typeof value["expires_at"] === "number" &&
     Number.isSafeInteger(value["expires_at"]) &&
     value["expires_at"] > 0;
+}
+
+function isRelayMonitorFederationArray(value: unknown): value is readonly RelayMonitorFederationLink[] {
+  return Array.isArray(value) &&
+    value.length <= 16 &&
+    value.every(isRelayMonitorFederationLink);
+}
+
+function isRelayMonitorFederationLink(value: unknown): value is RelayMonitorFederationLink {
+  return isRecord(value) &&
+    (value["peer_relay_id"] === undefined || isSafeText(value["peer_relay_id"], 1, 64)) &&
+    isSafeText(value["peer_endpoint"], 1, maxTextLength) &&
+    isFederationState(value["state"]) &&
+    (value["last_lookup_at"] === undefined || isISOTime(value["last_lookup_at"])) &&
+    (value["last_reason"] === undefined || isSafeText(value["last_reason"], 1, 96)) &&
+    isSafeCounter(value["lookup_count"]) &&
+    isSafeCounter(value["bridge_count"]) &&
+    (value["fresh_until"] === undefined || isISOTime(value["fresh_until"]));
+}
+
+function isFederationState(value: unknown): value is RelayMonitorFederationLink["state"] {
+  return value === "configured" || value === "reachable" || value === "unreachable";
 }
 
 function isRelayMonitorSnapshot(value: unknown): value is RelayMonitorSnapshot {

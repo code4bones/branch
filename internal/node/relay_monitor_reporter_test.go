@@ -14,7 +14,7 @@ import (
 )
 
 func TestRelayMonitorReporterDisabledWhenUnconfigured(t *testing.T) {
-	reporter, err := newRelayMonitorReporter(RelayMonitorConfig{}, staticNodeStatusProvider{}, nil)
+	reporter, err := newRelayMonitorReporter(RelayMonitorConfig{}, staticNodeStatusProvider{}, nil, nil)
 	if err != nil {
 		t.Fatalf("reporter error = %v", err)
 	}
@@ -24,7 +24,7 @@ func TestRelayMonitorReporterDisabledWhenUnconfigured(t *testing.T) {
 }
 
 func TestRelayMonitorReporterRejectsPartialConfig(t *testing.T) {
-	_, err := newRelayMonitorReporter(RelayMonitorConfig{RelayID: "relay01"}, staticNodeStatusProvider{}, nil)
+	_, err := newRelayMonitorReporter(RelayMonitorConfig{RelayID: "relay01"}, staticNodeStatusProvider{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected partial config error")
 	}
@@ -62,7 +62,12 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 	}}, staticNodeBootstrapProvider{response: admin.BootstrapBeaconResponse{
 		Wrapper:   "BRANCH0.relay01",
 		ExpiresAt: 1800000000,
-	}})
+	}}, staticNodeFederationProvider{links: []admin.RelayMonitorFederationLink{{
+		PeerEndpoint: "wss://relay02.undoo.ru:443/relay/v0",
+		State:        "configured",
+		LookupCount:  0,
+		BridgeCount:  0,
+	}}})
 	if err != nil {
 		t.Fatalf("reporter error = %v", err)
 	}
@@ -82,6 +87,9 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 		}
 		if report.BootstrapBeacon.Wrapper != "BRANCH0.relay01" || report.BootstrapBeacon.ExpiresAt != 1800000000 {
 			t.Fatalf("unexpected bootstrap beacon: %+v", report.BootstrapBeacon)
+		}
+		if len(report.Federation) != 1 || report.Federation[0].PeerEndpoint != "wss://relay02.undoo.ru:443/relay/v0" {
+			t.Fatalf("unexpected federation links: %+v", report.Federation)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("report not posted")
@@ -124,6 +132,14 @@ func (provider staticNodeStatusProvider) Snapshot() admin.StatusSnapshot {
 type staticNodeBootstrapProvider struct {
 	response admin.BootstrapBeaconResponse
 	err      error
+}
+
+type staticNodeFederationProvider struct {
+	links []admin.RelayMonitorFederationLink
+}
+
+func (provider staticNodeFederationProvider) FederationLinks() []admin.RelayMonitorFederationLink {
+	return provider.links
 }
 
 func (provider staticNodeBootstrapProvider) BootstrapBeacon(request admin.BootstrapBeaconRequest) (admin.BootstrapBeaconResponse, error) {

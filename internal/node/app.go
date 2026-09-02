@@ -116,7 +116,7 @@ func New(config Config) (*App, error) {
 			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
 		})),
 	)
-	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider)
+	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: peerRouter})
 	if err != nil {
 		return nil, err
 	}

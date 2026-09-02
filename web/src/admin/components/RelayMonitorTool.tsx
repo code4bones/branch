@@ -1,6 +1,6 @@
 import { DownloadOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
 import { Button, Input, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { downloadBytes } from "../browser-files.js";
 import { githubBundleFilenameForRelay } from "../defaults.js";
@@ -133,6 +133,12 @@ export function RelayMonitorTool(): React.JSX.Element {
       render: (_, row) => row.observation === null ? "-" : counterText(row.observation)
     },
     {
+      title: "Federation",
+      key: "federation",
+      sorter: (left, right) => federationRank(left.observation) - federationRank(right.observation),
+      render: (_, row) => federationText(row.observation)
+    },
+    {
       title: "Build",
       key: "build",
       sorter: (left, right) => buildText(left.observation).localeCompare(buildText(right.observation)),
@@ -213,7 +219,7 @@ export function RelayMonitorTool(): React.JSX.Element {
           pagination={{ pageSize: 8, showSizeChanger: true }}
           rowClassName={(row) => row.observation === null ? "is-missing" : ""}
           rowKey="id"
-          scroll={{ x: 1120 }}
+          scroll={{ x: 1320 }}
           size="small"
         />
       </section>
@@ -254,7 +260,8 @@ function filterRows(rows: readonly RelayInventoryRow[], query: string): readonly
     endpointText(row),
     readinessText(row.observation),
     row.observation === null ? "missing" : row.observation.stale ? "stale" : "fresh",
-    buildText(row.observation)
+    buildText(row.observation),
+    federationSearchText(row.observation)
   ].some((value) => value.toLowerCase().includes(needle)));
 }
 
@@ -290,6 +297,63 @@ function counterText(observation: RelayMonitorObservation): string {
     `presence ${String(observation.snapshot.presence_active)}`,
     `queue ${String(observation.snapshot.queue_depth)}`
   ].join(" / ");
+}
+
+function federationText(observation: RelayMonitorObservation | null): ReactNode {
+  const links = observation?.federation ?? [];
+  if (links.length === 0) {
+    return "-";
+  }
+  return (
+    <Space wrap size={[4, 4]}>
+      {links.map((link) => (
+        <Tag key={link.peer_endpoint} color={federationColor(link.state)}>
+          {federationShortEndpoint(link.peer_endpoint)} {link.state}{link.last_reason === undefined ? "" : ` / ${link.last_reason}`}
+        </Tag>
+      ))}
+    </Space>
+  );
+}
+
+function federationSearchText(observation: RelayMonitorObservation | null): string {
+  return (observation?.federation ?? [])
+    .map((link) => [
+      link.peer_relay_id ?? "",
+      link.peer_endpoint,
+      link.state,
+      link.last_reason ?? ""
+    ].join(" "))
+    .join(" ");
+}
+
+function federationRank(observation: RelayMonitorObservation | null): number {
+  const links = observation?.federation ?? [];
+  if (links.some((link) => link.state === "reachable")) {
+    return 2;
+  }
+  if (links.some((link) => link.state === "unreachable")) {
+    return 1;
+  }
+  return 0;
+}
+
+function federationColor(state: "configured" | "reachable" | "unreachable"): string {
+  switch (state) {
+    case "reachable":
+      return "green";
+    case "unreachable":
+      return "red";
+    case "configured":
+      return "blue";
+  }
+}
+
+function federationShortEndpoint(endpoint: string): string {
+  try {
+    return new URL(endpoint).hostname;
+  } catch {
+    return endpoint;
+  }
 }
 
 function endpointText(row: RelayInventoryRow): string {

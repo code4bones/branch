@@ -1,0 +1,301 @@
+package v0
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"unicode/utf8"
+)
+
+const (
+	maxDecodedCBOREntries = 64
+	maxDecodedCBORBytes   = 48 * 1024
+)
+
+var (
+	errInvalidCBOR      = errors.New("invalid cbor")
+	errNonCanonicalCBOR = errors.New("non-canonical cbor")
+)
+
+func decodeDeterministicCBOR(input []byte) (any, error) {
+	if len(input) == 0 || len(input) > MaxDraftEnvelopeBytes {
+		return nil, errInvalidCBOR
+	}
+	decoder := cborDecoder{input: input}
+	value, err := decoder.readValue()
+	if err != nil {
+		return nil, err
+	}
+	if decoder.offset != len(input) {
+		return nil, errInvalidCBOR
+	}
+	encoded, err := encodeCbor(value)
+	if err != nil {
+		return nil, errInvalidCBOR
+	}
+	if !bytes.Equal(encoded, input) {
+		return nil, errNonCanonicalCBOR
+	}
+	return value, nil
+}
+
+type cborDecoder struct {
+	input  []byte
+	offset int
+}
+
+func (decoder *cborDecoder) readValue() (any, error) {
+	initial, err := decoder.readByte()
+	if err != nil {
+		return nil, err
+	}
+	major := initial >> 5
+	additional := initial & 0x1f
+	argument, err := decoder.readArgument(additional)
+	if err != nil {
+		return nil, err
+	}
+
+	switch major {
+	case 0:
+		return argument, nil
+	case 2:
+		return decoder.readByteString(argument)
+	case 3:
+		return decoder.readTextString(argument)
+	case 4:
+		return decoder.readArray(argument)
+	case 5:
+		return decoder.readMap(argument)
+	default:
+		return nil, errInvalidCBOR
+	}
+}
+
+func (decoder *cborDecoder) readArgument(additional byte) (uint64, error) {
+	switch {
+	case additional < 24:
+		return uint64(additional), nil
+	case additional == 24:
+		value, err := decoder.readByte()
+		if err != nil {
+			return 0, err
+		}
+		if value < 24 {
+			return 0, errNonCanonicalCBOR
+		}
+		return uint64(value), nil
+	case additional == 25:
+		value, err := decoder.readUint(2)
+		if err != nil {
+			return 0, err
+		}
+		if value <= 0xff {
+			return 0, errNonCanonicalCBOR
+		}
+		return value, nil
+	case additional == 26:
+		value, err := decoder.readUint(4)
+		if err != nil {
+			return 0, err
+		}
+		if value <= 0xffff {
+			return 0, errNonCanonicalCBOR
+		}
+		return value, nil
+	case additional == 27:
+		value, err := decoder.readUint(8)
+		if err != nil {
+			return 0, err
+		}
+		if value <= 0xffffffff {
+			return 0, errNonCanonicalCBOR
+		}
+		return value, nil
+	default:
+		return 0, errInvalidCBOR
+	}
+}
+
+func (decoder *cborDecoder) readByteString(size uint64) ([]byte, error) {
+	if size == 0 || size > maxDecodedCBORBytes {
+		return nil, errInvalidCBOR
+	}
+	data, err := decoder.readBytes(size)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), data...), nil
+}
+
+func (decoder *cborDecoder) readTextString(size uint64) (string, error) {
+	if size == 0 || size > MaxDraftStringBytes {
+		return "", errInvalidCBOR
+	}
+	data, err := decoder.readBytes(size)
+	if err != nil {
+		return "", err
+	}
+	if !utf8.Valid(data) {
+		return "", errInvalidCBOR
+	}
+	return string(data), nil
+}
+
+func (decoder *cborDecoder) readArray(size uint64) (cborArrayValue, error) {
+	if size > maxDecodedCBOREntries {
+		return cborArrayValue{}, errInvalidCBOR
+	}
+	values := make([]any, 0, int(size))
+	for range size {
+		value, err := decoder.readValue()
+		if err != nil {
+			return cborArrayValue{}, err
+		}
+		values = append(values, value)
+	}
+	return cborArrayValue{values: values}, nil
+}
+
+func (decoder *cborDecoder) readMap(size uint64) (cborMapValue, error) {
+	if size > maxDecodedCBOREntries {
+		return cborMapValue{}, errInvalidCBOR
+	}
+	entries := make([]cborEntry, 0, int(size))
+	seen := make(map[string]struct{}, int(size))
+	var previousKey []byte
+	for range size {
+		keyOffset := decoder.offset
+		keyValue, err := decoder.readValue()
+		if err != nil {
+			return cborMapValue{}, err
+		}
+		key, ok := keyValue.(string)
+		if !ok {
+			return cborMapValue{}, errInvalidCBOR
+		}
+		if _, ok := seen[key]; ok {
+			return cborMapValue{}, errInvalidCBOR
+		}
+		seen[key] = struct{}{}
+		encodedKey := decoder.input[keyOffset:decoder.offset]
+		if previousKey != nil && bytes.Compare(previousKey, encodedKey) >= 0 {
+			return cborMapValue{}, errNonCanonicalCBOR
+		}
+		previousKey = append(previousKey[:0], encodedKey...)
+
+		value, err := decoder.readValue()
+		if err != nil {
+			return cborMapValue{}, err
+		}
+		entries = append(entries, cborEntry{key: key, value: value})
+	}
+	return cborMapValue{entries: entries}, nil
+}
+
+func (decoder *cborDecoder) readUint(size int) (uint64, error) {
+	data, err := decoder.readBytes(uint64(size))
+	if err != nil {
+		return 0, err
+	}
+	var value uint64
+	for _, item := range data {
+		value = (value << 8) | uint64(item)
+	}
+	return value, nil
+}
+
+func (decoder *cborDecoder) readByte() (byte, error) {
+	data, err := decoder.readBytes(1)
+	if err != nil {
+		return 0, err
+	}
+	return data[0], nil
+}
+
+func (decoder *cborDecoder) readBytes(size uint64) ([]byte, error) {
+	if size > uint64(len(decoder.input)-decoder.offset) {
+		return nil, errInvalidCBOR
+	}
+	start := decoder.offset
+	decoder.offset += int(size)
+	return decoder.input[start:decoder.offset], nil
+}
+
+func cborMap(value any, label string) (cborMapValue, error) {
+	mapValue, ok := value.(cborMapValue)
+	if !ok {
+		return cborMapValue{}, fmt.Errorf("missing_%s", label)
+	}
+	return mapValue, nil
+}
+
+func cborRequired(mapValue cborMapValue, key string) (any, error) {
+	for _, entry := range mapValue.entries {
+		if entry.key == key {
+			return entry.value, nil
+		}
+	}
+	return nil, fmt.Errorf("missing_%s", key)
+}
+
+func cborHas(mapValue cborMapValue, key string) bool {
+	for _, entry := range mapValue.entries {
+		if entry.key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func cborRejectUnknown(mapValue cborMapValue, known []string) error {
+	allowed := make(map[string]struct{}, len(known))
+	for _, key := range known {
+		allowed[key] = struct{}{}
+	}
+	for _, entry := range mapValue.entries {
+		if _, ok := allowed[entry.key]; !ok {
+			return fmt.Errorf("unknown_%s", entry.key)
+		}
+	}
+	return nil
+}
+
+func cborText(mapValue cborMapValue, key string) (string, error) {
+	value, err := cborRequired(mapValue, key)
+	if err != nil {
+		return "", err
+	}
+	text, ok := value.(string)
+	if !ok || text == "" || len([]byte(text)) > MaxDraftStringBytes {
+		return "", fmt.Errorf("invalid_%s", key)
+	}
+	return text, nil
+}
+
+func cborUint(mapValue cborMapValue, key string) (uint64, error) {
+	value, err := cborRequired(mapValue, key)
+	if err != nil {
+		return 0, err
+	}
+	number, ok := value.(uint64)
+	if !ok || number > MaxDraftTimestamp {
+		return 0, fmt.Errorf("invalid_%s", key)
+	}
+	return number, nil
+}
+
+func cborBytes(mapValue cborMapValue, key string, size int) ([]byte, error) {
+	value, err := cborRequired(mapValue, key)
+	if err != nil {
+		return nil, err
+	}
+	bytesValue, ok := value.([]byte)
+	if !ok || len(bytesValue) == 0 || len(bytesValue) > maxDecodedCBORBytes {
+		return nil, fmt.Errorf("invalid_%s", key)
+	}
+	if size > 0 && len(bytesValue) != size {
+		return nil, fmt.Errorf("invalid_%s", key)
+	}
+	return append([]byte(nil), bytesValue...), nil
+}

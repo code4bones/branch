@@ -260,6 +260,12 @@ func (hub *Hub) Lookup(peerID PeerID, now time.Time) (Presence, bool) {
 	return hub.lookupLocked(peerID, now)
 }
 
+// PresenceTTL returns the configured live presence lifetime for diagnostics and
+// adapters that need to report freshness without mutating hub state.
+func (hub *Hub) PresenceTTL() time.Duration {
+	return hub.config.PresenceTTL
+}
+
 // Rendezvous pairs requester with the currently live target peer.
 func (session *Session) Rendezvous(routeID RouteID, peerID PeerID, now time.Time) error {
 	return session.hub.rendezvous(session.id, routeID, peerID, now)
