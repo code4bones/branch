@@ -51,6 +51,9 @@ Relay VPS prerequisites:
 
 - Docker CLI/daemon and Docker Compose v2, or legacy `docker-compose`.
 - `curl`.
+- Read access to `/etc/ssl/certs/ca-certificates.crt`; the deploy script copies
+  this host CA bundle into the scratch `branch-node` image so building the relay
+  image does not need to pull an Alpine certificate stage from Docker Hub.
 - If the runner is not root, the `gitlab-runner` user can reach Docker directly
   through the `docker` group, or it can run passwordless `sudo docker`.
 - If the runner is root or has passwordless sudo, runtime files are installed
@@ -206,7 +209,9 @@ Optional variables:
 3. `build:branch-node` builds `linux/amd64` and `linux/arm64` binaries on
    `branch_lc` in Docker and keeps artifacts for one day.
 4. `deploy:relay01`, `deploy:relay02`, `deploy:relay04`, and `deploy:relay05`
-   run automatically on the configured runner tags.
+   run automatically on the configured runner tags. Jobs sharing one Docker host
+   are serialized with CI `resource_group` locks and retried twice for transient
+   runner/network failures.
 5. Each deploy job writes `<deploy-base>/<relay>/`, starts the compose
    project, checks `/readyz`, and creates relay beacon artifacts.
 6. Cleanup jobs run automatically after deploy on each runner host.

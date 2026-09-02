@@ -64,6 +64,8 @@ build:branch-node:
     expire_in: 1 day
     paths:
       - relay-artifacts/
+  retry:
+    max: 2
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: on_success
@@ -73,6 +75,7 @@ deploy:relay01:
   extends: .deploy_branch_node
   tags:
     - branch_nd
+  resource_group: branch-nd-relays
   variables:
     BRANCH_RELAY_NAME: relay01
     BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY01
@@ -85,6 +88,7 @@ deploy:relay02:
   extends: .deploy_branch_node
   tags:
     - branch_nd
+  resource_group: branch-nd-relays
   variables:
     BRANCH_RELAY_NAME: relay02
     BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY02
@@ -97,6 +101,7 @@ deploy:relay04:
   extends: .deploy_branch_node
   tags:
     - branch_lc
+  resource_group: branch-lc-relays
   variables:
     BRANCH_RELAY_NAME: relay04
     BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY04
@@ -109,6 +114,7 @@ deploy:relay05:
   extends: .deploy_branch_node
   tags:
     - branch_lc
+  resource_group: branch-lc-relays
   variables:
     BRANCH_RELAY_NAME: relay05
     BRANCH_RELAY_ENV_PREFIX: BRANCH_RELAY05
@@ -134,18 +140,22 @@ cleanup:relay01:
   extends: .cleanup_docker
   tags:
     - branch_nd
+  resource_group: branch-nd-relays
 
 cleanup:relay02:
   extends: .cleanup_docker
   tags:
     - branch_nd
+  resource_group: branch-nd-relays
 
 cleanup:relay04:
   extends: .cleanup_docker
   tags:
     - branch_lc
+  resource_group: branch-lc-relays
 
 cleanup:relay05:
   extends: .cleanup_docker
   tags:
     - branch_lc
+  resource_group: branch-lc-relays

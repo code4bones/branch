@@ -20,6 +20,11 @@ require_command() {
 require_var BRANCH_RELAY_NAME
 require_command curl
 require_command docker
+cert_bundle="/etc/ssl/certs/ca-certificates.crt"
+if [ ! -r "$cert_bundle" ]; then
+  printf 'required CA bundle is missing or unreadable: %s\n' "$cert_bundle" >&2
+  exit 2
+fi
 if [ "$(id -u)" = "0" ]; then
   SUDO=()
   INSTALL_OWNER_ARGS=(-o root -g root)
@@ -168,6 +173,7 @@ fi
 "${SUDO[@]}" install -m 0644 "${INSTALL_OWNER_ARGS[@]}" deployments/docker/branch-node.Dockerfile "${BRANCH_DEPLOY_DIR}/branch-node.Dockerfile"
 "${SUDO[@]}" install -m 0644 "${INSTALL_OWNER_ARGS[@]}" deployments/docker/compose.yml "${BRANCH_DEPLOY_DIR}/compose.yml"
 "${SUDO[@]}" install -m 0644 "${INSTALL_OWNER_ARGS[@]}" deployments/docker/nginx.conf "${BRANCH_DEPLOY_DIR}/nginx.conf"
+"${SUDO[@]}" install -m 0644 "${INSTALL_OWNER_ARGS[@]}" "$cert_bundle" "${BRANCH_DEPLOY_DIR}/ca-certificates.crt"
 
 compose_env_file="$(mktemp)"
 trap 'rm -f "$compose_env_file"' EXIT
