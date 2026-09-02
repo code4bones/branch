@@ -376,6 +376,8 @@ void test("admin css remains dark and bounded", async () => {
   assert.match(source, /color: var\(--admin-ink\)/);
   assert.match(source, /\.admin-layout \{[\s\S]*display: flex;/);
   assert.match(source, /\.admin-main \{[\s\S]*flex: 1 1 auto;/);
+  assert.match(source, /\.admin-header \{[\s\S]*min-height: 64px;/);
+  assert.match(source, /\.admin-page-title \{[\s\S]*font-size: 1\.28rem;/);
   assert.match(source, /\.control-panel > label/);
   assert.match(source, /border-radius: 8px/);
   assert.match(source, /overflow-wrap: anywhere/);

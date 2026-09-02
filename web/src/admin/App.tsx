@@ -121,10 +121,7 @@ function AdminShell(): React.JSX.Element {
 
       <Layout className="admin-main">
         <Layout.Header className="admin-header">
-          <div>
-            <Typography.Text className="kicker">B.R.A.N.C.H. operator console</Typography.Text>
-            <Typography.Title id="admin-title" level={2}>{titleForRoute(activeRoute)}</Typography.Title>
-          </div>
+          <Typography.Title className="admin-page-title" id="admin-title" level={3}>{titleForRoute(activeRoute)}</Typography.Title>
           <Space className="admin-nav" wrap aria-label="Admin navigation">
             <Button href="/" icon={<HomeOutlined />}>Status</Button>
             <Button href="/admin/ribbon" type="primary">Admin</Button>
