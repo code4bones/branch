@@ -48,6 +48,7 @@ export interface EchoTestServiceOptions {
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
   readonly heartbeatIntervalMs?: number;
+  readonly handshakeTimeoutMs?: number;
   readonly onEvent?: (event: EchoServiceEvent) => void;
 }
 
@@ -57,6 +58,7 @@ export interface MultiRouteEchoTestServiceOptions {
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
   readonly heartbeatIntervalMs?: number;
+  readonly handshakeTimeoutMs?: number;
   readonly onEvent?: (event: MultiRouteEchoServiceEvent) => void;
 }
 
@@ -112,6 +114,7 @@ interface WireEchoRequestPayload {
 }
 
 const defaultEchoHeartbeatIntervalMs = 10_000;
+const defaultEchoHandshakeTimeoutMs = 10_000;
 const maxEchoRouteWrappers = 64;
 const maxEchoRoutes = 32;
 const maxEchoBodyBytes = 3_072;
@@ -255,6 +258,7 @@ export class MultiRouteEchoTestService {
   private readonly socketFactory: BrowserRelaySocketFactory | undefined;
   private readonly crypto: Crypto | undefined;
   private readonly heartbeatIntervalMs: number | undefined;
+  private readonly handshakeTimeoutMs: number | undefined;
   private readonly onEvent: ((event: MultiRouteEchoServiceEvent) => void) | undefined;
   private readonly services = new Map<string, EchoTestService>();
 
@@ -264,6 +268,7 @@ export class MultiRouteEchoTestService {
     this.socketFactory = options.socketFactory;
     this.crypto = options.crypto;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs;
+    this.handshakeTimeoutMs = options.handshakeTimeoutMs;
     this.onEvent = options.onEvent;
   }
 
@@ -273,33 +278,9 @@ export class MultiRouteEchoTestService {
 
   async start(): Promise<MultiRouteEchoStartReport> {
     this.stop();
-    const startedRoutes: RelayRouteMaterial[] = [];
-    const failedRoutes: EchoRouteFailure[] = [];
-
-    for (const route of this.routes) {
-      const service = new EchoTestService({
-        route,
-        keys: this.keys,
-        ...(this.socketFactory === undefined ? {} : { socketFactory: this.socketFactory }),
-        ...(this.crypto === undefined ? {} : { crypto: this.crypto }),
-        ...(this.heartbeatIntervalMs === undefined ? {} : { heartbeatIntervalMs: this.heartbeatIntervalMs }),
-        onEvent: (event) => {
-          this.emit({ type: "route_event", endpointUri: route.endpointUri, event });
-        }
-      });
-      try {
-        await service.start();
-        this.services.set(routeKey(route), service);
-        startedRoutes.push(route);
-        this.emit({ type: "route_started", endpointUri: route.endpointUri, peerId: this.keys.identity.peerId });
-      } catch (error) {
-        service.stop();
-        const message = errorMessage(error);
-        failedRoutes.push({ route, message });
-        this.emit({ type: "route_failed", endpointUri: route.endpointUri, message });
-      }
-    }
-
+    const results = await Promise.all(this.routes.map((route) => this.startRoute(route)));
+    const startedRoutes = results.flatMap((result) => result.started === null ? [] : [result.started]);
+    const failedRoutes = results.flatMap((result) => result.failed === null ? [] : [result.failed]);
     return { startedRoutes, failedRoutes };
   }
 
@@ -313,6 +294,35 @@ export class MultiRouteEchoTestService {
   private emit(event: MultiRouteEchoServiceEvent): void {
     this.onEvent?.(event);
   }
+
+  private async startRoute(route: RelayRouteMaterial): Promise<{
+    readonly started: RelayRouteMaterial | null;
+    readonly failed: EchoRouteFailure | null;
+  }> {
+    const service = new EchoTestService({
+      route,
+      keys: this.keys,
+      ...(this.socketFactory === undefined ? {} : { socketFactory: this.socketFactory }),
+      ...(this.crypto === undefined ? {} : { crypto: this.crypto }),
+      ...(this.heartbeatIntervalMs === undefined ? {} : { heartbeatIntervalMs: this.heartbeatIntervalMs }),
+      ...(this.handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs: this.handshakeTimeoutMs }),
+      onEvent: (event) => {
+        this.emit({ type: "route_event", endpointUri: route.endpointUri, event });
+      }
+    });
+    try {
+      await service.start();
+      this.services.set(routeKey(route), service);
+      this.emit({ type: "route_started", endpointUri: route.endpointUri, peerId: this.keys.identity.peerId });
+      return { started: route, failed: null };
+    } catch (error) {
+      service.stop();
+      const message = errorMessage(error);
+      const failed = { route, message } satisfies EchoRouteFailure;
+      this.emit({ type: "route_failed", endpointUri: route.endpointUri, message });
+      return { started: null, failed };
+    }
+  }
 }
 
 export class EchoTestService {
@@ -321,6 +331,7 @@ export class EchoTestService {
   private readonly socketFactory: BrowserRelaySocketFactory | undefined;
   private readonly crypto: Crypto | undefined;
   private readonly heartbeatIntervalMs: number;
+  private readonly handshakeTimeoutMs: number;
   private readonly onEvent: ((event: EchoServiceEvent) => void) | undefined;
   private client: SameRelayTransportClient | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -332,6 +343,7 @@ export class EchoTestService {
     this.socketFactory = options.socketFactory;
     this.crypto = options.crypto;
     this.heartbeatIntervalMs = boundedHeartbeatInterval(options.heartbeatIntervalMs ?? defaultEchoHeartbeatIntervalMs);
+    this.handshakeTimeoutMs = boundedHandshakeTimeout(options.handshakeTimeoutMs ?? defaultEchoHandshakeTimeoutMs);
     this.onEvent = options.onEvent;
   }
 
@@ -341,7 +353,8 @@ export class EchoTestService {
       route: this.route,
       identity: this.keys.identity,
       ...(this.socketFactory === undefined ? {} : { socketFactory: this.socketFactory }),
-      ...(this.crypto === undefined ? {} : { crypto: this.crypto })
+      ...(this.crypto === undefined ? {} : { crypto: this.crypto }),
+      handshakeTimeoutMs: this.handshakeTimeoutMs
     });
     this.client = client;
     this.unsubscribe = client.addEventListener((event) => {
@@ -440,6 +453,13 @@ function boundedHeartbeatInterval(value: number): number {
     return defaultEchoHeartbeatIntervalMs;
   }
   return Math.max(1_000, Math.min(60_000, Math.trunc(value)));
+}
+
+function boundedHandshakeTimeout(value: number): number {
+  if (!Number.isFinite(value)) {
+    return defaultEchoHandshakeTimeoutMs;
+  }
+  return Math.max(1_000, Math.min(30_000, Math.trunc(value)));
 }
 
 function validateBase64URLKey(value: string, name: string): void {

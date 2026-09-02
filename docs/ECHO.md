@@ -47,6 +47,8 @@ The runner reads:
   fallback.
 - `BRANCH_ECHO_PROFILE_MULTIHASH`: optional profile hash override.
 - `BRANCH_ECHO_HEARTBEAT_INTERVAL_MS`: optional heartbeat interval.
+- `BRANCH_ECHO_ATTACH_TIMEOUT_MS`: optional per-route attach timeout. A slow
+  or unavailable route fails independently and does not block other routes.
 
 Run from `packages/branch-core`:
 

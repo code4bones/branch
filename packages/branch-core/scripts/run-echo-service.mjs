@@ -14,6 +14,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultKeysPath = resolve(scriptDir, "../../../.runtime/branch-echo.local.json");
 const keysPath = process.env.BRANCH_ECHO_KEYS ?? defaultKeysPath;
 const heartbeatIntervalMs = Number(process.env.BRANCH_ECHO_HEARTBEAT_INTERVAL_MS ?? "10000");
+const handshakeTimeoutMs = Number(process.env.BRANCH_ECHO_ATTACH_TIMEOUT_MS ?? "5000");
 
 const keys = await importBetaEchoServiceKeys(JSON.parse(await readFile(keysPath, "utf8")));
 const routes = await loadRoutes();
@@ -21,6 +22,7 @@ const service = new MultiRouteEchoTestService({
   routes,
   keys,
   heartbeatIntervalMs,
+  handshakeTimeoutMs,
   onEvent: (event) => {
     console.log(JSON.stringify(redactedEvent(event)));
   }
