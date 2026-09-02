@@ -55,6 +55,12 @@ leaves `/node-admin/` and `/relay/v0` outside Basic Auth. `/node-admin/` remains
 protected by the branch-node bearer token, and relay monitor ingestion remains
 protected by the dedicated monitor bearer token.
 
+The React admin shell uses Ant Design 5. The `/admin/` location therefore has a
+path-scoped CSP that permits `style-src 'self' 'unsafe-inline'` for AntD runtime
+style injection. Do not add `unsafe-inline` to `script-src`; the relaxation is
+only for admin presentation styles and does not apply to relay or node-admin
+traffic.
+
 For the local ignored two-line `.basicauth` file:
 
 ~~~text

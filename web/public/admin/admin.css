@@ -99,11 +99,14 @@ label {
 }
 
 .admin-layout {
+  display: flex;
+  align-items: stretch;
   min-height: 100svh;
   background: #0a0d11;
 }
 
 .admin-sider {
+  flex: 0 0 248px;
   min-height: 100svh;
   border-right: 1px solid var(--admin-line);
 }
@@ -140,6 +143,7 @@ label {
 }
 
 .admin-main {
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 100svh;
   background: #0a0d11;
@@ -684,6 +688,14 @@ label {
 }
 
 @media (max-width: 880px) {
+  .admin-layout {
+    display: block;
+  }
+
+  .admin-sider {
+    min-height: auto;
+  }
+
   .admin-workspace {
     padding: 0 14px 32px;
   }
