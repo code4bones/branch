@@ -371,13 +371,6 @@ func (client *federationClient) writeLookup(ctx context.Context, peerID relay.Pe
 	})
 }
 
-func (client *federationClient) rendezvous(ctx context.Context, routeID relay.RouteID, peerID relay.PeerID) error {
-	if err := client.writeRendezvous(ctx, routeID, peerID); err != nil {
-		return err
-	}
-	return client.expectNoErrorFrame(ctx)
-}
-
 func (client *federationClient) writeRendezvous(ctx context.Context, routeID relay.RouteID, peerID relay.PeerID) error {
 	return client.writeTyped(ctx, map[string]any{
 		"type":       "RENDEZVOUS",
