@@ -1,6 +1,7 @@
 package wss
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +49,12 @@ type StaticPeerRouter struct {
 	maxFrameBytes int64
 	dialTimeout   time.Duration
 	writeTimeout  time.Duration
+}
+
+type federationCandidate struct {
+	endpoint       string
+	relayPublicKey []byte
+	priority       int64
 }
 
 // NewStaticPeerRouter creates a beta static relay federation adapter.
@@ -89,24 +97,70 @@ func NewStaticPeerRouter(config StaticPeerRouterConfig) (*StaticPeerRouter, erro
 }
 
 // LookupFederatedPeer probes configured peers for one currently reachable peer.
-func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, _ time.Time) (relay.FederatedForwarder, bool) {
-	for _, endpoint := range router.endpoints {
+func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, _ time.Time) (relay.FederatedForwarder, bool) {
+	var candidates []federationCandidate
+	if len(hints) > 0 {
+		candidates = federationCandidatesFromHints(hints)
+	} else {
+		candidates = router.staticFederationCandidates()
+	}
+	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return nil, false
 		}
-		if router.remotePeerAvailable(ctx, endpoint, peerID) {
+		if router.remotePeerAvailable(ctx, candidate, peerID) {
 			return &federatedWSSForwarder{
-				router:   router,
-				endpoint: endpoint,
-				peerID:   peerID,
+				router:         router,
+				endpoint:       candidate.endpoint,
+				relayPublicKey: candidate.relayPublicKey,
+				peerID:         peerID,
 			}, true
 		}
 	}
 	return nil, false
 }
 
-func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, endpoint string, peerID relay.PeerID) bool {
-	client, err := router.dial(ctx, endpoint)
+func (router *StaticPeerRouter) staticFederationCandidates() []federationCandidate {
+	candidates := make([]federationCandidate, 0, len(router.endpoints))
+	for index, endpoint := range router.endpoints {
+		candidates = append(candidates, federationCandidate{
+			endpoint: endpoint,
+			priority: int64(index),
+		})
+	}
+	return candidates
+}
+
+func federationCandidatesFromHints(hints []FederationRouteHint) []federationCandidate {
+	candidates := make([]federationCandidate, 0, len(hints))
+	for _, hint := range hints {
+		if hint.Endpoint == "" || len(hint.RelayPublicKey) != ed25519.PublicKeySize {
+			continue
+		}
+		endpoint, err := cleanFederationEndpoint(hint.Endpoint)
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, federationCandidate{
+			endpoint:       endpoint,
+			relayPublicKey: append([]byte(nil), hint.RelayPublicKey...),
+			priority:       hint.Priority,
+		})
+	}
+	slices.SortFunc(candidates, func(left, right federationCandidate) int {
+		if left.priority != right.priority {
+			if left.priority < right.priority {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(left.endpoint, right.endpoint)
+	})
+	return candidates
+}
+
+func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, candidate federationCandidate, peerID relay.PeerID) bool {
+	client, err := router.dial(ctx, candidate)
 	if err != nil {
 		return false
 	}
@@ -114,21 +168,22 @@ func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, endpoin
 	return client.lookup(ctx, peerID) == nil
 }
 
-func (router *StaticPeerRouter) dial(parent context.Context, endpoint string) (*federationClient, error) {
+func (router *StaticPeerRouter) dial(parent context.Context, candidate federationCandidate) (*federationClient, error) {
 	ctx, cancel := context.WithTimeout(parent, router.dialTimeout)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, endpoint, nil)
+	conn, _, err := websocket.Dial(ctx, candidate.endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 	conn.SetReadLimit(router.maxFrameBytes)
 	client := &federationClient{
-		conn:          &connection{conn: conn},
-		writeTimeout:  router.writeTimeout,
-		random:        router.random,
-		now:           router.now,
-		maxFrameBytes: router.maxFrameBytes,
-		responses:     make(chan map[string]any, maxFederationResponses),
+		conn:                   &connection{conn: conn},
+		writeTimeout:           router.writeTimeout,
+		random:                 router.random,
+		now:                    router.now,
+		maxFrameBytes:          router.maxFrameBytes,
+		responses:              make(chan map[string]any, maxFederationResponses),
+		expectedRelayPublicKey: append([]byte(nil), candidate.relayPublicKey...),
 	}
 	if err := client.attach(ctx); err != nil {
 		client.close()
@@ -138,13 +193,14 @@ func (router *StaticPeerRouter) dial(parent context.Context, endpoint string) (*
 }
 
 type federatedWSSForwarder struct {
-	router   *StaticPeerRouter
-	endpoint string
-	peerID   relay.PeerID
-	mu       sync.Mutex
-	client   *federationClient
-	routeID  relay.RouteID
-	closed   bool
+	router         *StaticPeerRouter
+	endpoint       string
+	relayPublicKey []byte
+	peerID         relay.PeerID
+	mu             sync.Mutex
+	client         *federationClient
+	routeID        relay.RouteID
+	closed         bool
 }
 
 func (forwarder *federatedWSSForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte) error {
@@ -181,7 +237,10 @@ func (forwarder *federatedWSSForwarder) liveClientLocked(ctx context.Context, ro
 		}
 		return forwarder.client, nil
 	}
-	client, err := forwarder.router.dial(ctx, forwarder.endpoint)
+	client, err := forwarder.router.dial(ctx, federationCandidate{
+		endpoint:       forwarder.endpoint,
+		relayPublicKey: forwarder.relayPublicKey,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -211,14 +270,15 @@ func (forwarder *federatedWSSForwarder) closeLocked() {
 }
 
 type federationClient struct {
-	conn          *connection
-	sessionID     string
-	writeTimeout  time.Duration
-	random        io.Reader
-	now           func() time.Time
-	maxFrameBytes int64
-	responses     chan map[string]any
-	closeOnce     sync.Once
+	conn                   *connection
+	sessionID              string
+	writeTimeout           time.Duration
+	random                 io.Reader
+	now                    func() time.Time
+	maxFrameBytes          int64
+	responses              chan map[string]any
+	closeOnce              sync.Once
+	expectedRelayPublicKey []byte
 }
 
 func (client *federationClient) attach(ctx context.Context) error {
@@ -257,7 +317,7 @@ func (client *federationClient) attach(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := verifyFederationChallenge(helloRaw, challenge); err != nil {
+	if err := verifyFederationChallenge(helloRaw, challenge, client.expectedRelayPublicKey); err != nil {
 		return err
 	}
 	clientPublicKey, err := randomBytes(client.random, 32)
@@ -448,7 +508,7 @@ func readFederationObject(data []byte) (map[string]any, error) {
 	return frame, nil
 }
 
-func verifyFederationChallenge(helloRaw []byte, challenge map[string]any) error {
+func verifyFederationChallenge(helloRaw []byte, challenge map[string]any, expectedRelayPublicKey []byte) error {
 	selected, ok := challenge["selected"].(map[string]any)
 	if !ok {
 		return ErrInvalidFrame
@@ -464,6 +524,9 @@ func verifyFederationChallenge(helloRaw []byte, challenge map[string]any) error 
 	relayPublicKey, err := decodeBase64(challenge["relay_public_key"].(string), 32)
 	if err != nil {
 		return err
+	}
+	if len(expectedRelayPublicKey) > 0 && !bytes.Equal(relayPublicKey, expectedRelayPublicKey) {
+		return ErrInvalidFrame
 	}
 	transcriptHash := challengeTranscriptHash(helloRaw, selected, clientNonce, relayNonce, relayPublicKey)
 	encodedHash, ok := challenge["transcript_hash"].(string)

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -47,7 +48,15 @@ type Config struct {
 // PeerRouter locates a live remote relay path for one peer lookup. It is an
 // adapter boundary for beta federation, not a global presence directory.
 type PeerRouter interface {
-	LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, now time.Time) (relay.FederatedForwarder, bool)
+	LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) (relay.FederatedForwarder, bool)
+}
+
+// FederationRouteHint is a client-discovered relay endpoint candidate for one
+// concrete route attempt. It is not cached as a relay directory.
+type FederationRouteHint struct {
+	Endpoint       string
+	RelayPublicKey []byte
+	Priority       int64
 }
 
 // Handler adapts a live non-durable relay Hub to the /relay/v0 WebSocket
@@ -288,7 +297,7 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 		if _, ok := handler.hub.Lookup(peerID, now); ok {
 			return nil
 		}
-		if forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, now); ok {
+		if forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, nil, now); ok {
 			closeFederatedForwarder(forwarder)
 			return nil
 		}
@@ -296,12 +305,16 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	case "RENDEZVOUS":
 		routeID := relay.RouteID(frame["route_id"].(string))
 		peerID := relay.PeerID(frame["peer_id"].(string))
+		hints, err := routeHintsFromFrame(frame)
+		if err != nil {
+			return err
+		}
 		now := handler.now()
 		if err := session.Rendezvous(routeID, peerID, now); err != nil {
 			if !errors.Is(err, relay.ErrPeerUnavailable) {
 				return err
 			}
-			if federatedErr := handler.announceFederatedPeer(ctx, peerID, now); federatedErr != nil {
+			if federatedErr := handler.announceFederatedPeer(ctx, peerID, hints, now); federatedErr != nil {
 				return err
 			}
 			return session.Rendezvous(routeID, peerID, now)
@@ -321,23 +334,75 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	}
 }
 
-func (handler *Handler) announceFederatedPeer(ctx context.Context, peerID relay.PeerID, now time.Time) error {
-	forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, now)
+func (handler *Handler) announceFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) error {
+	forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, hints, now)
 	if !ok {
 		return relay.ErrPeerUnavailable
 	}
 	return handler.hub.AnnounceFederatedPresence(peerID, forwarder, now)
 }
 
-func (handler *Handler) lookupFederatedPeer(ctx context.Context, peerID relay.PeerID, now time.Time) (relay.FederatedForwarder, bool) {
+func (handler *Handler) lookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) (relay.FederatedForwarder, bool) {
 	if handler.peerRouter == nil {
 		return nil, false
 	}
-	forwarder, ok := handler.peerRouter.LookupFederatedPeer(ctx, peerID, now)
+	forwarder, ok := handler.peerRouter.LookupFederatedPeer(ctx, peerID, hints, now)
 	if !ok {
 		return nil, false
 	}
 	return forwarder, true
+}
+
+func routeHintsFromFrame(frame map[string]any) ([]FederationRouteHint, error) {
+	raw, ok := frame["route_hints"]
+	if !ok {
+		return nil, nil
+	}
+	values, ok := raw.([]any)
+	if !ok || len(values) == 0 || len(values) > maxFederationPeers {
+		return nil, ErrInvalidFrame
+	}
+	hints := make([]FederationRouteHint, 0, len(values))
+	for _, value := range values {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, ErrInvalidFrame
+		}
+		endpoint, ok := object["uri"].(string)
+		if !ok {
+			return nil, ErrInvalidFrame
+		}
+		cleanedEndpoint, err := cleanFederationEndpoint(endpoint)
+		if err != nil {
+			return nil, ErrInvalidFrame
+		}
+		relayPublicKey, ok := object["relay_public_key"].(string)
+		if !ok {
+			return nil, ErrInvalidFrame
+		}
+		key, err := decodeBase64(relayPublicKey, 32)
+		if err != nil {
+			return nil, ErrInvalidFrame
+		}
+		priority, ok := numericField(object["priority"])
+		if !ok {
+			return nil, ErrInvalidFrame
+		}
+		hints = append(hints, FederationRouteHint{
+			Endpoint:       cleanedEndpoint,
+			RelayPublicKey: key,
+			Priority:       priority,
+		})
+	}
+	return hints, nil
+}
+
+func numericField(value any) (int64, bool) {
+	number, ok := value.(float64)
+	if !ok || math.Trunc(number) != number || number < 0 || number > float64(protocol.MaxDraftTimestamp) {
+		return 0, false
+	}
+	return int64(number), true
 }
 
 func closeFederatedForwarder(forwarder relay.FederatedForwarder) {

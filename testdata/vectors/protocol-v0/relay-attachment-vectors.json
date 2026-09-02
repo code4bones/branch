@@ -129,6 +129,25 @@
       }
     },
     {
+      "name": "rendezvous-route-hinted-live-federation",
+      "expect": "accept",
+      "frame": {
+        "type": "RENDEZVOUS",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "route_id": "AAECAwQFBgcICQoLDA0ODw",
+        "peer_id": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+        "sequence": 5,
+        "route_hints": [
+          {
+            "transport": "wss",
+            "uri": "wss://relay02.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 0
+          }
+        ]
+      }
+    },
+    {
       "name": "envelope-opaque-live-forward",
       "expect": "accept",
       "frame": {
@@ -317,6 +336,74 @@
         "sequence": 1,
         "ttl_seconds": 0,
         "sent_at": 1789000001
+      }
+    },
+    {
+      "name": "rendezvous-rejects-too-many-route-hints",
+      "expect": "reject",
+      "reason": "frame_malformed",
+      "frame": {
+        "type": "RENDEZVOUS",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "route_id": "AAECAwQFBgcICQoLDA0ODw",
+        "peer_id": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+        "sequence": 5,
+        "route_hints": [
+          {
+            "transport": "wss",
+            "uri": "wss://relay01.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 0
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay02.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 1
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay03.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 2
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay04.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 3
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay05.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 4
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay06.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 5
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay07.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 6
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay08.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 7
+          },
+          {
+            "transport": "wss",
+            "uri": "wss://relay09.undoo.ru:443/relay/v0",
+            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
+            "priority": 8
+          }
+        ]
       }
     },
     {

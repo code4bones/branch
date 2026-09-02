@@ -5,6 +5,9 @@ import { developmentProfileMultihash } from "./profile.js";
 export const relayAttachmentSchema = "branch.relay-attachment/0.draft" as const;
 export const relayProofDomain = "BRANCH relay attachment v0\n" as const;
 export const maxDraftRelayAttachmentFrameBytes = maxDraftEnvelopeBytes;
+const maxDraftRouteHints = 8;
+const maxDraftRouteHintUriBytes = 512;
+const draftRelayAttachmentPath = "/relay/v0";
 
 const relayFrameTypes = [
   "HELLO",
@@ -191,11 +194,12 @@ function validateLookup(record: Record<string, unknown>): void {
 }
 
 function validateRendezvous(record: Record<string, unknown>): void {
-  rejectUnknownKeys(record, ["type", "session_id", "route_id", "peer_id", "sequence"]);
+  rejectUnknownKeys(record, ["type", "session_id", "route_id", "peer_id", "sequence"], ["route_hints"]);
   readBase64URLBytes(record, "session_id", 32);
   readBase64URLBytes(record, "route_id", 16);
   readBase64URLBytes(record, "peer_id", 32);
   readBoundedInteger(record, "sequence", 0, maxDraftTimestamp);
+  validateRouteHints(record);
 }
 
 function validateEnvelope(record: Record<string, unknown>): void {
@@ -238,8 +242,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function rejectUnknownKeys(record: Record<string, unknown>, keys: readonly string[]): void {
-  const known = new Set(keys);
+function rejectUnknownKeys(record: Record<string, unknown>, keys: readonly string[], optionalKeys: readonly string[] = []): void {
+  const known = new Set([...keys, ...optionalKeys]);
   for (const key of keys) {
     if (!(key in record)) {
       throw new RelayAttachmentError(`missing ${key}`);
@@ -249,6 +253,58 @@ function rejectUnknownKeys(record: Record<string, unknown>, keys: readonly strin
     if (!known.has(key)) {
       throw new RelayAttachmentError(`unknown ${key}`);
     }
+  }
+}
+
+function validateRouteHints(record: Record<string, unknown>): void {
+  if (record.route_hints === undefined) {
+    return;
+  }
+  const hints = record.route_hints;
+  if (!Array.isArray(hints) || hints.length === 0 || hints.length > maxDraftRouteHints) {
+    throw new RelayAttachmentError("invalid route_hints");
+  }
+  const seen = new Set<string>();
+  for (const hint of hints) {
+    if (!isRecord(hint)) {
+      throw new RelayAttachmentError("invalid route_hints");
+    }
+    rejectUnknownKeys(hint, ["transport", "uri", "relay_public_key", "priority"]);
+    const transport = readString(hint, "transport");
+    if (transport !== "wss" && transport !== "ws") {
+      throw new RelayAttachmentError("invalid route_hints");
+    }
+    const uri = readString(hint, "uri");
+    validateRouteHintUri(transport, uri);
+    const key = `${transport}\0${uri}`;
+    if (seen.has(key)) {
+      throw new RelayAttachmentError("duplicate route_hints");
+    }
+    seen.add(key);
+    readBase64URLBytes(hint, "relay_public_key", 32);
+    readBoundedInteger(hint, "priority", 0, maxDraftTimestamp);
+  }
+}
+
+function validateRouteHintUri(transport: "ws" | "wss", value: string): void {
+  if (new TextEncoder().encode(value).byteLength > maxDraftRouteHintUriBytes) {
+    throw new RelayAttachmentError("invalid route_hints");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new RelayAttachmentError("invalid route_hints");
+  }
+  if (
+    parsed.protocol !== `${transport}:` ||
+    parsed.host === "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hash !== "" ||
+    parsed.pathname !== draftRelayAttachmentPath
+  ) {
+    throw new RelayAttachmentError("invalid route_hints");
   }
 }
 

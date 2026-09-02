@@ -206,6 +206,18 @@ priority, required capabilities, and transport-specific public parameters. It
 does not contain plaintext messages, portable identity exports, private contact
 graph, or durable delivery promises.
 
+For the beta relay-to-relay vertical slice, a client may attach a bounded
+`route_hints` array to a `RENDEZVOUS` frame after it has already discovered and
+validated a peer's signed BootstrapBeacon through a SearchCarrier or addressed
+carrier. Each route hint carries one WSS relay endpoint candidate, the relay
+Ed25519 public key from the signed beacon, and a local priority. The receiving
+relay treats the hint as hostile routing input: it bounds the candidate list,
+validates endpoint shape before dialing, requires the remote attachment
+challenge to prove the hinted relay key, opens only a live bridge for the
+specific route attempt, and forgets the hint when the route/session ends. Route
+hints are not a global relay directory, not presence, not a mailbox, and not
+operator mesh configuration.
+
 A relay attachment is accepted only for a live route and only after the relay
 validates:
 
@@ -250,7 +262,7 @@ The initial frame roles are:
 | `PRESENCE` | authenticated client to relay | Announces a live peer id and short TTL for the current session route. |
 | `HEARTBEAT` | authenticated client to relay | Renews the live presence TTL. |
 | `LOOKUP` | authenticated client to relay | Asks whether a specific peer id is currently reachable under local policy. |
-| `RENDEZVOUS` | authenticated client/relay | Binds a live route id to a currently reachable peer id. |
+| `RENDEZVOUS` | authenticated client/relay | Binds a live route id to a currently reachable peer id; beta frames may include bounded client-discovered relay `route_hints`. |
 | `ENVELOPE` | authenticated client/relay | Carries opaque end-to-end encrypted bytes over a live route only. |
 | `ACK` | relay/client | Reports relay acceptance/forwarding or peer receipt; it never claims durable custody. |
 | `ERROR` | relay/client | Carries a typed bounded failure code and retryability hint. |
@@ -302,6 +314,16 @@ currently reachable only until disconnect, close, quota exhaustion, relay
 shutdown, or TTL expiry. Presence is not a searchable directory, social graph,
 mailbox, or delivery receipt. `LOOKUP` and `RENDEZVOUS` can only return live
 routes currently permitted by local policy.
+
+`RENDEZVOUS.route_hints`, when present in the executable beta JSON profile, is
+an ordered bounded array of at most eight candidate objects. Each object
+contains `transport`, `uri`, `relay_public_key`, and `priority`. The current
+browser transport is `wss`; local test fixtures may use `ws` against in-process
+test relays only. `uri` must be an absolute `/relay/v0` WebSocket endpoint with
+no userinfo or fragment. `relay_public_key` is the base64url Ed25519 relay key
+from a validated signed BootstrapBeacon. The relay may dial those candidates
+for this one route attempt, but it must not retain them as a directory or scan
+outside the supplied bounded list.
 
 `ENVELOPE` contains `session_id`, `route_id`, `path_epoch`, `stream_id`,
 `delivery_id`, `ciphertext`, and `ack_requested`. The relay validates only the

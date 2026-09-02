@@ -356,6 +356,103 @@ func TestStaticPeerRouterFederatesThroughRemoteWSS(t *testing.T) {
 	}
 }
 
+func TestRouteHintPeerRouterFederatesThroughRendezvousHint(t *testing.T) {
+	rightHub, rightIdentity, rightHandler := newTestHubIdentityAndHandler(t)
+	rightServer := httptest.NewServer(rightHandler)
+	defer rightServer.Close()
+
+	bob := dialAndReady(t, rightServer.URL)
+	defer bob.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, bob.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  bob.Ready.SessionID,
+		"route_id":    bob.Ready.RouteID,
+		"peer_id":     testPeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+
+	leftHub, leftHandler := newTestHubAndHandlerWithRouteHintRouter(t)
+	leftServer := httptest.NewServer(leftHandler)
+	defer leftServer.Close()
+
+	alice := dialAndReady(t, leftServer.URL)
+	defer alice.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": alice.Ready.SessionID,
+		"route_id":   alice.Ready.RouteID,
+		"peer_id":    testPeerID,
+		"sequence":   2,
+		"route_hints": []map[string]any{{
+			"transport":        "ws",
+			"uri":              wssURL(rightServer.URL),
+			"relay_public_key": rightIdentity.PublicKeyString(),
+			"priority":         0,
+		}},
+	})
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":          "ENVELOPE",
+		"session_id":    alice.Ready.SessionID,
+		"route_id":      alice.Ready.RouteID,
+		"path_epoch":    0,
+		"stream_id":     0,
+		"delivery_id":   testB64x16,
+		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("route hinted federation bytes")),
+		"ack_requested": true,
+	})
+
+	ack := readObject(t, alice.Conn)
+	if ack["type"] != "ACK" || ack["ack_type"] != "relay.forwarded" || ack["durable"] != false {
+		t.Fatalf("unexpected route-hinted federation ack: %+v", ack)
+	}
+	envelope := readObject(t, bob.Conn)
+	if envelope["type"] != "ENVELOPE" || envelope["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("route hinted federation bytes")) {
+		t.Fatalf("unexpected route-hinted federation envelope: %+v", envelope)
+	}
+	if snapshot := leftHub.Snapshot(); snapshot.SessionsActive != 1 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 0 || snapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected left hub snapshot: %+v", snapshot)
+	}
+	if snapshot := rightHub.Snapshot(); snapshot.PresenceActive != 1 || snapshot.QueueDepth != 0 {
+		t.Fatalf("unexpected right hub snapshot: %+v", snapshot)
+	}
+}
+
+func TestRouteHintPeerRouterRejectsMismatchedRelayKey(t *testing.T) {
+	_, _, rightHandler := newTestHubIdentityAndHandler(t)
+	rightServer := httptest.NewServer(rightHandler)
+	defer rightServer.Close()
+
+	leftHub, leftHandler := newTestHubAndHandlerWithRouteHintRouter(t)
+	leftServer := httptest.NewServer(leftHandler)
+	defer leftServer.Close()
+
+	alice := dialAndReady(t, leftServer.URL)
+	defer alice.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, alice.Conn, map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": alice.Ready.SessionID,
+		"route_id":   alice.Ready.RouteID,
+		"peer_id":    testPeerID,
+		"sequence":   2,
+		"route_hints": []map[string]any{{
+			"transport":        "ws",
+			"uri":              wssURL(rightServer.URL),
+			"relay_public_key": testB64x32,
+			"priority":         0,
+		}},
+	})
+
+	errFrame := readObject(t, alice.Conn)
+	if errFrame["type"] != "ERROR" || errFrame["code"] != "peer_unavailable" || errFrame["retryable"] != true {
+		t.Fatalf("unexpected route-hinted key mismatch frame: %+v", errFrame)
+	}
+	if snapshot := leftHub.Snapshot(); snapshot.RoutesActive != 0 || snapshot.PresenceActive != 0 || snapshot.QueueDepth != 0 {
+		t.Fatalf("left hub stored rejected route hint: %+v", snapshot)
+	}
+}
+
 func TestHandlerFederatedRouteReturnsUnavailableWithoutAckOrMailbox(t *testing.T) {
 	rightHub, rightHandler := newTestHubAndHandler(t)
 	rightServer := httptest.NewServer(rightHandler)
@@ -522,6 +619,12 @@ func newTestHubAndHandlerWithPeerRouter(t *testing.T, peerRouter PeerRouter) (*r
 
 func newTestHubAndHandlerWithStaticFederation(t *testing.T, endpoint string) (*relay.Hub, http.Handler) {
 	t.Helper()
+	hub, handler := newTestHubAndHandlerWithRouteHintRouter(t, endpoint)
+	return hub, handler
+}
+
+func newTestHubAndHandlerWithRouteHintRouter(t *testing.T, endpoints ...string) (*relay.Hub, http.Handler) {
+	t.Helper()
 	hub, err := relay.NewHub(relay.Config{
 		MaxSessions:         8,
 		MaxQueueDepth:       8,
@@ -534,7 +637,7 @@ func newTestHubAndHandlerWithStaticFederation(t *testing.T, endpoint string) (*r
 		t.Fatalf("new hub: %v", err)
 	}
 	peerRouter, err := NewStaticPeerRouter(StaticPeerRouterConfig{
-		Endpoints:     []string{endpoint},
+		Endpoints:     endpoints,
 		LocalHub:      hub,
 		Random:        bytes.NewReader(countingBytes(4096)),
 		Now:           func() time.Time { return time.Unix(1_789_000_000, 0) },
@@ -567,6 +670,17 @@ func newTestHubAndHandlerWithStaticFederation(t *testing.T, endpoint string) (*r
 
 func newTestHubAndHandlerWithOptions(t *testing.T, originPatterns []string, peerRouter PeerRouter) (*relay.Hub, http.Handler) {
 	t.Helper()
+	hub, _, handler := newTestHubIdentityAndHandlerWithOptions(t, originPatterns, peerRouter)
+	return hub, handler
+}
+
+func newTestHubIdentityAndHandler(t *testing.T) (*relay.Hub, *identity.NodeIdentity, http.Handler) {
+	t.Helper()
+	return newTestHubIdentityAndHandlerWithOptions(t, nil, nil)
+}
+
+func newTestHubIdentityAndHandlerWithOptions(t *testing.T, originPatterns []string, peerRouter PeerRouter) (*relay.Hub, *identity.NodeIdentity, http.Handler) {
+	t.Helper()
 	hub, err := relay.NewHub(relay.Config{
 		MaxSessions:         8,
 		MaxQueueDepth:       8,
@@ -596,7 +710,7 @@ func newTestHubAndHandlerWithOptions(t *testing.T, originPatterns []string, peer
 	if err != nil {
 		t.Fatalf("new handler: %v", err)
 	}
-	return hub, handler
+	return hub, nodeIdentity, handler
 }
 
 func countingBytes(size int) []byte {
@@ -779,7 +893,7 @@ type testFederationRouter struct {
 	now       time.Time
 }
 
-func (router testFederationRouter) LookupFederatedPeer(_ context.Context, peerID relay.PeerID, _ time.Time) (relay.FederatedForwarder, bool) {
+func (router testFederationRouter) LookupFederatedPeer(_ context.Context, peerID relay.PeerID, _ []FederationRouteHint, _ time.Time) (relay.FederatedForwarder, bool) {
 	if _, ok := router.targetHub.Lookup(peerID, router.now); !ok {
 		return nil, false
 	}

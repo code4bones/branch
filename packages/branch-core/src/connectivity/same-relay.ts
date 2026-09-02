@@ -15,6 +15,13 @@ export interface RelayRouteMaterial {
   readonly profileMultihash: string;
 }
 
+export interface RelayRouteHint {
+  readonly transport: "wss" | "ws";
+  readonly uri: string;
+  readonly relayPublicKey: string;
+  readonly priority: number;
+}
+
 export interface SameRelayIdentity {
   readonly peerId: string;
   readonly publicKey: string;
@@ -51,7 +58,7 @@ export type SameRelayTransportEvent =
   | { readonly type: "presence_announced"; readonly peerId: string; readonly sequence: number }
   | { readonly type: "heartbeat_sent"; readonly sequence: number }
   | { readonly type: "lookup_requested"; readonly peerId: string; readonly sequence: number }
-  | { readonly type: "rendezvous_ready"; readonly peerId: string; readonly routeId: string; readonly sequence: number }
+  | { readonly type: "rendezvous_ready"; readonly peerId: string; readonly routeId: string; readonly sequence: number; readonly routeHintCount: number }
   | { readonly type: "envelope_sent"; readonly deliveryId: string; readonly routeId: string }
   | { readonly type: "relay_ack"; readonly deliveryId: string; readonly ackType: "relay.accepted" | "relay.forwarded"; readonly durable: false }
   | { readonly type: "peer_receipt"; readonly deliveryId: string; readonly durable: false }
@@ -285,17 +292,19 @@ export class SameRelayTransportClient {
     this.emit({ type: "lookup_requested", peerId, sequence });
   }
 
-  rendezvous(peerId: string): void {
+  rendezvous(peerId: string, options: { readonly routeHints?: readonly RelayRouteHint[] } = {}): void {
     const ready = this.requireReady();
     const sequence = this.nextSequence();
+    const routeHints = validateRouteHints(options.routeHints ?? []);
     this.sendReadyFrame({
       type: "RENDEZVOUS",
       session_id: ready.sessionId,
       route_id: ready.routeId,
       peer_id: peerId,
-      sequence
+      sequence,
+      ...(routeHints.length > 0 ? { route_hints: routeHints.map(toWireRouteHint) } : {})
     });
-    this.emit({ type: "rendezvous_ready", peerId, routeId: ready.routeId, sequence });
+    this.emit({ type: "rendezvous_ready", peerId, routeId: ready.routeId, sequence, routeHintCount: routeHints.length });
   }
 
   sendEnvelope(ciphertext: string, options: { readonly deliveryId?: string; readonly ackRequested?: boolean } = {}): string {
@@ -609,6 +618,50 @@ export function validateRouteMaterial(route: RelayRouteMaterial): RelayRouteMate
     throw new Error("invalid relay endpoint");
   }
   return route;
+}
+
+function validateRouteHints(hints: readonly RelayRouteHint[]): readonly RelayRouteHint[] {
+  if (hints.length > 8) {
+    throw new Error("too many route hints");
+  }
+  const seen = new Set<string>();
+  return hints.map((hint) => {
+    if (hint.transport !== "wss" && hint.transport !== "ws") {
+      throw new Error("invalid route hint transport");
+    }
+    const relayPublicKey = decodeBase64URL(hint.relayPublicKey);
+    if (relayPublicKey.byteLength !== 32) {
+      throw new Error("invalid route hint relay key");
+    }
+    if (!Number.isSafeInteger(hint.priority) || hint.priority < 0) {
+      throw new Error("invalid route hint priority");
+    }
+    const endpoint = new URL(hint.uri);
+    if (
+      endpoint.protocol !== `${hint.transport}:` ||
+      endpoint.username !== "" ||
+      endpoint.password !== "" ||
+      endpoint.hash !== "" ||
+      endpoint.pathname !== "/relay/v0"
+    ) {
+      throw new Error("invalid route hint endpoint");
+    }
+    const key = `${hint.transport}\0${hint.uri}`;
+    if (seen.has(key)) {
+      throw new Error("duplicate route hint");
+    }
+    seen.add(key);
+    return hint;
+  }).sort((left, right) => left.priority - right.priority || left.uri.localeCompare(right.uri));
+}
+
+function toWireRouteHint(hint: RelayRouteHint): Record<string, unknown> {
+  return {
+    transport: hint.transport,
+    uri: hint.uri,
+    relay_public_key: hint.relayPublicKey,
+    priority: hint.priority
+  };
 }
 
 function encodeFrame(frame: Record<string, unknown>): string {

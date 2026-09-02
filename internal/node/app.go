@@ -67,18 +67,15 @@ func New(config Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create relay hub: %w", err)
 	}
-	var peerRouter wss.PeerRouter
-	if len(config.FederationPeers) > 0 {
-		peerRouter, err = wss.NewStaticPeerRouter(wss.StaticPeerRouterConfig{
-			Endpoints:     config.FederationPeers,
-			LocalHub:      hub,
-			MaxFrameBytes: int64(config.Relay.MaxFrameBytes),
-			DialTimeout:   2 * time.Second,
-			WriteTimeout:  5 * time.Second,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("create relay federation router: %w", err)
-		}
+	peerRouter, err := wss.NewStaticPeerRouter(wss.StaticPeerRouterConfig{
+		Endpoints:     config.FederationPeers,
+		LocalHub:      hub,
+		MaxFrameBytes: int64(config.Relay.MaxFrameBytes),
+		DialTimeout:   2 * time.Second,
+		WriteTimeout:  5 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create relay federation router: %w", err)
 	}
 	relayHandler, err := wss.NewHandler(wss.Config{
 		Hub:              hub,
