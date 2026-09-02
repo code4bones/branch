@@ -2,8 +2,8 @@ import {
   decodeRibbonImage,
   type DecodeRibbonImageOptions,
   type DecodedRibbonWrapper
-} from "../visual/ribbon-decode.js";
-import type { RibbonImageData } from "../visual/ribbon-image.js";
+} from "@code4bones/branch-core/visual/ribbon-decode.js";
+import type { RibbonImageData } from "@code4bones/branch-core/visual/ribbon-image.js";
 import {
   ribbonDecodeWorkerScript,
   ribbonDecodeWorkerTimeoutMs,

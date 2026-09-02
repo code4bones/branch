@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DiagnosticJournal } from "../src/diagnostics/journal.js";
+import { DiagnosticJournal } from "@code4bones/branch-core/diagnostics/journal.js";
 
 void test("diagnostic journal keeps only the newest bounded events", () => {
   let now = 1_000;

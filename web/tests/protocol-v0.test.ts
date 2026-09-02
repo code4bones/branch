@@ -8,13 +8,13 @@ import {
   createBootstrapBeaconWrapper,
   defaultBootstrapProfileMultihashes,
   validateBranchTextBootstrapBeacon
-} from "../src/protocol/v0/bootstrap-beacon.js";
-import { cborMap, decodeDeterministicCbor, encodeDeterministicCbor, readCborMap, sameBytes, type CborEntry } from "../src/protocol/v0/cbor.js";
-import { decodeDraftEnvelopeText, protocolID, ProtocolError } from "../src/protocol/v0/envelope.js";
-import { draftProfileMultihash, profileHashAlgorithm } from "../src/protocol/v0/profile.js";
-import { decodeDraftRelayAttachmentFrameText, relayAttachmentSchema, relayProofDomain, RelayAttachmentError } from "../src/protocol/v0/relay-attachment.js";
-import { decodeBase64URL, encodeBase64URL } from "../src/protocol/v0/base64url.js";
-import { branchTextWrapperPrefix } from "../src/protocol/v0/text-carrier.js";
+} from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
+import { cborMap, decodeDeterministicCbor, encodeDeterministicCbor, readCborMap, sameBytes, type CborEntry } from "@code4bones/branch-core/protocol/v0/cbor.js";
+import { decodeDraftEnvelopeText, protocolID, ProtocolError } from "@code4bones/branch-core/protocol/v0/envelope.js";
+import { draftProfileMultihash, profileHashAlgorithm } from "@code4bones/branch-core/protocol/v0/profile.js";
+import { decodeDraftRelayAttachmentFrameText, relayAttachmentSchema, relayProofDomain, RelayAttachmentError } from "@code4bones/branch-core/protocol/v0/relay-attachment.js";
+import { decodeBase64URL, encodeBase64URL } from "@code4bones/branch-core/protocol/v0/base64url.js";
+import { branchTextWrapperPrefix } from "@code4bones/branch-core/protocol/v0/text-carrier.js";
 
 interface VectorManifest {
   readonly schema: "branch.testvectors/0";

@@ -6,12 +6,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { runCarrierHoppingPoC } from "../src/connectivity/carrier-hopping-poc.js";
-import { runDiscoveredCarrierHopPoC } from "../src/discovery/carrier-hop-client.js";
-import { createGitLabSearchCarrier, gitLabDiscoveryDefaultQuery } from "../src/discovery/gitlab.js";
-import type { BrowserRelaySocket, BrowserRelaySocketFactory, RelayRouteMaterial } from "../src/connectivity/same-relay.js";
-import type { BeaconObservation, SearchCarrier } from "../src/discovery/client.js";
-import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
+import { runCarrierHoppingPoC } from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
+import { runDiscoveredCarrierHopPoC } from "@code4bones/branch-core/discovery/carrier-hop-client.js";
+import { createGitLabSearchCarrier, gitLabDiscoveryDefaultQuery } from "@code4bones/branch-core/discovery/gitlab.js";
+import type { BrowserRelaySocket, BrowserRelaySocketFactory, RelayRouteMaterial } from "@code4bones/branch-core/connectivity/same-relay.js";
+import type { BeaconObservation, SearchCarrier } from "@code4bones/branch-core/discovery/client.js";
+import { developmentProfileMultihash } from "@code4bones/branch-core/protocol/v0/profile.js";
 
 const repoRoot = resolve(process.cwd(), "..");
 const adminToken = "branch-smoke-token";

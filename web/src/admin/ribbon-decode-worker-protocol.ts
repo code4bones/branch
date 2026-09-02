@@ -1,4 +1,4 @@
-import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/ribbon-decode.js";
+import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "@code4bones/branch-core/visual/ribbon-decode.js";
 
 export const ribbonDecodeWorkerScript = "/admin/ribbon-decode-worker.js?v=20260901-block-only";
 export const ribbonDecodeWorkerTimeoutMs = 5000;

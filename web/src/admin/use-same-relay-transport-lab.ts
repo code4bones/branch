@@ -6,19 +6,19 @@ import {
   validateRouteMaterial,
   type RelayRouteMaterial,
   type SameRelayTransportEvent
-} from "../connectivity/same-relay.js";
+} from "@code4bones/branch-core/connectivity/same-relay.js";
 import {
   createBetaPayloadKeyPair,
   makeBetaPayloadAAD,
   openBetaPayload,
   sealBetaPayload,
   type BetaPayloadKeyPair
-} from "../connectivity/payload-crypto.js";
-import { runDiscoveredCarrierHopPoC, routesFromBeaconObservations } from "../discovery/carrier-hop-client.js";
-import type { BeaconObservation } from "../discovery/client.js";
-import { createGitHubSearchCarrier, gitHubReportsFromCarrierReports, mergeGitHubDiscoveryReports } from "../discovery/github.js";
-import { encodeBase64URL } from "../protocol/v0/base64url.js";
-import { protocolID } from "../protocol/v0/envelope.js";
+} from "@code4bones/branch-core/connectivity/payload-crypto.js";
+import { runDiscoveredCarrierHopPoC, routesFromBeaconObservations } from "@code4bones/branch-core/discovery/carrier-hop-client.js";
+import type { BeaconObservation } from "@code4bones/branch-core/discovery/client.js";
+import { createGitHubSearchCarrier, gitHubReportsFromCarrierReports, mergeGitHubDiscoveryReports } from "@code4bones/branch-core/discovery/github.js";
+import { encodeBase64URL } from "@code4bones/branch-core/protocol/v0/base64url.js";
+import { protocolID } from "@code4bones/branch-core/protocol/v0/envelope.js";
 import { useAdminStore, type ClientTransportStatePatch } from "./store.js";
 
 export interface SameRelayTransportLab {

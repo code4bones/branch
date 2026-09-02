@@ -1,0 +1,51 @@
+{
+  "name": "@code4bones/branch-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./connectivity/*.js": {
+      "types": "./dist/connectivity/*.d.ts",
+      "default": "./dist/connectivity/*.js"
+    },
+    "./diagnostics/*.js": {
+      "types": "./dist/diagnostics/*.d.ts",
+      "default": "./dist/diagnostics/*.js"
+    },
+    "./discovery/*.js": {
+      "types": "./dist/discovery/*.d.ts",
+      "default": "./dist/discovery/*.js"
+    },
+    "./protocol/*.js": {
+      "types": "./dist/protocol/*.d.ts",
+      "default": "./dist/protocol/*.js"
+    },
+    "./visual/*.js": {
+      "types": "./dist/visual/*.d.ts",
+      "default": "./dist/visual/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hpke/core": "^1.9.0",
+    "@hpke/dhkem-x25519": "^1.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "typescript": "5.9.2"
+  }
+}

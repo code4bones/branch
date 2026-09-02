@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { encodeBase64URL, decodeBase64URL } from "../src/protocol/v0/base64url.js";
-import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
-import { relayProofDomain } from "../src/protocol/v0/relay-attachment.js";
+import { encodeBase64URL, decodeBase64URL } from "@code4bones/branch-core/protocol/v0/base64url.js";
+import { developmentProfileMultihash } from "@code4bones/branch-core/protocol/v0/profile.js";
+import { relayProofDomain } from "@code4bones/branch-core/protocol/v0/relay-attachment.js";
 import {
   SameRelayTransportClient,
   type BrowserRelaySocket,
@@ -11,25 +11,25 @@ import {
   type RelaySocketEvent,
   type RelaySocketEventType,
   type SameRelayTransportEvent
-} from "../src/connectivity/same-relay.js";
+} from "@code4bones/branch-core/connectivity/same-relay.js";
 import {
   runCarrierHoppingPoC
-} from "../src/connectivity/carrier-hopping-poc.js";
+} from "@code4bones/branch-core/connectivity/carrier-hopping-poc.js";
 import {
   routesFromBeaconObservations,
   runDiscoveredCarrierHopPoC
-} from "../src/discovery/carrier-hop-client.js";
+} from "@code4bones/branch-core/discovery/carrier-hop-client.js";
 import {
   createBetaPayloadKeyPair,
   decodeBetaPayloadText,
   makeBetaPayloadAAD,
   openBetaPayload,
   sealBetaPayload
-} from "../src/connectivity/payload-crypto.js";
-import { protocolID } from "../src/protocol/v0/envelope.js";
-import type { BeaconObservation, SearchCarrier } from "../src/discovery/client.js";
+} from "@code4bones/branch-core/connectivity/payload-crypto.js";
+import { protocolID } from "@code4bones/branch-core/protocol/v0/envelope.js";
+import type { BeaconObservation, SearchCarrier } from "@code4bones/branch-core/discovery/client.js";
 import { routeFromDiscoveryResults, routeFromManualFields } from "../src/admin/use-same-relay-transport-lab.js";
-import type { GitHubDiscoveryResult } from "../src/discovery/github.js";
+import type { GitHubDiscoveryResult } from "@code4bones/branch-core/discovery/github.js";
 
 void test("same-relay browser transport handles live forwarding, unavailable, and client retry", async () => {
   const relay = await FakeRelay.create();

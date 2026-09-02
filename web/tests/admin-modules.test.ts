@@ -42,13 +42,13 @@ import {
   type TransformLabPreset
 } from "../src/admin/transform-lab.js";
 import { runTransformLab } from "../src/admin/transform-lab-runner.js";
-import { createBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
-import { extractBranchTextWrappers, isBranchTextWrapper } from "../src/protocol/v0/text-carrier.js";
-import { resizeNearest } from "../src/visual/corpus.js";
-import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "../src/visual/ribbon-block.js";
-import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
-import { branchWrapperBytes, type RibbonImageData } from "../src/visual/ribbon-image.js";
-import { generateRibbonSymbol } from "../src/visual/ribbon-render.js";
+import { createBootstrapBeaconWrapper } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
+import { extractBranchTextWrappers, isBranchTextWrapper } from "@code4bones/branch-core/protocol/v0/text-carrier.js";
+import { resizeNearest } from "@code4bones/branch-core/visual/corpus.js";
+import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "@code4bones/branch-core/visual/ribbon-block.js";
+import { decodeRibbonImage } from "@code4bones/branch-core/visual/ribbon-decode.js";
+import { branchWrapperBytes, type RibbonImageData } from "@code4bones/branch-core/visual/ribbon-image.js";
+import { generateRibbonSymbol } from "@code4bones/branch-core/visual/ribbon-render.js";
 
 void test("github drop-in module validates exact BRANCH0 records and emits local files", async () => {
   const records = await parseBranchRecords(`# comment\n${defaultBranchWrapper}\n`);

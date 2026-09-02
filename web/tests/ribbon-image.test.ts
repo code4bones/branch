@@ -1,16 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { resizeNearest, screenshotScale } from "../src/visual/corpus.js";
-import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "../src/visual/ribbon-block.js";
-import { decodeRibbonImage } from "../src/visual/ribbon-decode.js";
+import { resizeNearest, screenshotScale } from "@code4bones/branch-core/visual/corpus.js";
+import { embedBlockPayload, extractBlockPayload, ribbonBlockProfile } from "@code4bones/branch-core/visual/ribbon-block.js";
+import { decodeRibbonImage } from "@code4bones/branch-core/visual/ribbon-decode.js";
 import {
   branchWrapperBytes,
   decodeRibbonFrame,
   encodeRibbonFrame,
   maxRibbonPayloadBytes,
   type RibbonImageData
-} from "../src/visual/ribbon-image.js";
+} from "@code4bones/branch-core/visual/ribbon-image.js";
 
 const wrapper =
   "BRANCH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";

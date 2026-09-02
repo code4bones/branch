@@ -7,8 +7,8 @@ import {
   makeRootReadmeSnippet
 } from "./publication-profile.js";
 import { makeStoredZipArchive } from "./zip-archive.js";
-import { assertValidBranchTextBootstrapBeacon } from "../protocol/v0/bootstrap-beacon.js";
-import { branchTextWrapperPrefix, isBranchTextWrapper } from "../protocol/v0/text-carrier.js";
+import { assertValidBranchTextBootstrapBeacon } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
+import { branchTextWrapperPrefix, isBranchTextWrapper } from "@code4bones/branch-core/protocol/v0/text-carrier.js";
 
 const encoder = new TextEncoder();
 

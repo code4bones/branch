@@ -53,17 +53,17 @@ import {
   imageToData,
   loadLocalImage,
   type LoadedBrowserImage
-} from "../../visual/canvas-image.js";
-import { clamp } from "../../visual/geometry.js";
-import { ribbonBlockProfile } from "../../visual/ribbon-block.js";
-import type { RibbonFoundRegion } from "../../visual/ribbon-decode.js";
+} from "@code4bones/branch-core/visual/canvas-image.js";
+import { clamp } from "@code4bones/branch-core/visual/geometry.js";
+import { ribbonBlockProfile } from "@code4bones/branch-core/visual/ribbon-block.js";
+import type { RibbonFoundRegion } from "@code4bones/branch-core/visual/ribbon-decode.js";
 import {
   drawCoverPreview,
   drawIdleCanvas,
   generateRibbonSymbol,
   renderRibbonImage,
   type GeneratedRibbonSymbol
-} from "../../visual/ribbon-render.js";
+} from "@code4bones/branch-core/visual/ribbon-render.js";
 import { DiagnosticsView } from "./DiagnosticsView.js";
 
 type SetRibbonField = <K extends keyof RibbonFormState>(field: K, value: RibbonFormState[K]) => void;

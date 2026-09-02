@@ -20,12 +20,12 @@ import {
   mergeGitHubDiscoveryReports,
   type GitHubDiscoveryResult,
   type GitHubValidatedRecord
-} from "../../discovery/github.js";
+} from "@code4bones/branch-core/discovery/github.js";
 import { makeGitHubArchive, makeGitHubFiles, parseBranchRecords } from "../github-dropin.js";
 import { githubRepositoryTopics, makeRootReadmeSnippet } from "../publication-profile.js";
 import { fetchRelayBootstrapBeacon } from "../relay-bootstrap.js";
 import { useAdminStore } from "../store.js";
-import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
+import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discovery/client.js";
 
 export function GitHubTool(): React.JSX.Element {
   const discoveryAbortRef = useRef<AbortController | null>(null);

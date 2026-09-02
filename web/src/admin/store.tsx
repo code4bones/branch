@@ -9,9 +9,9 @@ import { gitLabDiscoveryDefaultQuery, type GitLabDiscoveryResult } from "./gitla
 import type { GitLabDropInFile } from "./gitlab-dropin.js";
 import type { RelayMonitorObservation } from "./relay-monitor.js";
 import type { TransformLabProgress, TransformLabResult } from "./transform-lab.js";
-import { defaultBootstrapRelayEndpointUri } from "../protocol/v0/bootstrap-beacon.js";
-import { developmentProfileMultihash } from "../protocol/v0/profile.js";
-import type { LoadedBrowserImage } from "../visual/canvas-image.js";
+import { defaultBootstrapRelayEndpointUri } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
+import { developmentProfileMultihash } from "@code4bones/branch-core/protocol/v0/profile.js";
+import type { LoadedBrowserImage } from "@code4bones/branch-core/visual/canvas-image.js";
 
 export type AdminTab = "ribbon" | "github" | "gitlab" | "relays" | "client";
 export type RibbonTab = "encode" | "decode";

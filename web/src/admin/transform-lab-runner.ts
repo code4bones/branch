@@ -1,6 +1,6 @@
-import { screenshotScale } from "../visual/corpus.js";
-import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/ribbon-decode.js";
-import type { RibbonImageData } from "../visual/ribbon-image.js";
+import { screenshotScale } from "@code4bones/branch-core/visual/corpus.js";
+import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "@code4bones/branch-core/visual/ribbon-decode.js";
+import type { RibbonImageData } from "@code4bones/branch-core/visual/ribbon-image.js";
 import {
   classifyTransformLabResult,
   makeFailedTransformLabResult,

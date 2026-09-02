@@ -2,14 +2,14 @@ import { ApiOutlined, BranchesOutlined, PlayCircleOutlined, ReloadOutlined, Stop
 import { Button, Input, Select, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
+import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discovery/client.js";
 import {
   createGitHubSearchCarrier,
   gitHubReportsFromCarrierReports,
   mergeGitHubDiscoveryReports,
   type GitHubDiscoveryResult,
   type GitHubValidatedRecord
-} from "../../discovery/github.js";
+} from "@code4bones/branch-core/discovery/github.js";
 import { useAdminStore } from "../store.js";
 import { useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
 

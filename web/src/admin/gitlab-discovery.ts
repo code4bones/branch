@@ -1,1 +1,1 @@
-export * from "../discovery/gitlab.js";
+export * from "@code4bones/branch-core/discovery/gitlab.js";

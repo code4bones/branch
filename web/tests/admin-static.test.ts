@@ -14,20 +14,21 @@ const relayMonitorToolPath = resolve(process.cwd(), "src/admin/components/RelayM
 const clientToolPath = resolve(process.cwd(), "src/admin/components/ClientTool.tsx");
 const githubDiscoveryPath = resolve(process.cwd(), "src/admin/github-discovery.ts");
 const gitLabDiscoveryPath = resolve(process.cwd(), "src/admin/gitlab-discovery.ts");
-const discoveryGitHubPath = resolve(process.cwd(), "src/discovery/github.ts");
-const discoveryGitLabPath = resolve(process.cwd(), "src/discovery/gitlab.ts");
-const discoveryClientPath = resolve(process.cwd(), "src/discovery/client.ts");
-const discoveryCarrierHopClientPath = resolve(process.cwd(), "src/discovery/carrier-hop-client.ts");
-const connectivityCarrierHopPath = resolve(process.cwd(), "src/connectivity/carrier-hopping-poc.ts");
-const connectivitySameRelayPath = resolve(process.cwd(), "src/connectivity/same-relay.ts");
+const branchCorePath = resolve(process.cwd(), "../packages/branch-core/src");
+const discoveryGitHubPath = resolve(branchCorePath, "discovery/github.ts");
+const discoveryGitLabPath = resolve(branchCorePath, "discovery/gitlab.ts");
+const discoveryClientPath = resolve(branchCorePath, "discovery/client.ts");
+const discoveryCarrierHopClientPath = resolve(branchCorePath, "discovery/carrier-hop-client.ts");
+const connectivityCarrierHopPath = resolve(branchCorePath, "connectivity/carrier-hopping-poc.ts");
+const connectivitySameRelayPath = resolve(branchCorePath, "connectivity/same-relay.ts");
 const githubDropInPath = resolve(process.cwd(), "src/admin/github-dropin.ts");
 const gitLabDropInPath = resolve(process.cwd(), "src/admin/gitlab-dropin.ts");
-const publicationProfilePath = resolve(process.cwd(), "src/discovery/publication-profile.ts");
+const publicationProfilePath = resolve(branchCorePath, "discovery/publication-profile.ts");
 const defaultsPath = resolve(process.cwd(), "src/admin/defaults.ts");
-const canvasImagePath = resolve(process.cwd(), "src/visual/canvas-image.ts");
-const ribbonRenderPath = resolve(process.cwd(), "src/visual/ribbon-render.ts");
-const ribbonDecodePath = resolve(process.cwd(), "src/visual/ribbon-decode.ts");
-const ribbonBlockPath = resolve(process.cwd(), "src/visual/ribbon-block.ts");
+const canvasImagePath = resolve(branchCorePath, "visual/canvas-image.ts");
+const ribbonRenderPath = resolve(branchCorePath, "visual/ribbon-render.ts");
+const ribbonDecodePath = resolve(branchCorePath, "visual/ribbon-decode.ts");
+const ribbonBlockPath = resolve(branchCorePath, "visual/ribbon-block.ts");
 const ribbonDecodeClientPath = resolve(process.cwd(), "src/admin/ribbon-decode-client.ts");
 const ribbonDecodeWorkerPath = resolve(process.cwd(), "src/admin/ribbon-decode-worker.ts");
 const ribbonAutoDecodePath = resolve(process.cwd(), "src/admin/ribbon-auto-decode.ts");
@@ -336,7 +337,7 @@ void test("admin github discovery uses bounded public GitHub API reads", async (
   const source = await readFile(discoveryGitHubPath, "utf8");
   const client = await readFile(discoveryClientPath, "utf8");
 
-  assert.match(facade, /export \* from "\.\.\/discovery\/github\.js"/);
+  assert.match(facade, /export \* from "@code4bones\/branch-core\/discovery\/github\.js"/);
   assert.match(source, /https:\/\/api\.github\.com\/search\/repositories/);
   assert.match(source, /githubPrimaryLocatorQuery/);
   assert.match(source, /githubLegacyMarkerQuery/);
@@ -362,7 +363,7 @@ void test("admin gitlab discovery uses bounded public GitLab project reads", asy
   const client = await readFile(discoveryClientPath, "utf8");
   const dropin = await readFile(gitLabDropInPath, "utf8");
 
-  assert.match(facade, /export \* from "\.\.\/discovery\/gitlab\.js"/);
+  assert.match(facade, /export \* from "@code4bones\/branch-core\/discovery\/gitlab\.js"/);
   assert.match(source, /https:\/\/gitlab\.com\/api\/v4\/projects/);
   assert.match(source, /gitLabPrimaryLocatorQuery/);
   assert.match(source, /createGitLabSearchCarrier/);

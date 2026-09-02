@@ -1,6 +1,6 @@
-import { decodeRibbonImage } from "../visual/ribbon-decode.js";
-import type { DecodeRibbonImageOptions } from "../visual/ribbon-decode.js";
-import type { RibbonImageData } from "../visual/ribbon-image.js";
+import { decodeRibbonImage } from "@code4bones/branch-core/visual/ribbon-decode.js";
+import type { DecodeRibbonImageOptions } from "@code4bones/branch-core/visual/ribbon-decode.js";
+import type { RibbonImageData } from "@code4bones/branch-core/visual/ribbon-image.js";
 import type {
   RibbonDecodeWorkerFailure,
   RibbonDecodeWorkerImage,

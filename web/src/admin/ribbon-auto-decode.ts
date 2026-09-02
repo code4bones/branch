@@ -1,6 +1,6 @@
 import { decodeRibbonImageWithWorker } from "./ribbon-decode-client.js";
-import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "../visual/ribbon-decode.js";
-import type { RibbonImageData } from "../visual/ribbon-image.js";
+import type { DecodeRibbonImageOptions, DecodedRibbonWrapper } from "@code4bones/branch-core/visual/ribbon-decode.js";
+import type { RibbonImageData } from "@code4bones/branch-core/visual/ribbon-image.js";
 
 export const maxAutoDecodeCandidates = 1;
 

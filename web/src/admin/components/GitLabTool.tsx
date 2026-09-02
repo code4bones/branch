@@ -19,12 +19,12 @@ import {
   mergeGitLabDiscoveryReports,
   type GitLabDiscoveryResult,
   type GitLabValidatedRecord
-} from "../../discovery/gitlab.js";
+} from "@code4bones/branch-core/discovery/gitlab.js";
 import { makeGitLabArchive, makeGitLabFiles, parseGitLabRecords } from "../gitlab-dropin.js";
 import { gitLabProjectDescription, gitLabProjectTopics, makeRootReadmeSnippet } from "../publication-profile.js";
 import { fetchRelayBootstrapBeacon } from "../relay-bootstrap.js";
 import { useAdminStore } from "../store.js";
-import { discoverClientBootstrapBeacons } from "../../discovery/client.js";
+import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discovery/client.js";
 
 export function GitLabTool(): React.JSX.Element {
   const discoveryAbortRef = useRef<AbortController | null>(null);

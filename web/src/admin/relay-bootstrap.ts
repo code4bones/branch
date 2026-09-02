@@ -1,5 +1,5 @@
-import { defaultBootstrapProfileMultihashes } from "../protocol/v0/bootstrap-beacon.js";
-import { protocolID } from "../protocol/v0/envelope.js";
+import { defaultBootstrapProfileMultihashes } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
+import { protocolID } from "@code4bones/branch-core/protocol/v0/envelope.js";
 
 export interface RelayBootstrapBeaconResponse {
   readonly wrapper: string;

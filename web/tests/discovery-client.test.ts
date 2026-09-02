@@ -6,21 +6,21 @@ import {
   type BeaconObservation,
   type SearchCarrier,
   type SearchCarrierSearchRequest
-} from "../src/discovery/client.js";
+} from "@code4bones/branch-core/discovery/client.js";
 import {
   createGitHubSearchCarrier,
   gitHubReportsFromCarrierReports,
   githubDiscoveryDefaultQuery,
   githubDiscoveryFallbackQuery,
   mergeGitHubDiscoveryReports
-} from "../src/discovery/github.js";
+} from "@code4bones/branch-core/discovery/github.js";
 import {
   createGitLabSearchCarrier,
   gitLabDiscoveryDefaultQuery,
   gitLabReportsFromCarrierReports,
   mergeGitLabDiscoveryReports
-} from "../src/discovery/gitlab.js";
-import { createBootstrapBeaconWrapper } from "../src/protocol/v0/bootstrap-beacon.js";
+} from "@code4bones/branch-core/discovery/gitlab.js";
+import { createBootstrapBeaconWrapper } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
 
 void test("client discovery runs GitHub canonical locator then legacy fallback", async () => {
   const now = Math.floor(Date.now() / 1000);
