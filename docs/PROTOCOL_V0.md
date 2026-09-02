@@ -738,6 +738,55 @@ BootstrapBeacon payloads must not contain client presence, user or device IPs,
 mailbox addresses, durable route state, conversation data, TURN passwords,
 session secrets, cookies, bearer tokens, or reusable attachment credentials.
 
+### IdentityContact v0 draft
+
+An IdentityContact is a public signed `identity.announce` event that makes a
+person identity discoverable without assigning a server-side UIN or account
+identifier:
+
+- `protocol = branch/connectivity/0`;
+- `type = identity.announce`;
+- no `recipient_tag` for the public form;
+- `payload_mode = public`;
+- `sender.public_key` is the root person identity key;
+- the payload `branch_id` must equal the self-certifying BranchID derived from
+  `sender.public_key`;
+- the signed record is bounded, expiring, sequenced, and carrier-neutral.
+
+The draft BranchID format is:
+
+```text
+br1.<base64url(multihash.sha2-256("BRANCH identity id v0\n" || root_public_key))>
+```
+
+This is an address and verification handle, not a relay route, account, login,
+or proof of current online presence. BranchIDs are not sequential, not assigned
+by relays, not delegated to GitHub/GitLab accounts, and not issued by a
+B.R.A.N.C.H.-operated service.
+
+The public payload is deterministic CBOR with text-string keys:
+
+| Field | Requirement | Meaning |
+| --- | --- | --- |
+| `contact_id` | Required | 32 random bytes stable for one contact-record lineage. |
+| `branch_id` | Required | Self-certifying BranchID derived from `sender.public_key`. |
+| `sequence` | Required | Monotonic unsigned integer scoped to the identity and record family. |
+| `issued_at` | Required | Unix seconds when this contact payload was issued. |
+| `expires_at` | Required | Unix seconds after which this contact record is stale. |
+| `display_name` | Optional | Bounded human label, never authoritative. |
+| `aliases` | Required | Zero to eight normalized search aliases, candidate evidence only. |
+| `protocol_versions` | Required | Supported connectivity protocol versions. |
+| `profile_multihashes` | Required | Accepted connectivity profile hashes. |
+| `route_hints` | Required | Zero to eight relay/direct route hints for live rendezvous attempts. |
+
+Each route hint is a map with `transport`, `uri`, `relay_public_key`,
+`profile_multihash`, and `priority`. A route hint is not authority; relay
+identity is still proven during attachment and liveness is actively probed.
+
+IdentityContact payloads must not contain UINs, server-assigned account IDs,
+passwords, cookies, bearer tokens, private keys, identity exports, plaintext
+messages, mailbox state, or global presence claims.
+
 ### SearchCarrier contract
 
 Conceptual TypeScript shape:

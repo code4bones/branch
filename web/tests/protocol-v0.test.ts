@@ -9,6 +9,12 @@ import {
   defaultBootstrapProfileMultihashes,
   validateBranchTextBootstrapBeacon
 } from "@code4bones/branch-core/protocol/v0/bootstrap-beacon.js";
+import {
+  branchIDFromPublicKey,
+  createIdentityContactWrapper,
+  parseBranchID,
+  validateBranchTextIdentityContact
+} from "@code4bones/branch-core/protocol/v0/identity-contact.js";
 import { cborMap, decodeDeterministicCbor, encodeDeterministicCbor, readCborMap, sameBytes, type CborEntry } from "@code4bones/branch-core/protocol/v0/cbor.js";
 import { decodeDraftEnvelopeText, protocolID, ProtocolError } from "@code4bones/branch-core/protocol/v0/envelope.js";
 import { draftProfileMultihash, profileHashAlgorithm } from "@code4bones/branch-core/protocol/v0/profile.js";
@@ -282,6 +288,111 @@ void test("BRANCH0 bootstrap.beacon validator requires a supported profile multi
 
   assert.equal((await validateBranchTextBootstrapBeacon(unsupportedProfile, { now })).reason, "payload_invalid");
   assert.equal((await validateBranchTextBootstrapBeacon(unorderedProfiles, { now })).reason, "payload_invalid");
+});
+
+void test("BRANCH0 identity.announce wrapper validates self-certifying BranchID", async () => {
+  const now = 1_789_000_000;
+  const relayPublicKey = encodeBase64URL(fixedBytes(32, 7));
+  const wrapper = await createIdentityContactWrapper({
+    now,
+    expiresAt: now + 3600,
+    sequence: 4,
+    displayName: "Alice Branch",
+    aliases: ["Alice.Dev", "alice"],
+    routeHints: [
+      {
+        transport: "wss",
+        uri: "wss://relay-two.example:443/relay/v0",
+        relayPublicKey,
+        profileMultihash: defaultBootstrapProfileMultihashes[0],
+        priority: 10
+      },
+      {
+        transport: "wss",
+        uri: "wss://relay.example:443/relay/v0",
+        relayPublicKey,
+        profileMultihash: defaultBootstrapProfileMultihashes[0],
+        priority: 0
+      }
+    ]
+  });
+  const result = await validateBranchTextIdentityContact(wrapper, { now });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.reason, "accepted");
+  if (result.contact === undefined) {
+    throw new Error("accepted identity contact missing");
+  }
+  const contact = result.contact;
+  assert.equal(contact.envelope.protocol, protocolID);
+  assert.equal(contact.envelope.type, "identity.announce");
+  assert.equal(contact.envelope.payloadMode, "public");
+  assert.equal(contact.payload.sequence, 4);
+  assert.equal(contact.payload.displayName, "Alice Branch");
+  assert.deepEqual(contact.payload.aliases, ["alice", "alice.dev"]);
+  assert.equal(contact.payload.branchId, await branchIDFromPublicKey(contact.envelope.sender.publicKey));
+  assert.equal(parseBranchID(contact.payload.branchId).multihash.byteLength, 34);
+  assert.deepEqual(contact.payload.routeHints.map((hint) => hint.uri), [
+    "wss://relay.example:443/relay/v0",
+    "wss://relay-two.example:443/relay/v0"
+  ]);
+});
+
+void test("BRANCH0 identity.announce validator rejects stale poisoned and lower-sequence records", async () => {
+  const now = 1_789_000_000;
+  const valid = await createIdentityContactWrapper({ now, expiresAt: now + 3600, sequence: 7 });
+  const signedBytes = decodeBase64URL(valid.slice(branchTextWrapperPrefix.length));
+  const mutatedSignature = patchSignatureByte(valid);
+  const nonCanonical = new Uint8Array(signedBytes.byteLength + 1);
+  nonCanonical[0] = 0xb8;
+  nonCanonical[1] = 0x0a;
+  nonCanonical.set(signedBytes.slice(1), 2);
+  const branchMismatch = await resignWrapperWithPatch(valid, (entries) => entries);
+
+  assert.equal((await validateBranchTextIdentityContact("BRANCH0.invalid=", { now })).reason, "malformed_wrapper");
+  assert.equal((await validateBranchTextIdentityContact(`${branchTextWrapperPrefix}${encodeBase64URL(nonCanonical)}`, { now })).reason, "non_canonical_cbor");
+  assert.equal((await validateBranchTextIdentityContact(`${branchTextWrapperPrefix}${encodeBase64URL(mutatedSignature)}`, { now })).reason, "signature_invalid");
+  assert.equal((await validateBranchTextIdentityContact(valid, { now: now + 7200 })).reason, "expired");
+  assert.equal((await validateBranchTextIdentityContact(await createIdentityContactWrapper({ now: now + 3600, expiresAt: now + 7200 }), { now })).reason, "created_in_future");
+  assert.equal((await validateBranchTextIdentityContact(branchMismatch, { now })).reason, "branch_id_mismatch");
+  assert.equal((await validateBranchTextIdentityContact(valid, { now, minimumSequence: 8 })).reason, "lower_sequence");
+});
+
+void test("BRANCH0 identity.announce validator rejects invalid payload bounds", async () => {
+  const now = 1_789_000_000;
+  const valid = await createIdentityContactWrapper({ now, expiresAt: now + 3600 });
+  const relayPublicKey = encodeBase64URL(fixedBytes(32, 9));
+  const tooManyRouteHints = Array.from({ length: 9 }, (_, index) =>
+    identityRouteHintValue("wss", `wss://relay-${String(index)}.example:443/relay/v0`, relayPublicKey, index)
+  );
+
+  const cases: readonly [string, Promise<string>][] = [
+    ["missing-aliases", resignWithPayloadPatch(valid, (entries) => entries.filter((entry) => entry.key !== "aliases"))],
+    ["too-many-aliases", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "aliases", [
+      "alias-00",
+      "alias-01",
+      "alias-02",
+      "alias-03",
+      "alias-04",
+      "alias-05",
+      "alias-06",
+      "alias-07",
+      "alias-08"
+    ]))],
+    ["invalid-alias", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "aliases", ["github.com/code4bones"]))],
+    ["too-many-route-hints", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "route_hints", tooManyRouteHints))],
+    ["route-missing-port", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "route_hints", [
+      identityRouteHintValue("wss", "wss://relay.example/relay/v0", relayPublicKey, 0)
+    ]))],
+    ["invalid-relay-key", resignWithPayloadPatch(valid, (entries) => replacePayloadEntry(entries, "route_hints", [
+      identityRouteHintValue("wss", "wss://relay.example:443/relay/v0", "bad-key", 0)
+    ]))]
+  ];
+
+  for (const [name, wrapperPromise] of cases) {
+    const result = await validateBranchTextIdentityContact(await wrapperPromise, { now });
+    assert.equal(result.reason, "payload_invalid", name);
+  }
 });
 
 async function readManifest(): Promise<VectorManifest> {
@@ -725,6 +836,20 @@ function relayEndpointValue(transport: string, uri: string, priority: number): C
     { key: "uri", value: uri },
     { key: "priority", value: priority }
   ]);
+}
+
+function identityRouteHintValue(transport: string, uri: string, relayPublicKey: string, priority: number): CborEntry["value"] {
+  return cborMap([
+    { key: "transport", value: transport },
+    { key: "uri", value: uri },
+    { key: "relay_public_key", value: relayPublicKey },
+    { key: "profile_multihash", value: defaultBootstrapProfileMultihashes[0] },
+    { key: "priority", value: priority }
+  ]);
+}
+
+function fixedBytes(size: number, seed: number): Uint8Array {
+  return Uint8Array.from({ length: size }, (_, index) => (seed + index) % 256);
 }
 
 function patchSignatureByte(wrapper: string): Uint8Array {

@@ -16,6 +16,13 @@ community-operated relays when direct connectivity is unavailable.
 The canonical user identity is rooted in a cryptographic key, not an email
 address, platform handle, relay hostname, or B.R.A.N.C.H. account.
 
+The user-facing stable address is a self-certifying BranchID derived from the
+person's root identity public key. No relay, mirror, carrier, Git host, or
+B.R.A.N.C.H.-operated service assigns this identifier. Device IDs are signed
+delegates of the person identity. Live Peer IDs belong to current transport
+sessions and may rotate. Relay Node IDs identify relay operators and are not
+user identities.
+
 Human-readable aliases are optional discovery aids. Losing a carrier, mirror, or
 relay must not change identity. User-owned identity, contacts, messages, outbox,
 and trust history are persisted locally by the client, with portable encrypted
@@ -138,6 +145,13 @@ Public search carriers, rendezvous events, signed BootstrapBeacons, and
 Ribbon Bearer HAVE/WANT gossip form the control plane. Gossip carries exact
 signed source records or bounded summaries after authentication; it is not a
 directory, mailbox, relay, or new authority.
+
+Signed IdentityContact records are also control-plane source records. They make
+a BranchID discoverable through public carriers and relay-assisted mesh gossip,
+but the receiver accepts them only after checking the root identity signature,
+freshness, sequence, and local trust policy. A relay that has an
+IdentityContact observation does not prove that the user is online, trusted, or
+reachable through that relay.
 
 Authenticated P2P routes and live relay paths form the data plane. Once a
 session is established, its original discovery carrier is not required for

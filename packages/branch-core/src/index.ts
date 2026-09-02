@@ -15,6 +15,7 @@ export * from "./protocol/v0/base64url.js";
 export * from "./protocol/v0/bootstrap-beacon.js";
 export * from "./protocol/v0/cbor.js";
 export * from "./protocol/v0/envelope.js";
+export * from "./protocol/v0/identity-contact.js";
 export * from "./protocol/v0/profile.js";
 export * from "./protocol/v0/relay-attachment.js";
 export * from "./protocol/v0/text-carrier.js";

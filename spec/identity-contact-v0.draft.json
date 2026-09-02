@@ -1,0 +1,67 @@
+{
+  "schema": "branch.identity-contact/0.draft",
+  "status": "draft",
+  "published": false,
+  "decision": "D-BRANCH-041",
+  "wire_version": 0,
+  "protocol": "branch/connectivity/0",
+  "event_type": "identity.announce",
+  "encoding": "cbor.det.rfc8949",
+  "text_wrapper": "BRANCH0.",
+  "signature_input_domain": "BRANCH signed event v0\n",
+  "branch_id": {
+    "format": "br1.<multihash.sha2-256(domain || root_identity_public_key)>",
+    "domain": "BRANCH identity id v0\n",
+    "assignment_authority": "none",
+    "source": "signed_event.sender.public_key"
+  },
+  "identity_layers": {
+    "person_identity": "stable root identity addressed by BranchID",
+    "device_id": "signed delegate of person identity",
+    "peer_id": "live transport/session routing identity; may rotate",
+    "relay_node_id": "relay operator identity; not a user identity"
+  },
+  "payload": {
+    "required_fields": [
+      "contact_id",
+      "branch_id",
+      "sequence",
+      "issued_at",
+      "expires_at",
+      "aliases",
+      "protocol_versions",
+      "profile_multihashes",
+      "route_hints"
+    ],
+    "optional_fields": ["display_name"],
+    "max_aliases": 8,
+    "max_alias_bytes": 64,
+    "max_display_name_bytes": 96,
+    "max_route_hints": 8,
+    "authority": "signed identity root key only; carrier accounts, aliases, relays, mirrors, topics and search ranks are candidate evidence",
+    "forbidden_fields": [
+      "uin",
+      "server_assigned_id",
+      "account_id",
+      "password",
+      "cookie",
+      "bearer_token",
+      "private_key",
+      "identity_export",
+      "message",
+      "mailbox",
+      "global_presence"
+    ]
+  },
+  "route_hint": {
+    "required_fields": ["transport", "uri", "relay_public_key", "profile_multihash", "priority"],
+    "authority": "hint only; relay identity is proven during attachment"
+  },
+  "federation": {
+    "mesh_distribution": "bounded signed observations and HAVE/WANT summaries",
+    "relay_storage": "memory-only optional cache",
+    "relay_restart_restores_contacts": false,
+    "global_directory": false,
+    "presence_claim": false
+  }
+}
