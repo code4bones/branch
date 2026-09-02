@@ -15,7 +15,7 @@ go:
   tags:
     - branch_nd
   script:
-    - docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache -e GOPATH=/tmp/gopath "$BRANCH_BUILDER_IMAGE" deployments/gitlab/go-checks.sh
+    - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache -e GOPATH=/tmp/gopath "$BRANCH_BUILDER_IMAGE" deployments/gitlab/go-checks.sh
 
 web:
   stage: test
@@ -28,7 +28,7 @@ web:
     paths:
       - web/.npm/
   script:
-    - docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src/web -e HOME=/tmp -e npm_config_cache=/src/web/.npm "$BRANCH_NODE_IMAGE" sh -lc 'npm ci --prefer-offline --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=120000 && npm run typecheck && npm run lint && npm test'
+    - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src/web -e HOME=/tmp -e npm_config_cache=/src/web/.npm "$BRANCH_NODE_IMAGE" sh -lc 'npm ci --prefer-offline --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=120000 && npm run typecheck && npm run lint && npm test'
 
 build:branch-node:
   stage: build
@@ -36,8 +36,8 @@ build:branch-node:
     - branch_nd
   script:
     - mkdir -p dist
-    - docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache "$BRANCH_BUILDER_IMAGE" go build -trimpath -ldflags="-s -w" -o "dist/${BRANCH_BINARY_NAME}-linux-amd64" ./cmd/branch-node
-    - docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=arm64 -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache "$BRANCH_BUILDER_IMAGE" go build -trimpath -ldflags="-s -w" -o "dist/${BRANCH_BINARY_NAME}-linux-arm64" ./cmd/branch-node
+    - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache "$BRANCH_BUILDER_IMAGE" go build -trimpath -ldflags="-s -w" -o "dist/${BRANCH_BINARY_NAME}-linux-amd64" ./cmd/branch-node
+    - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=arm64 -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache "$BRANCH_BUILDER_IMAGE" go build -trimpath -ldflags="-s -w" -o "dist/${BRANCH_BINARY_NAME}-linux-arm64" ./cmd/branch-node
   artifacts:
     expire_in: 1 day
     paths:
@@ -91,11 +91,11 @@ deploy:relay02:
 .cleanup_docker:
   stage: cleanup
   script:
-    - docker container prune -f || true
-    - docker builder prune -af --filter "until=${BRANCH_DOCKER_PRUNE_UNTIL}" || true
-    - docker image prune -af --filter "label=org.branch.role=relay-node" || true
-    - docker image prune -f --filter "until=${BRANCH_DOCKER_PRUNE_UNTIL}" || true
-    - if [ "${BRANCH_DOCKER_PRUNE_ALL:-0}" = "1" ]; then docker image prune -af --filter "until=${BRANCH_DOCKER_PRUNE_UNTIL}" || true; fi
+    - deployments/gitlab/docker-cli.sh container prune -f || true
+    - deployments/gitlab/docker-cli.sh builder prune -af --filter "until=${BRANCH_DOCKER_PRUNE_UNTIL}" || true
+    - deployments/gitlab/docker-cli.sh image prune -af --filter "label=org.branch.role=relay-node" || true
+    - deployments/gitlab/docker-cli.sh image prune -f --filter "until=${BRANCH_DOCKER_PRUNE_UNTIL}" || true
+    - if [ "${BRANCH_DOCKER_PRUNE_ALL:-0}" = "1" ]; then deployments/gitlab/docker-cli.sh image prune -af --filter "until=${BRANCH_DOCKER_PRUNE_UNTIL}" || true; fi
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: manual

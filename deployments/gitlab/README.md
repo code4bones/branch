@@ -37,6 +37,8 @@ Host prerequisites:
 
 - Docker CLI/daemon and Docker Compose v2, or legacy `docker-compose`.
 - `curl`.
+- If the runner is not root, the `gitlab-runner` user can reach Docker directly
+  through the `docker` group, or it can run passwordless `sudo docker`.
 - If the runner is not root, passwordless sudo for installing files under
   `/opt/branch/relays`.
 - NPM forwards the public host to the per-relay host port with WebSocket support
@@ -76,6 +78,17 @@ Forward Port: 8089
 Websockets Support: enabled
 SSL: existing certificate
 ~~~
+
+If CI fails with Docker socket permission errors, fix the runner host:
+
+~~~sh
+sudo usermod -aG docker gitlab-runner
+sudo systemctl restart gitlab-runner
+~~~
+
+Then rerun the failed pipeline. The CI scripts also fall back to `sudo docker`
+when passwordless sudo allows it, but docker-group access is the simpler steady
+state for this shell runner.
 
 ## Required CI/CD variables
 
