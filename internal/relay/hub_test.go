@@ -180,7 +180,7 @@ func TestHubPresenceHeartbeatLookupAndRendezvousAreEphemeral(t *testing.T) {
 	if err := alice.Rendezvous("route-expired", "bob-peer", now.Add(20*time.Second)); !errors.Is(err, ErrPeerUnavailable) {
 		t.Fatalf("expired peer rendezvous error = %v", err)
 	}
-	if snapshot := hub.Snapshot(); snapshot.PresenceActive != 0 || snapshot.RoutesActive != 1 {
+	if snapshot := hub.Snapshot(); snapshot.PresenceActive != 0 || snapshot.RoutesActive != 0 {
 		t.Fatalf("unexpected snapshot after expiry: %+v", snapshot)
 	}
 }
@@ -285,7 +285,7 @@ func TestHubFederatedPresenceForwardsAcrossLiveRelays(t *testing.T) {
 	}
 
 	leftSnapshot := leftHub.Snapshot()
-	if leftSnapshot.SessionsActive != 1 || leftSnapshot.RoutesActive != 1 || leftSnapshot.PresenceActive != 0 || leftSnapshot.QueueDepth != 0 {
+	if leftSnapshot.SessionsActive != 1 || leftSnapshot.RoutesActive != 1 || leftSnapshot.PresenceActive != 1 || leftSnapshot.QueueDepth != 0 {
 		t.Fatalf("unexpected left snapshot: %+v", leftSnapshot)
 	}
 	rightSnapshot := rightHub.Snapshot()

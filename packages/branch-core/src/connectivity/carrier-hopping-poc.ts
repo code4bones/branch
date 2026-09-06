@@ -8,6 +8,8 @@ import {
   type SameRelayTransportEvent
 } from "./same-relay.js";
 import {
+  betaHpkeCiphertextBytesForPlaintext,
+  betaHpkeCiphertextBytesFromSealedPayload,
   createBetaPayloadKeyPair,
   makeBetaPayloadAAD,
   openBetaPayload,
@@ -360,7 +362,8 @@ async function attachPair(
         void openBetaPayload({
           recipientPrivateKey: bobPayloadKey.privateKey,
           sealedPayload: event.ciphertext,
-          aad: makeEnvelopeAAD(aliceRoute, alice.peerId, bob.peerId, event.deliveryId)
+          aad: makeEnvelopeAAD(aliceRoute, event.originRouteId, alice.peerId, bob.peerId, event.deliveryId, betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext)),
+          expectedCiphertextBytes: betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext)
         }).then(() => {
           alice.markPeerReceipt(event.deliveryId);
         }).catch((error: unknown) => {
@@ -407,26 +410,34 @@ async function sendEncryptedEnvelope(
   crypto: Crypto | undefined
 ): Promise<string> {
   const deliveryId = randomToken(crypto ?? globalThis.crypto, 16);
+  const originRouteId = alice.routeId;
+  if (originRouteId === null) {
+    throw new Error("alice relay session is not attached");
+  }
+  const ciphertextBytes = betaHpkeCiphertextBytesForPlaintext(plaintext);
   const sealedPayload = await sealBetaPayload({
     recipientPublicKey: bobPayloadKey.publicKey,
     plaintext,
-    aad: makeEnvelopeAAD(route, alice.peerId, bob.peerId, deliveryId)
+    aad: makeEnvelopeAAD(route, originRouteId, alice.peerId, bob.peerId, deliveryId, ciphertextBytes),
+    expectedCiphertextBytes: ciphertextBytes
   });
-  alice.sendSealedEnvelope(sealedPayload, { deliveryId });
+  alice.sendSealedEnvelope(sealedPayload, { deliveryId, originRouteId });
   return deliveryId;
 }
 
-function makeEnvelopeAAD(route: RelayRouteMaterial, senderPeerId: string, recipientPeerId: string, deliveryId: string): Uint8Array {
+function makeEnvelopeAAD(route: RelayRouteMaterial, originRouteId: string, senderPeerId: string, recipientPeerId: string, deliveryId: string, hpkeCiphertextBytes: number): Uint8Array {
   return makeBetaPayloadAAD({
     protocol: protocolID,
     profileMultihash: route.profileMultihash,
-    senderPeerId,
-    recipientPeerId,
+    originRouteId,
+    senderPeerKey: senderPeerId,
+    recipientPeerKey: recipientPeerId,
     deliveryId,
     pathEpoch: defaultPathEpoch,
     streamId: defaultStreamID,
     frameType: "ENVELOPE",
-    ackRequested: true
+    ackRequested: true,
+    hpkeCiphertextBytes
   });
 }
 

@@ -83,6 +83,8 @@ branch-relay-attachment-frame =
   relay-presence /
   relay-heartbeat /
   relay-lookup /
+  relay-identity-want /
+  relay-identity-have /
   relay-rendezvous /
   relay-envelope /
   relay-ack /
@@ -149,6 +151,27 @@ relay-lookup = {
   sequence: draft-timestamp,
 }
 
+; BranchID syntax is checked by the protocol parser. The fixed text length
+; represents br1. plus a base64url SHA-256 multihash.
+branch-id = text .size 50
+branch-text-wrapper = text .size (8..8192)
+
+relay-identity-want = {
+  type: "IDENTITY_WANT",
+  session_id: b64url-32,
+  branch_id: branch-id,
+  sequence: draft-timestamp,
+  hop_limit: 0..4,
+}
+
+relay-identity-have = {
+  type: "IDENTITY_HAVE",
+  session_id: b64url-32,
+  branch_id: branch-id,
+  sequence: draft-timestamp,
+  records: [*4 branch-text-wrapper],
+}
+
 relay-rendezvous = {
   type: "RENDEZVOUS",
   session_id: b64url-32,
@@ -161,6 +184,7 @@ relay-envelope = {
   type: "ENVELOPE",
   session_id: b64url-32,
   route_id: b64url-16,
+  origin_route_id: b64url-16,
   path_epoch: draft-timestamp,
   stream_id: draft-timestamp,
   delivery_id: b64url-16,

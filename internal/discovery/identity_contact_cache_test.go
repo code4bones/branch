@@ -77,6 +77,47 @@ func TestIdentityContactCacheRejectsInvalidAndLowerSequenceRecords(t *testing.T)
 	}
 }
 
+func TestIdentityContactCacheRejectsDistinctEqualSequenceRecords(t *testing.T) {
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	cache := newTestIdentityContactCache(t, now, 8)
+	publicKey, privateKey := testIdentityKey(t)
+	first := createCacheIdentityContact(t, cacheContactOptions{
+		now:        now.Unix(),
+		expires:    now.Add(time.Hour).Unix(),
+		sequence:   8,
+		publicKey:  publicKey,
+		privateKey: privateKey,
+	})
+	second := createCacheIdentityContact(t, cacheContactOptions{
+		now:        now.Unix(),
+		expires:    now.Add(time.Hour).Unix(),
+		sequence:   8,
+		publicKey:  publicKey,
+		privateKey: privateKey,
+	})
+	if first == second {
+		t.Fatal("distinct records unexpectedly matched")
+	}
+	if result := cache.Accept(first, "carrier-a", protocolv0.IdentityContactValidationOptions{}); !result.Accepted {
+		t.Fatalf("accept first = %+v", result)
+	}
+	if result := cache.Accept(second, "carrier-b", protocolv0.IdentityContactValidationOptions{}); result.Accepted || result.Reason != protocolv0.IdentityContactEquivocation {
+		t.Fatalf("accept conflicting record = %+v", result)
+	}
+	if result := cache.Accept(first, "carrier-c", protocolv0.IdentityContactValidationOptions{}); !result.Accepted || result.Observation == nil || result.Observation.Wrapper != first {
+		t.Fatalf("accept exact duplicate = %+v", result)
+	}
+
+	branchID, err := protocolv0.BranchIDFromPublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("branch id: %v", err)
+	}
+	observation, ok := cache.Lookup(branchID)
+	if !ok || observation.Wrapper != first {
+		t.Fatalf("cache retained conflicted record: %+v, %t", observation, ok)
+	}
+}
+
 func TestIdentityContactCacheForgetsExpiredAndRestartedObservations(t *testing.T) {
 	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
 	current := now

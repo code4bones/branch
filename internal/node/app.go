@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/code4bones/branch/internal/admin"
+	githubcarrier "github.com/code4bones/branch/internal/carrier/github"
 	"github.com/code4bones/branch/internal/discovery"
 	"github.com/code4bones/branch/internal/identity"
 	"github.com/code4bones/branch/internal/relay"
@@ -19,16 +20,18 @@ var ErrInvalidConfig = errors.New("node invalid config")
 
 // Config is parsed once at startup and then treated as immutable.
 type Config struct {
-	PublicAddr      string
-	AdminAddr       string
-	IdentityPath    string
-	AdminToken      string
-	Relay           relay.Config
-	Version         string
-	Monitor         RelayMonitorConfig
-	MonitorToken    string
-	WSSOrigins      []string
-	FederationPeers []string
+	PublicAddr               string
+	AdminAddr                string
+	IdentityPath             string
+	AdminToken               string
+	Relay                    relay.Config
+	Version                  string
+	Monitor                  RelayMonitorConfig
+	MonitorToken             string
+	WSSOrigins               []string
+	FederationPeers          []wss.FederationPeer
+	FederationEndpointPolicy wss.FederationEndpointPolicy
+	GitHubIdentityLookup     bool
 }
 
 // DefaultConfig returns development-safe defaults for a relay behind a local
@@ -45,11 +48,12 @@ func DefaultConfig() Config {
 // App owns the process-local relay, public HTTP surface, and protected admin
 // surface. It does not persist relay sessions or user traffic.
 type App struct {
-	config       Config
-	hub          *relay.Hub
-	publicServer *http.Server
-	adminServer  *http.Server
-	monitor      *relayMonitorReporter
+	config         Config
+	hub            *relay.Hub
+	publicServer   *http.Server
+	adminServer    *http.Server
+	monitor        *relayMonitorReporter
+	identityLookup *discovery.IdentityContactLookup
 }
 
 // New creates the node composition root.
@@ -73,18 +77,27 @@ func New(config Config) (*App, error) {
 		return nil, fmt.Errorf("create identity contact cache: %w", err)
 	}
 	peerRouter, err := wss.NewStaticPeerRouter(wss.StaticPeerRouterConfig{
-		Endpoints:     config.FederationPeers,
-		LocalHub:      hub,
-		MaxFrameBytes: int64(config.Relay.MaxFrameBytes),
-		DialTimeout:   2 * time.Second,
-		WriteTimeout:  5 * time.Second,
+		Peers:          config.FederationPeers,
+		LocalHub:       hub,
+		EndpointPolicy: config.FederationEndpointPolicy,
+		MaxFrameBytes:  int64(config.Relay.MaxFrameBytes),
+		DialTimeout:    2 * time.Second,
+		WriteTimeout:   5 * time.Second,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create relay federation router: %w", err)
 	}
+	identitySources := []discovery.IdentityContactLookupSource{peerRouter}
+	if config.GitHubIdentityLookup {
+		githubSource, sourceErr := githubcarrier.NewIdentityContactSource(githubcarrier.IdentityContactSourceConfig{})
+		if sourceErr != nil {
+			return nil, fmt.Errorf("create github identity carrier: %w", sourceErr)
+		}
+		identitySources = append(identitySources, githubSource)
+	}
 	identityLookup, err := discovery.NewIdentityContactLookup(discovery.IdentityContactLookupConfig{
 		Cache:   identityContactCache,
-		Sources: []discovery.IdentityContactLookupSource{peerRouter},
+		Sources: identitySources,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create identity contact lookup: %w", err)
@@ -136,9 +149,10 @@ func New(config Config) (*App, error) {
 	}
 
 	return &App{
-		config:  config,
-		hub:     hub,
-		monitor: monitorReporter,
+		config:         config,
+		hub:            hub,
+		monitor:        monitorReporter,
+		identityLookup: identityLookup,
 		publicServer: &http.Server{
 			Addr:              config.PublicAddr,
 			Handler:           publicMux,
@@ -170,13 +184,21 @@ func (app *App) Hub() *relay.Hub {
 
 // Run starts configured listeners until ctx is cancelled.
 func (app *App) Run(ctx context.Context) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	sweepDone := make(chan struct{})
+	go app.sweepExpired(runCtx, sweepDone)
+	defer func() {
+		cancel()
+		<-sweepDone
+	}()
+
 	errs := make(chan error, 3)
 	go serve(app.publicServer, errs)
 	if app.config.AdminAddr != "" {
 		go serve(app.adminServer, errs)
 	}
 	if app.monitor != nil {
-		go app.monitor.run(ctx)
+		go app.monitor.run(runCtx)
 	}
 
 	select {
@@ -195,6 +217,28 @@ func (app *App) Run(ctx context.Context) error {
 			return nil
 		}
 		return err
+	}
+}
+
+func (app *App) sweepExpired(ctx context.Context, done chan<- struct{}) {
+	defer close(done)
+	interval := app.hub.PresenceTTL() / 2
+	if interval < time.Second {
+		interval = time.Second
+	}
+	if interval > 10*time.Second {
+		interval = 10 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			app.hub.SweepExpired(now)
+		}
 	}
 }
 

@@ -21,6 +21,9 @@ export const maxGitHubDiscoveryPage = 10;
 export const maxGitHubRecordBytes = 64 * 1024;
 export const maxGitHubSearchItems = 10;
 export const maxGitHubWrappersPerRecord = 16;
+export const defaultGitHubSearchTimeoutMs = 3_000;
+export const minGitHubSearchTimeoutMs = 100;
+export const maxGitHubSearchTimeoutMs = 10_000;
 
 export type GitHubDiscoveryStatus = "ok" | "empty" | "rate_limited" | "failed";
 
@@ -29,7 +32,14 @@ export interface GitHubDiscoveryRequest {
   readonly includeForks: boolean;
   readonly perPage: number;
   readonly page: number;
+  /** Bounds the complete GitHub search pass, including contents reads. */
+  readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+}
+
+export interface GitHubSearchCarrierOptions {
+  /** Bounds a complete search pass. Values are clamped to the adapter limit. */
+  readonly timeoutMs?: number;
 }
 
 export interface GitHubDiscoveryResult {
@@ -140,6 +150,18 @@ export async function discoverGitHubDropIns(
   fetcher: Fetcher = globalThis.fetch.bind(globalThis)
 ): Promise<GitHubDiscoveryReport> {
   const normalized = normalizeDiscoveryRequest(request);
+  const deadline = createGitHubSearchDeadline(fetcher, normalized.signal, normalized.timeoutMs ?? defaultGitHubSearchTimeoutMs);
+  try {
+    return await discoverGitHubDropInsWithinDeadline(normalized, deadline.fetcher);
+  } finally {
+    deadline.dispose();
+  }
+}
+
+async function discoverGitHubDropInsWithinDeadline(
+  normalized: GitHubDiscoveryRequest,
+  fetcher: Fetcher
+): Promise<GitHubDiscoveryReport> {
   const searchUrl = makeGitHubRepositorySearchUrl(normalized);
   const searchResponse = await fetcher(searchUrl, makeGitHubRequestInit(normalized.signal));
   const rateLimitRemaining = searchResponse.headers.get("x-ratelimit-remaining");
@@ -188,8 +210,15 @@ export async function discoverGitHubDropIns(
   }
 
   const results: GitHubDiscoveryResult[] = [];
-  for (const repository of searchPayload.items.slice(0, maxGitHubSearchItems)) {
-    results.push(await readRepositoryRecords(repository, normalized.signal, fetcher));
+  for (const repository of selectRepositories(searchPayload.items, normalized.includeForks)) {
+    try {
+      results.push(await readRepositoryRecords(repository, normalized.signal, fetcher));
+    } catch (error) {
+      if (isAbortError(error) || isGitHubSearchTimeoutError(error) || normalized.signal?.aborted === true) {
+        throw error;
+      }
+      results.push(emptyResult(repositoryResultBase(repository), "error", "GitHub records response rejected"));
+    }
   }
 
   return {
@@ -205,7 +234,7 @@ export async function discoverGitHubDropIns(
   };
 }
 
-export function createGitHubSearchCarrier(fetcher?: Fetcher): SearchCarrier {
+export function createGitHubSearchCarrier(fetcher?: Fetcher, options: GitHubSearchCarrierOptions = {}): SearchCarrier {
   return {
     id: "github",
     search: async (request) => gitHubReportToSearchCarrierReport(
@@ -214,6 +243,7 @@ export function createGitHubSearchCarrier(fetcher?: Fetcher): SearchCarrier {
         includeForks: request.includeForks ?? false,
         perPage: request.perPage,
         page: request.page,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(request.signal === undefined ? {} : { signal: request.signal })
       }, fetcher),
       "github"
@@ -221,7 +251,10 @@ export function createGitHubSearchCarrier(fetcher?: Fetcher): SearchCarrier {
   };
 }
 
-export function createGitHubIdentityContactSearchCarrier(fetcher?: Fetcher): IdentityContactSearchCarrier {
+export function createGitHubIdentityContactSearchCarrier(
+  fetcher?: Fetcher,
+  options: GitHubSearchCarrierOptions = {}
+): IdentityContactSearchCarrier {
   return {
     id: "github",
     search: async (request) => gitHubIdentityContactReportToSearchCarrierReport(
@@ -231,6 +264,7 @@ export function createGitHubIdentityContactSearchCarrier(fetcher?: Fetcher): Ide
         includeForks: request.includeForks ?? false,
         perPage: request.perPage,
         page: request.page,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(request.signal === undefined ? {} : { signal: request.signal })
       }, fetcher),
       "github"
@@ -333,8 +367,22 @@ export async function discoverGitHubIdentityContacts(
     includeForks: request.includeForks ?? false,
     perPage: request.perPage,
     page: request.page,
+    ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
     ...(request.signal === undefined ? {} : { signal: request.signal })
   });
+  const deadline = createGitHubSearchDeadline(fetcher, normalized.signal, normalized.timeoutMs ?? defaultGitHubSearchTimeoutMs);
+  try {
+    return await discoverGitHubIdentityContactsWithinDeadline(branchID, normalized, deadline.fetcher);
+  } finally {
+    deadline.dispose();
+  }
+}
+
+async function discoverGitHubIdentityContactsWithinDeadline(
+  branchID: string,
+  normalized: GitHubDiscoveryRequest,
+  fetcher: Fetcher
+): Promise<GitHubIdentityContactDiscoveryReport> {
   const searchUrl = makeGitHubRepositorySearchUrl(normalized);
   const searchResponse = await fetcher(searchUrl, makeGitHubRequestInit(normalized.signal));
   const rateLimitRemaining = searchResponse.headers.get("x-ratelimit-remaining");
@@ -386,8 +434,15 @@ export async function discoverGitHubIdentityContacts(
   }
 
   const results: GitHubIdentityContactDiscoveryResult[] = [];
-  for (const repository of searchPayload.items.slice(0, maxGitHubSearchItems)) {
-    results.push(await readRepositoryIdentityContactRecords(repository, branchID, normalized.signal, fetcher));
+  for (const repository of selectRepositories(searchPayload.items, normalized.includeForks)) {
+    try {
+      results.push(await readRepositoryIdentityContactRecords(repository, branchID, normalized.signal, fetcher));
+    } catch (error) {
+      if (isAbortError(error) || isGitHubSearchTimeoutError(error) || normalized.signal?.aborted === true) {
+        throw error;
+      }
+      results.push(emptyIdentityContactResult(repositoryResultBase(repository), "error", "GitHub records response rejected"));
+    }
   }
 
   return {
@@ -409,6 +464,8 @@ export const githubDiscoveryConstraints = [
   "Reads .branch/records.br0 from the repository default branch through the GitHub contents API.",
   "Unauthenticated requests are IP rate limited; 403/429 and x-ratelimit headers are surfaced to the operator.",
   "Search may be incomplete, delayed, paginated, fork-filtered, or missing recently pushed records.",
+  "One adapter-owned deadline bounds a complete repository search pass and preserves caller cancellation.",
+  "A malformed or oversized candidate records file is isolated to that repository; later bounded candidates still validate.",
   "Extracted BRANCH0 wrappers remain candidates until protocol-core validation accepts signatures and freshness."
 ] as const;
 
@@ -422,6 +479,7 @@ function normalizeDiscoveryRequest(request: GitHubDiscoveryRequest): GitHubDisco
     includeForks: request.includeForks,
     perPage: clampInteger(request.perPage, 1, maxGitHubDiscoveryPerPage),
     page: clampInteger(request.page, 1, maxGitHubDiscoveryPage),
+    timeoutMs: clampInteger(request.timeoutMs ?? defaultGitHubSearchTimeoutMs, minGitHubSearchTimeoutMs, maxGitHubSearchTimeoutMs),
     ...(request.signal === undefined ? {} : { signal: request.signal })
   };
 }
@@ -432,13 +490,7 @@ async function readRepositoryRecords(
   fetcher: Fetcher
 ): Promise<GitHubDiscoveryResult> {
   const recordsUrl = makeGitHubContentsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch);
-  const base = {
-    repository: repository.full_name,
-    defaultBranch: repository.default_branch,
-    fork: repository.fork,
-    htmlUrl: repository.html_url,
-    recordsUrl
-  };
+  const base = repositoryResultBase(repository, recordsUrl);
   const response = await fetcher(recordsUrl, makeGitHubRequestInit(signal));
 
   if (response.status === 404) {
@@ -486,13 +538,7 @@ async function readRepositoryIdentityContactRecords(
   fetcher: Fetcher
 ): Promise<GitHubIdentityContactDiscoveryResult> {
   const recordsUrl = makeGitHubContentsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch);
-  const base = {
-    repository: repository.full_name,
-    defaultBranch: repository.default_branch,
-    fork: repository.fork,
-    htmlUrl: repository.html_url,
-    recordsUrl
-  };
+  const base = repositoryResultBase(repository, recordsUrl);
   const response = await fetcher(recordsUrl, makeGitHubRequestInit(signal));
 
   if (response.status === 404) {
@@ -712,21 +758,117 @@ function makeGitHubHeaders(): HeadersInit {
 function makeGitHubRequestInit(signal: AbortSignal | undefined): RequestInit {
   return {
     method: "GET",
+    credentials: "omit",
+    redirect: "error",
     headers: makeGitHubHeaders(),
     ...(signal === undefined ? {} : { signal })
   };
 }
 
-async function readJson(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (new TextEncoder().encode(text).byteLength > maxGitHubRecordBytes) {
-    throw new Error("GitHub response too large");
+interface GitHubSearchDeadline {
+  readonly fetcher: Fetcher;
+  readonly dispose: () => void;
+}
+
+class GitHubSearchTimeoutError extends Error {
+  constructor() {
+    super("GitHub search timed out");
   }
+}
+
+function createGitHubSearchDeadline(fetcher: Fetcher, signal: AbortSignal | undefined, timeoutMs: number): GitHubSearchDeadline {
+  const controller = new AbortController();
+  let timeout = false;
+  const termination = new Promise<never>((_resolve, reject) => {
+    controller.signal.addEventListener("abort", () => {
+      if (timeout) {
+        reject(new GitHubSearchTimeoutError());
+        return;
+      }
+      reject(new DOMException("GitHub search aborted", "AbortError"));
+    }, { once: true });
+  });
+  const abortFromCaller = (): void => {
+    controller.abort(signal?.reason);
+  };
+  if (signal?.aborted === true) {
+    abortFromCaller();
+  } else {
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+  const timer = setTimeout(() => {
+    timeout = true;
+    controller.abort();
+  }, timeoutMs);
+  return {
+    fetcher: async (input, init) => Promise.race([
+      fetcher(input, { ...init, signal: controller.signal }),
+      termination
+    ]),
+    dispose: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abortFromCaller);
+      controller.abort();
+    }
+  };
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  const bytes = await readBoundedResponseBytes(response, maxGitHubRecordBytes);
+  const text = new TextDecoder().decode(bytes);
   try {
     return JSON.parse(text);
   } catch {
     return null;
   }
+}
+
+async function readBoundedResponseBytes(response: Response, limit: number): Promise<Uint8Array> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null && isDeclaredResponseTooLarge(contentLength, limit)) {
+    throw new Error("GitHub response too large");
+  }
+  if (response.body === null) {
+    throw new Error("GitHub response body missing");
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value.byteLength > limit - total) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The bounded error below is authoritative even when cancellation fails.
+        }
+        throw new Error("GitHub response too large");
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function isDeclaredResponseTooLarge(value: string, limit: number): boolean {
+  if (!/^[0-9]+$/.test(value)) {
+    return false;
+  }
+  const length = Number(value);
+  return Number.isSafeInteger(length) && length > limit;
 }
 
 function readContentFile(value: unknown): string | null {
@@ -794,8 +936,38 @@ function isRepositorySearchItem(value: unknown): value is GitHubRepositorySearch
     typeof value["name"] === "string";
 }
 
+function selectRepositories(
+  repositories: readonly GitHubRepositorySearchItem[],
+  includeForks: boolean
+): readonly GitHubRepositorySearchItem[] {
+  return repositories
+    .slice(0, maxGitHubSearchItems)
+    .filter((repository) => includeForks || !repository.fork);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function isGitHubSearchTimeoutError(error: unknown): error is GitHubSearchTimeoutError {
+  return error instanceof GitHubSearchTimeoutError;
+}
+
+function repositoryResultBase(
+  repository: GitHubRepositorySearchItem,
+  recordsUrl = makeGitHubContentsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch)
+): Pick<GitHubDiscoveryResult, "repository" | "defaultBranch" | "fork" | "htmlUrl" | "recordsUrl"> {
+  return {
+    repository: repository.full_name,
+    defaultBranch: repository.default_branch,
+    fork: repository.fork,
+    htmlUrl: repository.html_url,
+    recordsUrl
+  };
 }
 
 function dedupeGitHubResults(results: readonly GitHubDiscoveryResult[]): readonly GitHubDiscoveryResult[] {

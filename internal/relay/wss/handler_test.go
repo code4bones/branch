@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,11 +23,16 @@ import (
 )
 
 const (
-	testAlicePeerID = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
-	testPeerID      = "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA"
-	testB64x32      = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
-	testB64x16      = "AAECAwQFBgcICQoLDA0ODw"
-	testB64x64      = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-Pw"
+	testB64x32 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+	testB64x16 = "AAECAwQFBgcICQoLDA0ODw"
+	testB64x64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-Pw"
+)
+
+var (
+	testAlicePrivateKey = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, ed25519.SeedSize))
+	testPeerPrivateKey  = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, ed25519.SeedSize))
+	testAlicePeerID     = testPublicKeyID(testAlicePrivateKey)
+	testPeerID          = testPublicKeyID(testPeerPrivateKey)
 )
 
 func TestHandlerRejectsWrongPathAndNonUpgrade(t *testing.T) {
@@ -83,6 +89,80 @@ func TestHandlerAcceptsConfiguredBrowserOrigin(t *testing.T) {
 	conn.Close(websocket.StatusNormalClosure, "")
 }
 
+func TestHandlerRejectsInvalidClientProofBeforeSessionAttach(t *testing.T) {
+	hub, handler := newTestHubAndHandler(t)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+Path, nil)
+	if err != nil {
+		t.Fatalf("dial relay: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	hello := map[string]any{
+		"type":            "HELLO",
+		"client_nonce":    testB64x32,
+		"client_time":     1_789_000_000,
+		"requested_role":  "relay.forward.live/0",
+		"max_frame_bytes": 49_152,
+		"offers": []map[string]any{{
+			"wire_version":          0,
+			"protocol":              protocol.ProtocolID,
+			"profile_multihash":     protocol.DevelopmentProfileMultihash,
+			"capabilities":          []string{"relay.forward.live/0", "route.relay.wss/0"},
+			"required_capabilities": []string{"relay.forward.live/0"},
+			"extensions":            []string{},
+			"required_extensions":   []string{},
+		}},
+	}
+	writeRawTest(t, conn, mustMarshal(t, hello))
+	challenge := readObject(t, conn)
+	sendJSON(t, conn, map[string]any{
+		"type":              "AUTH",
+		"client_public_key": testPeerID,
+		"client_nonce":      challenge["client_nonce"],
+		"relay_nonce":       challenge["relay_nonce"],
+		"transcript_hash":   challenge["transcript_hash"],
+		"client_proof":      testB64x64,
+	})
+
+	if _, _, err := conn.Read(ctx); err == nil {
+		t.Fatal("invalid client proof unexpectedly reached READY")
+	}
+	if snapshot := hub.Snapshot(); snapshot.SessionsActive != 0 || snapshot.PresenceActive != 0 {
+		t.Fatalf("invalid AUTH left relay state: %+v", snapshot)
+	}
+}
+
+func TestHandlerRejectsPresenceForDifferentAuthenticatedPeer(t *testing.T) {
+	hub, handler := newTestHubAndHandler(t)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	client := dialAndReady(t, server.URL)
+	defer client.Close(websocket.StatusNormalClosure, "")
+	sendJSON(t, client.Conn, map[string]any{
+		"type":        "PRESENCE",
+		"session_id":  client.Ready.SessionID,
+		"route_id":    client.Ready.RouteID,
+		"peer_id":     testAlicePeerID,
+		"sequence":    1,
+		"ttl_seconds": 30,
+		"sent_at":     1_789_000_001,
+	})
+
+	errFrame := readObject(t, client.Conn)
+	if errFrame["type"] != "ERROR" || errFrame["code"] != "authentication_failed" {
+		t.Fatalf("unexpected identity binding error: %+v", errFrame)
+	}
+	if snapshot := hub.Snapshot(); snapshot.PresenceActive != 0 {
+		t.Fatalf("mismatched presence was accepted: %+v", snapshot)
+	}
+}
+
 func TestHandlerRejectsWildcardOriginPattern(t *testing.T) {
 	hub, err := relay.NewHub(relay.DefaultConfig())
 	if err != nil {
@@ -121,7 +201,7 @@ func TestHandlerAttachesTwoPeersAndForwardsOpaqueEnvelope(t *testing.T) {
 		"sent_at":     1_789_000_001,
 	})
 
-	alice := dialAndReady(t, server.URL)
+	alice := dialAndReadyAs(t, server.URL, testAlicePrivateKey)
 	defer alice.Close(websocket.StatusNormalClosure, "")
 	aliceReady := alice.Ready
 	sendJSON(t, alice.Conn, map[string]any{
@@ -182,7 +262,7 @@ func TestHandlerForwardsSelfAddressedEnvelopeOnLoopbackRoute(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	alice := dialAndReady(t, server.URL)
+	alice := dialAndReadyAs(t, server.URL, testAlicePrivateKey)
 	defer alice.Close(websocket.StatusNormalClosure, "")
 	aliceReady := alice.Ready
 	sendJSON(t, alice.Conn, map[string]any{
@@ -348,7 +428,7 @@ func TestHandlerFederatesLivePeerAcrossTwoRelays(t *testing.T) {
 	}
 
 	leftSnapshot := leftHub.Snapshot()
-	if leftSnapshot.SessionsActive != 1 || leftSnapshot.RoutesActive != 1 || leftSnapshot.PresenceActive != 0 || leftSnapshot.QueueDepth != 0 {
+	if leftSnapshot.SessionsActive != 1 || leftSnapshot.RoutesActive != 1 || leftSnapshot.PresenceActive != 1 || leftSnapshot.QueueDepth != 0 {
 		t.Fatalf("unexpected left hub snapshot: %+v", leftSnapshot)
 	}
 	rightSnapshot := rightHub.Snapshot()
@@ -358,7 +438,7 @@ func TestHandlerFederatesLivePeerAcrossTwoRelays(t *testing.T) {
 }
 
 func TestStaticPeerRouterFederatesThroughRemoteWSS(t *testing.T) {
-	rightHub, rightHandler := newTestHubAndHandler(t)
+	rightHub, rightIdentity, rightHandler := newTestHubIdentityAndHandler(t)
 	rightServer := httptest.NewServer(rightHandler)
 	defer rightServer.Close()
 
@@ -374,7 +454,11 @@ func TestStaticPeerRouterFederatesThroughRemoteWSS(t *testing.T) {
 		"sent_at":     1_789_000_001,
 	})
 
-	leftHub, leftHandler := newTestHubAndHandlerWithStaticFederation(t, wssURL(rightServer.URL))
+	leftHub, leftHandler := newTestHubAndHandlerWithStaticFederation(t, FederationPeer{
+		Endpoint:         wssURL(rightServer.URL),
+		RelayPublicKey:   rightIdentity.PublicKeyString(),
+		ProfileMultihash: protocol.DevelopmentProfileMultihash,
+	})
 	leftServer := httptest.NewServer(leftHandler)
 	defer leftServer.Close()
 
@@ -428,7 +512,7 @@ func TestStaticPeerRouterFederatesThroughRemoteWSS(t *testing.T) {
 	if reply["type"] != "ENVELOPE" || reply["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("static federation reply")) {
 		t.Fatalf("unexpected static federation reply: %+v", reply)
 	}
-	if snapshot := leftHub.Snapshot(); snapshot.SessionsActive != 1 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 0 || snapshot.QueueDepth != 0 {
+	if snapshot := leftHub.Snapshot(); snapshot.SessionsActive != 1 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 1 || snapshot.QueueDepth != 0 {
 		t.Fatalf("unexpected left hub snapshot: %+v", snapshot)
 	}
 	if snapshot := rightHub.Snapshot(); snapshot.PresenceActive != 1 || snapshot.QueueDepth != 0 {
@@ -436,7 +520,7 @@ func TestStaticPeerRouterFederatesThroughRemoteWSS(t *testing.T) {
 	}
 }
 
-func TestRouteHintPeerRouterFederatesThroughRendezvousHint(t *testing.T) {
+func TestHandlerRejectsClientRouteHintsBeforeFederationDial(t *testing.T) {
 	rightHub, rightIdentity, rightHandler := newTestHubIdentityAndHandler(t)
 	rightServer := httptest.NewServer(rightHandler)
 	defer rightServer.Close()
@@ -472,39 +556,28 @@ func TestRouteHintPeerRouterFederatesThroughRendezvousHint(t *testing.T) {
 			"priority":         0,
 		}},
 	})
-	sendJSON(t, alice.Conn, map[string]any{
-		"type":          "ENVELOPE",
-		"session_id":    alice.Ready.SessionID,
-		"route_id":      alice.Ready.RouteID,
-		"path_epoch":    0,
-		"stream_id":     0,
-		"delivery_id":   testB64x16,
-		"ciphertext":    base64.RawURLEncoding.EncodeToString([]byte("route hinted federation bytes")),
-		"ack_requested": true,
-	})
-
-	ack := readObject(t, alice.Conn)
-	if ack["type"] != "ACK" || ack["ack_type"] != "relay.forwarded" || ack["durable"] != false {
-		t.Fatalf("unexpected route-hinted federation ack: %+v", ack)
+	errFrame := readObject(t, alice.Conn)
+	if errFrame["type"] != "ERROR" || errFrame["code"] != "frame_malformed" {
+		t.Fatalf("unexpected client route-hint rejection: %+v", errFrame)
 	}
-	envelope := readObject(t, bob.Conn)
-	if envelope["type"] != "ENVELOPE" || envelope["ciphertext"] != base64.RawURLEncoding.EncodeToString([]byte("route hinted federation bytes")) {
-		t.Fatalf("unexpected route-hinted federation envelope: %+v", envelope)
-	}
-	if snapshot := leftHub.Snapshot(); snapshot.SessionsActive != 1 || snapshot.RoutesActive != 1 || snapshot.PresenceActive != 0 || snapshot.QueueDepth != 0 {
-		t.Fatalf("unexpected left hub snapshot: %+v", snapshot)
+	if snapshot := leftHub.Snapshot(); snapshot.RoutesActive != 0 || snapshot.PresenceActive != 0 || snapshot.QueueDepth != 0 {
+		t.Fatalf("left hub retained client route hint state: %+v", snapshot)
 	}
 	if snapshot := rightHub.Snapshot(); snapshot.PresenceActive != 1 || snapshot.QueueDepth != 0 {
 		t.Fatalf("unexpected right hub snapshot: %+v", snapshot)
 	}
 }
 
-func TestRouteHintPeerRouterRejectsMismatchedRelayKey(t *testing.T) {
+func TestStaticPeerRouterRejectsMismatchedRelayKey(t *testing.T) {
 	_, _, rightHandler := newTestHubIdentityAndHandler(t)
 	rightServer := httptest.NewServer(rightHandler)
 	defer rightServer.Close()
 
-	leftHub, leftHandler := newTestHubAndHandlerWithRouteHintRouter(t)
+	leftHub, leftHandler := newTestHubAndHandlerWithStaticFederation(t, FederationPeer{
+		Endpoint:         wssURL(rightServer.URL),
+		RelayPublicKey:   testB64x32,
+		ProfileMultihash: protocol.DevelopmentProfileMultihash,
+	})
 	leftServer := httptest.NewServer(leftHandler)
 	defer leftServer.Close()
 
@@ -516,20 +589,14 @@ func TestRouteHintPeerRouterRejectsMismatchedRelayKey(t *testing.T) {
 		"route_id":   alice.Ready.RouteID,
 		"peer_id":    testPeerID,
 		"sequence":   2,
-		"route_hints": []map[string]any{{
-			"transport":        "ws",
-			"uri":              wssURL(rightServer.URL),
-			"relay_public_key": testB64x32,
-			"priority":         0,
-		}},
 	})
 
 	errFrame := readObject(t, alice.Conn)
 	if errFrame["type"] != "ERROR" || errFrame["code"] != "peer_unavailable" || errFrame["retryable"] != true {
-		t.Fatalf("unexpected route-hinted key mismatch frame: %+v", errFrame)
+		t.Fatalf("unexpected static federation key mismatch frame: %+v", errFrame)
 	}
 	if snapshot := leftHub.Snapshot(); snapshot.RoutesActive != 0 || snapshot.PresenceActive != 0 || snapshot.QueueDepth != 0 {
-		t.Fatalf("left hub stored rejected route hint: %+v", snapshot)
+		t.Fatalf("left hub stored rejected static candidate route: %+v", snapshot)
 	}
 }
 
@@ -696,7 +763,7 @@ func TestHandlerFederatesIdentityContactWantToPeerRelay(t *testing.T) {
 	if result := remoteCache.Accept(wrapper, "test", protocol.IdentityContactValidationOptions{NowUnix: now.Unix()}); !result.Accepted {
 		t.Fatalf("seed remote cache = %+v", result)
 	}
-	_, _, remoteHandler := newTestHubIdentityAndHandlerWithIdentityContacts(t, nil, nil, remoteCache)
+	_, remoteIdentity, remoteHandler := newTestHubIdentityAndHandlerWithIdentityContacts(t, nil, nil, remoteCache)
 	remoteServer := httptest.NewServer(remoteHandler)
 	defer remoteServer.Close()
 
@@ -712,8 +779,16 @@ func TestHandlerFederatesIdentityContactWantToPeerRelay(t *testing.T) {
 		t.Fatalf("new hub: %v", err)
 	}
 	router, err := NewStaticPeerRouter(StaticPeerRouterConfig{
-		Endpoints:     []string{wssURL(remoteServer.URL)},
-		LocalHub:      localHub,
+		Peers: []FederationPeer{{
+			Endpoint:         wssURL(remoteServer.URL),
+			RelayPublicKey:   remoteIdentity.PublicKeyString(),
+			ProfileMultihash: protocol.DevelopmentProfileMultihash,
+		}},
+		LocalHub: localHub,
+		EndpointPolicy: FederationEndpointPolicy{
+			AllowInsecureWS:       true,
+			AllowPrivateAddresses: true,
+		},
 		Random:        bytes.NewReader(countingBytes(4096)),
 		Now:           func() time.Time { return now },
 		MaxFrameBytes: 49_152,
@@ -794,8 +869,9 @@ type readyFrame struct {
 }
 
 type testClient struct {
-	Conn  *websocket.Conn
-	Ready readyFrame
+	Conn   *websocket.Conn
+	Ready  readyFrame
+	PeerID string
 }
 
 func (client testClient) Close(code websocket.StatusCode, reason string) {
@@ -817,13 +893,13 @@ func newTestHubAndHandlerWithPeerRouter(t *testing.T, peerRouter PeerRouter) (*r
 	return newTestHubAndHandlerWithOptions(t, nil, peerRouter)
 }
 
-func newTestHubAndHandlerWithStaticFederation(t *testing.T, endpoint string) (*relay.Hub, http.Handler) {
+func newTestHubAndHandlerWithStaticFederation(t *testing.T, peer FederationPeer) (*relay.Hub, http.Handler) {
 	t.Helper()
-	hub, handler := newTestHubAndHandlerWithRouteHintRouter(t, endpoint)
+	hub, handler := newTestHubAndHandlerWithRouteHintRouter(t, peer)
 	return hub, handler
 }
 
-func newTestHubAndHandlerWithRouteHintRouter(t *testing.T, endpoints ...string) (*relay.Hub, http.Handler) {
+func newTestHubAndHandlerWithRouteHintRouter(t *testing.T, peers ...FederationPeer) (*relay.Hub, http.Handler) {
 	t.Helper()
 	hub, err := relay.NewHub(relay.Config{
 		MaxSessions:         8,
@@ -837,8 +913,12 @@ func newTestHubAndHandlerWithRouteHintRouter(t *testing.T, endpoints ...string) 
 		t.Fatalf("new hub: %v", err)
 	}
 	peerRouter, err := NewStaticPeerRouter(StaticPeerRouterConfig{
-		Endpoints:     endpoints,
-		LocalHub:      hub,
+		Peers:    peers,
+		LocalHub: hub,
+		EndpointPolicy: FederationEndpointPolicy{
+			AllowInsecureWS:       true,
+			AllowPrivateAddresses: true,
+		},
 		Random:        bytes.NewReader(countingBytes(4096)),
 		Now:           func() time.Time { return time.Unix(1_789_000_000, 0) },
 		MaxFrameBytes: 49_152,
@@ -986,6 +1066,11 @@ func newTestHandler(t *testing.T) http.Handler {
 
 func dialAndReady(t *testing.T, serverURL string) testClient {
 	t.Helper()
+	return dialAndReadyAs(t, serverURL, testPeerPrivateKey)
+}
+
+func dialAndReadyAs(t *testing.T, serverURL string, privateKey ed25519.PrivateKey) testClient {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(serverURL, "http")+Path, nil)
@@ -1020,14 +1105,19 @@ func dialAndReady(t *testing.T, serverURL string) testClient {
 		t.Fatalf("decode challenge: %v", err)
 	}
 	verifyRelayProof(t, helloRaw, challenge)
+	transcriptHash, err := decodeTestBase64(challenge["transcript_hash"].(string))
+	if err != nil {
+		t.Fatalf("decode transcript hash: %v", err)
+	}
+	publicKey := privateKey.Public().(ed25519.PublicKey)
 
 	sendJSON(t, conn, map[string]any{
 		"type":              "AUTH",
-		"client_public_key": testPeerID,
+		"client_public_key": base64.RawURLEncoding.EncodeToString(publicKey),
 		"client_nonce":      challenge["client_nonce"],
 		"relay_nonce":       challenge["relay_nonce"],
 		"transcript_hash":   challenge["transcript_hash"],
-		"client_proof":      testB64x64,
+		"client_proof":      base64.RawURLEncoding.EncodeToString(ed25519.Sign(privateKey, proofInput(transcriptHash))),
 	})
 
 	readyRaw := readRaw(t, conn)
@@ -1038,7 +1128,11 @@ func dialAndReady(t *testing.T, serverURL string) testClient {
 	if err := json.Unmarshal(readyRaw, &ready); err != nil {
 		t.Fatalf("decode ready: %v", err)
 	}
-	return testClient{Conn: conn, Ready: ready}
+	return testClient{Conn: conn, Ready: ready, PeerID: base64.RawURLEncoding.EncodeToString(publicKey)}
+}
+
+func testPublicKeyID(privateKey ed25519.PrivateKey) string {
+	return base64.RawURLEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey))
 }
 
 func verifyRelayProof(t *testing.T, helloRaw []byte, challenge map[string]any) {
@@ -1074,6 +1168,11 @@ func verifyRelayProof(t *testing.T, helloRaw []byte, challenge map[string]any) {
 
 func sendJSON(t *testing.T, conn *websocket.Conn, value any) {
 	t.Helper()
+	if frame, ok := value.(map[string]any); ok && frame["type"] == "ENVELOPE" && frame["origin_route_id"] == nil {
+		frame = maps.Clone(frame)
+		frame["origin_route_id"] = frame["route_id"]
+		value = frame
+	}
 	writeRawTest(t, conn, mustMarshal(t, value))
 }
 

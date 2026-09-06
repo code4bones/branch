@@ -6,6 +6,8 @@ import {
 import { protocolID } from "../protocol/v0/envelope.js";
 import { developmentProfileMultihash } from "../protocol/v0/profile.js";
 import {
+  betaHpkeCiphertextBytesForPlaintext,
+  betaHpkeCiphertextBytesFromSealedPayload,
   importBetaPayloadKeyPair,
   makeBetaPayloadAAD,
   openBetaPayload,
@@ -181,20 +183,24 @@ export function decodeEchoRequestPayload(bytes: Uint8Array): EchoRequestPayload 
 
 export function makeEchoPayloadAAD(fields: {
   readonly route: RelayRouteMaterial;
+  readonly originRouteId: string;
   readonly senderPeerId: string;
   readonly recipientPeerId: string;
   readonly deliveryId: string;
+  readonly hpkeCiphertextBytes: number;
 }): Uint8Array {
   return makeBetaPayloadAAD({
     protocol: protocolID,
     profileMultihash: fields.route.profileMultihash,
-    senderPeerId: fields.senderPeerId,
-    recipientPeerId: fields.recipientPeerId,
+    originRouteId: fields.originRouteId,
+    senderPeerKey: fields.senderPeerId,
+    recipientPeerKey: fields.recipientPeerId,
     deliveryId: fields.deliveryId,
     pathEpoch: 0,
     streamId: 0,
     frameType: "ENVELOPE",
-    ackRequested: true
+    ackRequested: true,
+    hpkeCiphertextBytes: fields.hpkeCiphertextBytes
   });
 }
 
@@ -420,26 +426,37 @@ export class EchoTestService {
       sealedPayload: event.ciphertext,
       aad: makeEchoPayloadAAD({
         route: this.route,
+        originRouteId: event.originRouteId,
         senderPeerId: event.senderPeerId,
         recipientPeerId: this.keys.identity.peerId,
-        deliveryId: event.deliveryId
-      })
+        deliveryId: event.deliveryId,
+        hpkeCiphertextBytes: betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext)
+      }),
+      expectedCiphertextBytes: betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext)
     });
     const request = decodeEchoRequestPayload(plaintext);
     const responseDeliveryId = randomToken(16);
+    const responseOriginRouteId = client.routeId;
+    if (responseOriginRouteId === null) {
+      throw new Error("echo relay session is not attached");
+    }
+    const responseCiphertextBytes = betaHpkeCiphertextBytesForPlaintext(plaintext);
     const sealed = await sealBetaPayload({
       recipientPublicKey: request.replyHpkePublicKey,
       plaintext,
       aad: makeEchoPayloadAAD({
         route: this.route,
+        originRouteId: responseOriginRouteId,
         senderPeerId: this.keys.identity.peerId,
         recipientPeerId: event.senderPeerId,
-        deliveryId: responseDeliveryId
-      })
+        deliveryId: responseDeliveryId,
+        hpkeCiphertextBytes: responseCiphertextBytes
+      }),
+      expectedCiphertextBytes: responseCiphertextBytes
     });
     client.lookup(event.senderPeerId);
     client.rendezvous(event.senderPeerId);
-    client.sendSealedEnvelope(sealed, { deliveryId: responseDeliveryId });
+    client.sendSealedEnvelope(sealed, { deliveryId: responseDeliveryId, originRouteId: responseOriginRouteId });
     this.emit({ type: "response_sent", recipientPeerId: event.senderPeerId, deliveryId: responseDeliveryId });
   }
 

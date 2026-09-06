@@ -149,6 +149,20 @@ This lets test clients stop forwarding plaintext-like payloads through
 published v0 session suite and does not by itself freeze the final profile hash,
 frame encoding, traffic-key schedule, or conformance vectors.
 
+D-BRANCH-046 defines the interoperable beta AAD bytes as one UTF-8 JSON object
+with this exact member order: `aad_version`, `protocol`, `profile_multihash`,
+`origin_route_id`, `sender_peer_key`, `recipient_peer_key`, `delivery_id`,
+`path_epoch`, `stream_id`, `frame_type`, `ack_requested`, and
+`hpke_ciphertext_bytes`. `aad_version` is `branch.hpke.aad/1.draft`.
+`sender_peer_key` and `recipient_peer_key` are the raw 32-byte Ed25519 identity
+public keys encoded as base64url beta peer IDs. The HPKE recipient KEM key is
+bound separately by RFC 9180 encapsulation. `origin_route_id` is the public
+16-byte READY nonce copied by the sender into ENVELOPE; it is authenticated but
+never a relay lookup key. `hpke_ciphertext_bytes` is the decoded AES-GCM
+ciphertext size: bounded plaintext bytes plus the suite's 16-byte tag, checked
+both before opening and after sealing. Attachment proof transcripts remain
+hop-local and are deliberately not substituted for this shared E2EE context.
+
 ### Capability registry rules
 
 Capabilities describe optional behaviour, not trust. A capability name is
@@ -206,17 +220,15 @@ priority, required capabilities, and transport-specific public parameters. It
 does not contain plaintext messages, portable identity exports, private contact
 graph, or durable delivery promises.
 
-For the beta relay-to-relay vertical slice, a client may attach a bounded
-`route_hints` array to a `RENDEZVOUS` frame after it has already discovered and
-validated a peer's signed BootstrapBeacon through a SearchCarrier or addressed
-carrier. Each route hint carries one WSS relay endpoint candidate, the relay
-Ed25519 public key from the signed beacon, and a local priority. The receiving
-relay treats the hint as hostile routing input: it bounds the candidate list,
-validates endpoint shape before dialing, requires the remote attachment
-challenge to prove the hinted relay key, opens only a live bridge for the
-specific route attempt, and forgets the hint when the route/session ends. Route
-hints are not a global relay directory, not presence, not a mailbox, and not
-operator mesh configuration.
+The beta attachment profile does not accept endpoint-bearing `route_hints` in a
+`RENDEZVOUS` frame. A client-controlled frame cannot prove that an endpoint was
+derived from a valid signed record, so accepting it would make a relay an
+arbitrary outbound dialer. The executable beta federation adapter therefore
+probes only bounded operator-pinned relay candidates. Each candidate has an
+explicit WSS endpoint, Ed25519 relay public key, and supported profile
+multihash; the attachment challenge must prove that exact key and profile.
+Future dynamic candidates require a separately specified wrapper containing
+bounded signed route material validated by the receiving relay before any dial.
 
 A relay attachment is accepted only for a live route and only after the relay
 validates:
@@ -339,18 +351,36 @@ or untrusted. Relays must not persist these observations across restart and
 must not expose prefix search, reverse lookup, global presence, contact graph,
 or platform-account claims through these frames.
 
-`RENDEZVOUS.route_hints`, when present in the executable beta JSON profile, is
-an ordered bounded array of at most eight candidate objects. Each object
-contains `transport`, `uri`, `relay_public_key`, and `priority`. The current
-browser transport is `wss`; local test fixtures may use `ws` against in-process
-test relays only. `uri` must be an absolute `/relay/v0` WebSocket endpoint with
-no userinfo or fragment. `relay_public_key` is the base64url Ed25519 relay key
-from a validated signed BootstrapBeacon. The relay may dial those candidates
-for this one route attempt, but it must not retain them as a directory or scan
-outside the supplied bounded list.
+For the bounded volatile IdentityContact cache, exact `BRANCH0.` wrapper
+republication is idempotent. If two distinct canonical signed wrappers claim
+the same BranchID and sequence during one cache lifetime, the relay rejects the
+later observation as `equivocation`; carrier arrival order must not replace the
+current record. This is cache-admission handling derived from the existing
+monotonic freshness rule, not a new identity authority, lookup mode, or durable
+conflict log. A relay restart forgets both observations and any conflict.
 
-`ENVELOPE` sent by a client contains `session_id`, `route_id`, `path_epoch`,
-`stream_id`, `delivery_id`, `ciphertext`, and `ack_requested`. A delivered beta
+The executable draft shapes for these two frames are `relay-identity-want` and
+`relay-identity-have` in `spec/protocol-v0.cddl`. `branch_id` is the fixed-size
+draft `br1.` SHA-256 multihash text form; a `records` member is a bounded
+`BRANCH0.` wrapper whose signature and semantic checks remain mandatory after
+structural frame validation.
+
+`RENDEZVOUS.route_hints` is rejected by the executable beta JSON profile. Route
+material carried by a client remains hostile unless it is represented in a
+versioned signed control-plane record and locally revalidated by the receiving
+relay. This avoids treating any attached client as an authority to direct relay
+egress. The production federation policy permits only explicit-port `wss`
+endpoints and rejects userinfo, fragments, queries, private, loopback,
+link-local, multicast, unspecified, CGNAT, and documentation addresses. Local
+in-process tests may opt in to `ws` and private addresses through separate
+operator configuration; those exceptions are off by default.
+
+`ENVELOPE` sent by a client contains `session_id`, `route_id`, `origin_route_id`,
+`path_epoch`, `stream_id`, `delivery_id`, `ciphertext`, and `ack_requested`.
+`origin_route_id` is the 16-byte route nonce the sender received in `READY`; it
+is public, copied unchanged over all live hops, and is never used as a relay
+lookup, directory, or retained routing record. It is authenticated by the draft
+HPKE AAD, so relay mutation causes payload-open failure. A delivered beta
 `ENVELOPE` may also contain relay-set `sender_peer_id`, which identifies the
 live sender peer on that route so multi-contact clients and the Echo test
 service can bind HPKE AAD and reply to the correct caller. `sender_peer_id` is
@@ -381,7 +411,8 @@ The data-plane frame contract is:
 - frame headers are authenticated by the selected session construction;
 - ciphertext is opaque to relays and boards;
 - every frame carries a `session_id`, `path_epoch`, `stream_id`, `delivery_id`,
-  frame type, flags, and ciphertext length;
+  frame type, flags, and ciphertext length; beta HPKE ENVELOPE AAD additionally
+  binds its public `origin_route_id` rather than a receiver-local hop session;
 - `delivery_id` is stable across retransmission of the same encrypted delivery
   on another path and is unique within `(session_id, sender, stream_id)`;
 - acknowledgements and flow-control updates are bounded and authenticated;
@@ -1887,9 +1918,26 @@ comes from issuer signatures and freshness checks, not from the relay that
 transported the record.
 
 The executable beta federation slice uses a bounded static WSS peer-relay list
-configured by the operator. A relay may probe a configured peer relay with the
-same draft `LOOKUP`, `RENDEZVOUS`, and `ENVELOPE` frames used by clients, and
-may expose the result to its local hub only as short-lived federated presence.
+configured by the operator. Each configured entry pins `endpoint`, the
+base64url Ed25519 relay public key, and the selected profile multihash; entries
+without any of those values are rejected at startup. The dialer resolves and
+filters destination addresses immediately before connection, disables redirects
+and proxies, and verifies the pinned key and profile in the attachment
+challenge. A relay may probe a configured peer relay with the same draft
+`LOOKUP`, `RENDEZVOUS`, and `ENVELOPE` frames used by clients, and may expose
+the result to its local hub only as short-lived federated presence.
+`BRANCH_FEDERATION_PEERS` is a comma-separated list of
+`endpoint|base64url-ed25519-key|profile-multihash` entries. Legacy URL-only
+configuration is deliberately rejected. `BRANCH_FEDERATION_ALLOW_INSECURE_WS`
+and `BRANCH_FEDERATION_ALLOW_PRIVATE_ADDRESSES` are separate false-by-default
+development overrides and must not be set for an Internet relay.
+`BRANCH_IDENTITY_GITHUB_ENABLED` is a separate false-by-default operator
+switch for the bounded public GitHub IdentityContact adapter. When enabled, a
+lookup performs at most one anonymous `topic:branchbootstrapv0` repository
+search and five `.branch/records.br0` reads under one short deadline. It has no
+GitHub token setting, does not follow redirects, does not crawl in the
+background, and retains accepted candidates only in the existing volatile
+IdentityContact cache.
 This does not add a new published frame type, does not advertise a new
 mandatory capability, does not create a global presence directory, and does not
 authorize store-and-forward. A local sender receives `relay.forwarded` only

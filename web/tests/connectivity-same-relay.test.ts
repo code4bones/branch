@@ -31,6 +31,8 @@ import {
   runDiscoveredCarrierHopPoC
 } from "@code4bones/branch-core/discovery/carrier-hop-client.js";
 import {
+  betaHpkeCiphertextBytesForPlaintext,
+  betaHpkeCiphertextBytesFromSealedPayload,
   createBetaPayloadKeyPair,
   decodeBetaPayloadText,
   makeBetaPayloadAAD,
@@ -75,6 +77,8 @@ void test("same-relay browser transport handles live forwarding, unavailable, an
   bob.heartbeat();
   alice.lookup(bob.peerId);
   alice.rendezvous(bob.peerId);
+  const firstOriginRouteId = alice.routeId;
+  assert.notEqual(firstOriginRouteId, null);
   const deliveredID = alice.sendEnvelope("first opaque payload");
   await settle();
 
@@ -82,7 +86,7 @@ void test("same-relay browser transport handles live forwarding, unavailable, an
   assert(bobEvents.some((event) => event.type === "presence_announced"));
   assert(aliceEvents.some((event) => event.type === "relay_ack" && event.ackType === "relay.forwarded"));
   assert(aliceEvents.some((event) => event.type === "peer_receipt" && event.deliveryId === deliveredID));
-  assert(bobEvents.some((event) => event.type === "envelope_received" && event.deliveryId === deliveredID && event.senderPeerId === alice.peerId));
+  assert(bobEvents.some((event) => event.type === "envelope_received" && event.deliveryId === deliveredID && event.senderPeerId === alice.peerId && event.originRouteId === firstOriginRouteId));
   assert.equal(alice.pendingCount, 0);
 
   bob.disconnect();
@@ -106,29 +110,93 @@ void test("same-relay browser transport handles live forwarding, unavailable, an
   assert.equal(alice.pendingCount, 0);
 });
 
+void test("same-relay browser transport rejects an expired relay challenge", async () => {
+  const relay = await FakeRelay.create();
+  relay.setChallengeWindow({ issuedAt: 100, expiresAt: 160 });
+  const identity = await SameRelayTransportClient.createIdentity();
+  const client = new SameRelayTransportClient({
+    route: {
+      endpointUri: "wss://relay.test:443/relay/v0",
+      relayPublicKey: relay.publicKey,
+      profileMultihash: developmentProfileMultihash
+    },
+    identity,
+    now: () => 200,
+    socketFactory: relay.socketFactory
+  });
+
+  await assert.rejects(client.attach(), /relay challenge expired/);
+});
+
 void test("beta HPKE payload envelope seals, opens, and rejects wrong AAD", async () => {
   const recipient = await createBetaPayloadKeyPair();
-  const aad = makePayloadTestAAD("delivery-a");
+  const plaintext = "secret branch payload";
+  const ciphertextBytes = betaHpkeCiphertextBytesForPlaintext(plaintext);
+  const aad = makePayloadTestAAD(fixedToken(16, 23), ciphertextBytes);
   const sealed = await sealBetaPayload({
     recipientPublicKey: recipient.publicKey,
-    plaintext: "secret branch payload",
-    aad
+    plaintext,
+    aad,
+    expectedCiphertextBytes: ciphertextBytes
   });
   const opened = await openBetaPayload({
     recipientPrivateKey: recipient.privateKey,
     sealedPayload: sealed,
-    aad
+    aad,
+    expectedCiphertextBytes: ciphertextBytes
   });
 
-  assert.equal(decodeBetaPayloadText(opened), "secret branch payload");
+  assert.equal(decodeBetaPayloadText(opened), plaintext);
   assert(!sealed.includes("secret branch payload"));
   await assert.rejects(
     openBetaPayload({
       recipientPrivateKey: recipient.privateKey,
       sealedPayload: sealed,
-      aad: makePayloadTestAAD("delivery-b")
+      aad: makePayloadTestAAD(fixedToken(16, 24), ciphertextBytes),
+      expectedCiphertextBytes: ciphertextBytes
     })
   );
+});
+
+void test("beta HPKE payload rejects every mutable canonical AAD binding", async () => {
+  const recipient = await createBetaPayloadKeyPair();
+  const plaintext = "canonical beta payload";
+  const ciphertextBytes = betaHpkeCiphertextBytesForPlaintext(plaintext);
+  const fields = {
+    protocol: protocolID,
+    profileMultihash: developmentProfileMultihash,
+    originRouteId: fixedToken(16, 40),
+    senderPeerKey: fixedToken(32, 41),
+    recipientPeerKey: fixedToken(32, 42),
+    deliveryId: fixedToken(16, 43),
+    pathEpoch: 0,
+    streamId: 0,
+    frameType: "ENVELOPE" as const,
+    ackRequested: true,
+    hpkeCiphertextBytes: ciphertextBytes
+  };
+  const sealed = await sealBetaPayload({
+    recipientPublicKey: recipient.publicKey,
+    plaintext,
+    aad: makeBetaPayloadAAD(fields),
+    expectedCiphertextBytes: ciphertextBytes
+  });
+
+  for (const changed of [
+    { ...fields, originRouteId: fixedToken(16, 44) },
+    { ...fields, senderPeerKey: fixedToken(32, 45) },
+    { ...fields, recipientPeerKey: fixedToken(32, 46) },
+    { ...fields, deliveryId: fixedToken(16, 47) },
+    { ...fields, ackRequested: false },
+    { ...fields, hpkeCiphertextBytes: ciphertextBytes + 1 }
+  ]) {
+    await assert.rejects(openBetaPayload({
+      recipientPrivateKey: recipient.privateKey,
+      sealedPayload: sealed,
+      aad: makeBetaPayloadAAD(changed),
+      expectedCiphertextBytes: ciphertextBytes
+    }));
+  }
 });
 
 void test("echo service returns the same HPKE plaintext to the attributed sender", async () => {
@@ -164,15 +232,19 @@ void test("echo service returns the same HPKE plaintext to the attributed sender
       return;
     }
     assert.equal(event.senderPeerId, echoIdentity.peerId);
+    const ciphertextBytes = betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext);
     void openBetaPayload({
       recipientPrivateKey: callerPayloadKey.privateKey,
       sealedPayload: event.ciphertext,
       aad: makeEchoPayloadAAD({
         route,
+        originRouteId: event.originRouteId,
         senderPeerId: echoIdentity.peerId,
         recipientPeerId: caller.peerId,
-        deliveryId: event.deliveryId
-      })
+        deliveryId: event.deliveryId,
+        hpkeCiphertextBytes: ciphertextBytes
+      }),
+      expectedCiphertextBytes: ciphertextBytes
     }).then((plaintext) => {
       echoedPayloads.push(plaintext);
       caller.markPeerReceipt(event.deliveryId);
@@ -193,17 +265,25 @@ void test("echo service returns the same HPKE plaintext to the attributed sender
       body: "hello echo"
     });
     const deliveryId = fixedToken(16, 13);
+    const originRouteId = caller.routeId;
+    if (originRouteId === null) {
+      throw new Error("caller relay session is not attached");
+    }
+    const ciphertextBytes = betaHpkeCiphertextBytesForPlaintext(plaintext);
     const sealed = await sealBetaPayload({
       recipientPublicKey: echoPayloadKey.publicKey,
       plaintext,
       aad: makeEchoPayloadAAD({
         route,
+        originRouteId,
         senderPeerId: caller.peerId,
         recipientPeerId: echoIdentity.peerId,
-        deliveryId
-      })
+        deliveryId,
+        hpkeCiphertextBytes: ciphertextBytes
+      }),
+      expectedCiphertextBytes: ciphertextBytes
     });
-    caller.sendSealedEnvelope(sealed, { deliveryId });
+    caller.sendSealedEnvelope(sealed, { deliveryId, originRouteId });
 
     await waitFor(() => echoedPayloads.length === 1);
 
@@ -234,7 +314,7 @@ void test("echo route discovery accepts signed beacon routes and reports rejecte
 
   assert.equal(report.routes.length, 1);
   assert.equal(report.routes[0]?.endpointUri, "wss://relay-a.test:443/relay/v0");
-  assert.equal(report.routes[0]?.profileMultihash, developmentProfileMultihash);
+  assert.equal(report.routes[0].profileMultihash, developmentProfileMultihash);
   assert.equal(report.rejected.length, 2);
   assert(report.rejected.some((item) => item.source === "duplicate" && item.reason === "duplicate_route"));
   assert(report.rejected.some((item) => item.source === "malformed"));
@@ -292,15 +372,19 @@ void test("multi-route echo keeps answering when one route fails", async () => {
       return;
     }
     assert.equal(event.senderPeerId, echoIdentity.peerId);
+    const ciphertextBytes = betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext);
     void openBetaPayload({
       recipientPrivateKey: callerPayloadKey.privateKey,
       sealedPayload: event.ciphertext,
       aad: makeEchoPayloadAAD({
         route: routeB,
+        originRouteId: event.originRouteId,
         senderPeerId: echoIdentity.peerId,
         recipientPeerId: caller.peerId,
-        deliveryId: event.deliveryId
-      })
+        deliveryId: event.deliveryId,
+        hpkeCiphertextBytes: ciphertextBytes
+      }),
+      expectedCiphertextBytes: ciphertextBytes
     }).then((plaintext) => {
       echoedPayloads.push(plaintext);
       caller.markPeerReceipt(event.deliveryId);
@@ -325,17 +409,25 @@ void test("multi-route echo keeps answering when one route fails", async () => {
       body: "hello multi-route echo"
     });
     const deliveryId = fixedToken(16, 31);
+    const originRouteId = caller.routeId;
+    if (originRouteId === null) {
+      throw new Error("caller relay session is not attached");
+    }
+    const ciphertextBytes = betaHpkeCiphertextBytesForPlaintext(plaintext);
     const sealed = await sealBetaPayload({
       recipientPublicKey: echoPayloadKey.publicKey,
       plaintext,
       aad: makeEchoPayloadAAD({
         route: routeB,
+        originRouteId,
         senderPeerId: caller.peerId,
         recipientPeerId: echoIdentity.peerId,
-        deliveryId
-      })
+        deliveryId,
+        hpkeCiphertextBytes: ciphertextBytes
+      }),
+      expectedCiphertextBytes: ciphertextBytes
     });
-    caller.sendSealedEnvelope(sealed, { deliveryId });
+    caller.sendSealedEnvelope(sealed, { deliveryId, originRouteId });
 
     await waitFor(() => echoedPayloads.length === 1);
 
@@ -741,17 +833,19 @@ void test("beacon observation route snapshot dedupes without carrier-specific re
   }]);
 });
 
-function makePayloadTestAAD(deliveryId: string): Uint8Array {
+function makePayloadTestAAD(deliveryId: string, hpkeCiphertextBytes: number): Uint8Array {
   return makeBetaPayloadAAD({
     protocol: protocolID,
     profileMultihash: developmentProfileMultihash,
-    senderPeerId: fixedToken(32, 21),
-    recipientPeerId: fixedToken(32, 22),
+    originRouteId: fixedToken(16, 20),
+    senderPeerKey: fixedToken(32, 21),
+    recipientPeerKey: fixedToken(32, 22),
     deliveryId,
     pathEpoch: 0,
     streamId: 0,
     frameType: "ENVELOPE",
-    ackRequested: true
+    ackRequested: true,
+    hpkeCiphertextBytes
   });
 }
 
@@ -813,6 +907,7 @@ class FakeRelay {
   private readonly presence = new Map<string, FakeRelaySocket>();
   private readonly routes = new Map<string, { readonly left: FakeRelaySocket; readonly right: FakeRelaySocket }>();
   private federationResolver: ((uri: string) => FakeRelay | null) | null = null;
+  private challengeWindow: { readonly issuedAt: number; readonly expiresAt: number } | null = null;
   private sequence = 0;
 
   private constructor(
@@ -829,6 +924,10 @@ class FakeRelay {
 
   setFederationResolver(resolver: (uri: string) => FakeRelay | null): void {
     this.federationResolver = resolver;
+  }
+
+  setChallengeWindow(window: { readonly issuedAt: number; readonly expiresAt: number }): void {
+    this.challengeWindow = window;
   }
 
   async receive(socket: FakeRelaySocket, data: string): Promise<void> {
@@ -890,12 +989,14 @@ class FakeRelay {
       relayNonce,
       transcriptHash: encodeBase64URL(transcriptHash)
     };
+    const issuedAt = this.challengeWindow?.issuedAt ?? Math.floor(Date.now() / 1000);
+    const expiresAt = this.challengeWindow?.expiresAt ?? issuedAt + 60;
     socket.deliver(JSON.stringify({
       type: "CHALLENGE",
       client_nonce: clientNonce,
       relay_nonce: relayNonce,
-      issued_at: 1_789_000_001,
-      expires_at: 1_789_000_061,
+      issued_at: issuedAt,
+      expires_at: expiresAt,
       relay_public_key: this.publicKey,
       selected,
       transcript_hash: state.expected.transcriptHash,
@@ -987,6 +1088,7 @@ class FakeRelay {
     const senderPeerId = this.states.get(socket)?.peerId;
     target.deliver(JSON.stringify({
       ...frame,
+      origin_route_id: readString(frame, "origin_route_id"),
       ...(senderPeerId === undefined ? {} : { sender_peer_id: senderPeerId })
     }));
     socket.deliver(JSON.stringify({

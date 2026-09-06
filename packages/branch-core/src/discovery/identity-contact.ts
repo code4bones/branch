@@ -14,6 +14,8 @@ export interface IdentityContactSearchRequest {
   readonly page: number;
   readonly perPage: number;
   readonly includeForks?: boolean;
+  /** Optional carrier-specific deadline; the carrier clamps its own bounds. */
+  readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 }
 

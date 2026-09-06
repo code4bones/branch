@@ -8,6 +8,7 @@ export * from "./diagnostics/monitor.js";
 export * from "./diagnostics/observation-front.js";
 export * from "./discovery/carrier-hop-client.js";
 export * from "./discovery/client.js";
+export * from "./discovery/dns-txt.js";
 export * from "./discovery/github.js";
 export * from "./discovery/identity-contact.js";
 export * from "./discovery/gitlab.js";

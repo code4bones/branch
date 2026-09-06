@@ -9,6 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -30,8 +33,9 @@ const (
 
 // StaticPeerRouterConfig configures an optional beta relay-to-relay probe path.
 type StaticPeerRouterConfig struct {
-	Endpoints        []string
+	Peers            []FederationPeer
 	LocalHub         *relay.Hub
+	EndpointPolicy   FederationEndpointPolicy
 	Random           io.Reader
 	Now              func() time.Time
 	MaxFrameBytes    int64
@@ -40,24 +44,41 @@ type StaticPeerRouterConfig struct {
 	MaxPeerEndpoints int
 }
 
+// FederationPeer is an operator-pinned relay candidate. Its key and profile
+// are mandatory because a TLS endpoint is route material, never relay identity.
+type FederationPeer struct {
+	Endpoint         string
+	RelayPublicKey   string
+	ProfileMultihash string
+}
+
+// FederationEndpointPolicy controls development-only transport exceptions.
+// Production defaults are WSS-only and reject private/special destinations.
+type FederationEndpointPolicy struct {
+	AllowInsecureWS       bool
+	AllowPrivateAddresses bool
+}
+
 // StaticPeerRouter probes a bounded static peer relay set for live peers. It is
 // disabled when no endpoints are configured and keeps no durable route catalog.
 type StaticPeerRouter struct {
-	endpoints     []string
-	localHub      *relay.Hub
-	random        io.Reader
-	now           func() time.Time
-	maxFrameBytes int64
-	dialTimeout   time.Duration
-	writeTimeout  time.Duration
-	diagMu        sync.Mutex
-	diagnostics   map[string]FederationPeerObservation
+	peers          []federationCandidate
+	localHub       *relay.Hub
+	endpointPolicy FederationEndpointPolicy
+	random         io.Reader
+	now            func() time.Time
+	maxFrameBytes  int64
+	dialTimeout    time.Duration
+	writeTimeout   time.Duration
+	diagMu         sync.Mutex
+	diagnostics    map[string]FederationPeerObservation
 }
 
 type federationCandidate struct {
-	endpoint       string
-	relayPublicKey []byte
-	priority       int64
+	endpoint         string
+	relayPublicKey   []byte
+	profileMultihash string
+	priority         int64
 }
 
 // FederationPeerObservation is a bounded operator snapshot of one static or
@@ -96,19 +117,20 @@ func NewStaticPeerRouter(config StaticPeerRouterConfig) (*StaticPeerRouter, erro
 	if maxEndpoints <= 0 {
 		maxEndpoints = maxFederationPeers
 	}
-	endpoints, err := cleanFederationEndpoints(config.Endpoints, maxEndpoints)
+	peers, err := cleanFederationPeers(config.Peers, maxEndpoints, config.EndpointPolicy)
 	if err != nil {
 		return nil, err
 	}
 	return &StaticPeerRouter{
-		endpoints:     endpoints,
-		localHub:      config.LocalHub,
-		random:        config.Random,
-		now:           config.Now,
-		maxFrameBytes: config.MaxFrameBytes,
-		dialTimeout:   config.DialTimeout,
-		writeTimeout:  config.WriteTimeout,
-		diagnostics:   make(map[string]FederationPeerObservation, len(endpoints)),
+		peers:          peers,
+		localHub:       config.LocalHub,
+		endpointPolicy: config.EndpointPolicy,
+		random:         config.Random,
+		now:            config.Now,
+		maxFrameBytes:  config.MaxFrameBytes,
+		dialTimeout:    config.DialTimeout,
+		writeTimeout:   config.WriteTimeout,
+		diagnostics:    make(map[string]FederationPeerObservation, len(peers)),
 	}, nil
 }
 
@@ -119,13 +141,10 @@ func (router *StaticPeerRouter) ID() string {
 
 // LookupFederatedPeer probes configured peers for one currently reachable peer.
 func (router *StaticPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) (relay.FederatedForwarder, bool) {
-	var candidates []federationCandidate
-	if len(hints) > 0 {
-		candidates = federationCandidatesFromHints(hints)
-	} else {
-		candidates = router.staticFederationCandidates()
-	}
-	for _, candidate := range candidates {
+	// Attachment-frame hints are carrier-controlled bytes. They are never used
+	// as federation candidates until a future profile defines signed provenance.
+	_ = hints
+	for _, candidate := range router.staticFederationCandidates() {
 		if err := ctx.Err(); err != nil {
 			return nil, false
 		}
@@ -193,9 +212,10 @@ func (router *StaticPeerRouter) FederationSnapshot() []FederationPeerObservation
 	router.diagMu.Lock()
 	defer router.diagMu.Unlock()
 
-	observations := make([]FederationPeerObservation, 0, len(router.endpoints)+len(router.diagnostics))
-	included := make(map[string]struct{}, len(router.endpoints)+len(router.diagnostics))
-	for _, endpoint := range router.endpoints {
+	observations := make([]FederationPeerObservation, 0, len(router.peers)+len(router.diagnostics))
+	included := make(map[string]struct{}, len(router.peers)+len(router.diagnostics))
+	for _, peer := range router.peers {
+		endpoint := peer.endpoint
 		observation, ok := router.diagnostics[endpoint]
 		if !ok {
 			observation = FederationPeerObservation{
@@ -222,42 +242,7 @@ func (router *StaticPeerRouter) FederationSnapshot() []FederationPeerObservation
 }
 
 func (router *StaticPeerRouter) staticFederationCandidates() []federationCandidate {
-	candidates := make([]federationCandidate, 0, len(router.endpoints))
-	for index, endpoint := range router.endpoints {
-		candidates = append(candidates, federationCandidate{
-			endpoint: endpoint,
-			priority: int64(index),
-		})
-	}
-	return candidates
-}
-
-func federationCandidatesFromHints(hints []FederationRouteHint) []federationCandidate {
-	candidates := make([]federationCandidate, 0, len(hints))
-	for _, hint := range hints {
-		if hint.Endpoint == "" || len(hint.RelayPublicKey) != ed25519.PublicKeySize {
-			continue
-		}
-		endpoint, err := cleanFederationEndpoint(hint.Endpoint)
-		if err != nil {
-			continue
-		}
-		candidates = append(candidates, federationCandidate{
-			endpoint:       endpoint,
-			relayPublicKey: append([]byte(nil), hint.RelayPublicKey...),
-			priority:       hint.Priority,
-		})
-	}
-	slices.SortFunc(candidates, func(left, right federationCandidate) int {
-		if left.priority != right.priority {
-			if left.priority < right.priority {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(left.endpoint, right.endpoint)
-	})
-	return candidates
+	return append([]federationCandidate(nil), router.peers...)
 }
 
 func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, candidate federationCandidate, peerID relay.PeerID) (bool, string) {
@@ -294,7 +279,11 @@ func (router *StaticPeerRouter) recordPeerObservation(endpoint string, state str
 func (router *StaticPeerRouter) dial(parent context.Context, candidate federationCandidate) (*federationClient, error) {
 	ctx, cancel := context.WithTimeout(parent, router.dialTimeout)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, candidate.endpoint, nil)
+	httpClient, err := router.federationHTTPClient(ctx, candidate.endpoint)
+	if err != nil {
+		return nil, err
+	}
+	conn, _, err := websocket.Dial(ctx, candidate.endpoint, &websocket.DialOptions{HTTPClient: httpClient})
 	if err != nil {
 		return nil, err
 	}
@@ -307,6 +296,7 @@ func (router *StaticPeerRouter) dial(parent context.Context, candidate federatio
 		maxFrameBytes:          router.maxFrameBytes,
 		responses:              make(chan map[string]any, maxFederationResponses),
 		expectedRelayPublicKey: append([]byte(nil), candidate.relayPublicKey...),
+		expectedProfile:        candidate.profileMultihash,
 	}
 	if err := client.attach(ctx); err != nil {
 		client.close()
@@ -361,8 +351,9 @@ func (forwarder *federatedWSSForwarder) liveClientLocked(ctx context.Context, ro
 		return forwarder.client, nil
 	}
 	client, err := forwarder.router.dial(ctx, federationCandidate{
-		endpoint:       forwarder.endpoint,
-		relayPublicKey: forwarder.relayPublicKey,
+		endpoint:         forwarder.endpoint,
+		relayPublicKey:   forwarder.relayPublicKey,
+		profileMultihash: protocol.DevelopmentProfileMultihash,
 	})
 	if err != nil {
 		return nil, err
@@ -402,6 +393,7 @@ type federationClient struct {
 	responses              chan map[string]any
 	closeOnce              sync.Once
 	expectedRelayPublicKey []byte
+	expectedProfile        string
 }
 
 func (client *federationClient) attach(ctx context.Context) error {
@@ -440,17 +432,18 @@ func (client *federationClient) attach(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := verifyFederationChallenge(helloRaw, challenge, client.expectedRelayPublicKey); err != nil {
+	if err := verifyFederationChallenge(helloRaw, challenge, client.expectedRelayPublicKey, client.expectedProfile); err != nil {
 		return err
 	}
-	clientPublicKey, err := randomBytes(client.random, 32)
+	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(client.random)
 	if err != nil {
 		return err
 	}
-	clientProof, err := randomBytes(client.random, 64)
+	transcriptHash, err := decodeBase64(challenge["transcript_hash"].(string), 32)
 	if err != nil {
 		return err
 	}
+	clientProof := ed25519.Sign(clientPrivateKey, proofInput(transcriptHash))
 	auth := map[string]any{
 		"type":              "AUTH",
 		"client_public_key": base64URL(clientPublicKey),
@@ -660,7 +653,10 @@ func readFederationObject(data []byte) (map[string]any, error) {
 	return frame, nil
 }
 
-func verifyFederationChallenge(helloRaw []byte, challenge map[string]any, expectedRelayPublicKey []byte) error {
+func verifyFederationChallenge(helloRaw []byte, challenge map[string]any, expectedRelayPublicKey []byte, expectedProfile string) error {
+	if len(expectedRelayPublicKey) != ed25519.PublicKeySize || expectedProfile == "" {
+		return ErrInvalidFrame
+	}
 	selected, ok := challenge["selected"].(map[string]any)
 	if !ok {
 		return ErrInvalidFrame
@@ -677,7 +673,11 @@ func verifyFederationChallenge(helloRaw []byte, challenge map[string]any, expect
 	if err != nil {
 		return err
 	}
-	if len(expectedRelayPublicKey) > 0 && !bytes.Equal(relayPublicKey, expectedRelayPublicKey) {
+	if !bytes.Equal(relayPublicKey, expectedRelayPublicKey) {
+		return ErrInvalidFrame
+	}
+	profileMultihash, ok := selected["profile_multihash"].(string)
+	if !ok || profileMultihash != expectedProfile {
 		return ErrInvalidFrame
 	}
 	transcriptHash := challengeTranscriptHash(helloRaw, selected, clientNonce, relayNonce, relayPublicKey)
@@ -733,33 +733,42 @@ func normalizeFederationError(err error) error {
 	}
 }
 
-func cleanFederationEndpoints(raw []string, maxEndpoints int) ([]string, error) {
+func cleanFederationPeers(raw []FederationPeer, maxEndpoints int, policy FederationEndpointPolicy) ([]federationCandidate, error) {
 	if len(raw) > maxEndpoints {
 		return nil, fmt.Errorf("%w: too many federation peers", ErrInvalidConfig)
 	}
-	endpoints := make([]string, 0, len(raw))
+	peers := make([]federationCandidate, 0, len(raw))
 	seen := make(map[string]struct{}, len(raw))
-	for _, endpoint := range raw {
-		cleaned, err := cleanFederationEndpoint(endpoint)
+	for index, peer := range raw {
+		cleaned, err := cleanFederationEndpoint(peer.Endpoint, policy)
 		if err != nil {
 			return nil, err
 		}
-		if cleaned == "" {
-			continue
+		if cleaned == "" || peer.ProfileMultihash != protocol.DevelopmentProfileMultihash {
+			return nil, fmt.Errorf("%w: invalid federation peer profile", ErrInvalidConfig)
 		}
 		if _, exists := seen[cleaned]; exists {
-			continue
+			return nil, fmt.Errorf("%w: duplicate federation peer endpoint", ErrInvalidConfig)
+		}
+		key, err := decodeBase64(strings.TrimSpace(peer.RelayPublicKey), ed25519.PublicKeySize)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid federation relay public key", ErrInvalidConfig)
 		}
 		seen[cleaned] = struct{}{}
-		endpoints = append(endpoints, cleaned)
+		peers = append(peers, federationCandidate{
+			endpoint:         cleaned,
+			relayPublicKey:   key,
+			profileMultihash: peer.ProfileMultihash,
+			priority:         int64(index),
+		})
 	}
-	return endpoints, nil
+	return peers, nil
 }
 
-func cleanFederationEndpoint(raw string) (string, error) {
+func cleanFederationEndpoint(raw string, policy FederationEndpointPolicy) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return "", nil
+		return "", fmt.Errorf("%w: missing federation peer endpoint", ErrInvalidConfig)
 	}
 	if len([]byte(value)) > maxFederationEndpointBytes || strings.ContainsAny(value, " \t\r\n") {
 		return "", fmt.Errorf("%w: invalid federation peer endpoint", ErrInvalidConfig)
@@ -768,16 +777,100 @@ func cleanFederationEndpoint(raw string) (string, error) {
 	if err != nil || parsed.Host == "" {
 		return "", fmt.Errorf("%w: invalid federation peer endpoint", ErrInvalidConfig)
 	}
-	if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+	if parsed.Scheme != "wss" && !(policy.AllowInsecureWS && parsed.Scheme == "ws") {
 		return "", fmt.Errorf("%w: invalid federation peer endpoint", ErrInvalidConfig)
 	}
-	if parsed.Path == "" {
-		parsed.Path = Path
-	}
-	if parsed.Path != Path {
+	if parsed.Path != Path || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil || parsed.Port() == "" {
 		return "", fmt.Errorf("%w: invalid federation peer path", ErrInvalidConfig)
 	}
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
+	if address, err := netip.ParseAddr(parsed.Hostname()); err == nil && !policy.AllowPrivateAddresses && privateOrSpecialAddress(address) {
+		return "", fmt.Errorf("%w: federation peer address is not public", ErrInvalidConfig)
+	}
 	return parsed.String(), nil
+}
+
+func (router *StaticPeerRouter) federationHTTPClient(ctx context.Context, endpoint string) (*http.Client, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	addresses, err := resolveFederationAddresses(ctx, parsed.Hostname(), router.endpointPolicy)
+	if err != nil {
+		return nil, err
+	}
+	port := parsed.Port()
+	dialer := net.Dialer{}
+	transport := &http.Transport{
+		Proxy:                 nil,
+		ForceAttemptHTTP2:     false,
+		TLSHandshakeTimeout:   router.dialTimeout,
+		ResponseHeaderTimeout: router.dialTimeout,
+		DialContext: func(dialCtx context.Context, network string, _ string) (net.Conn, error) {
+			var lastErr error
+			for _, address := range addresses {
+				connection, err := dialer.DialContext(dialCtx, network, net.JoinHostPort(address.String(), port))
+				if err == nil {
+					return connection, nil
+				}
+				lastErr = err
+			}
+			if lastErr == nil {
+				lastErr = ErrInvalidConfig
+			}
+			return nil, lastErr
+		},
+	}
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("federation redirect forbidden")
+		},
+	}, nil
+}
+
+func resolveFederationAddresses(ctx context.Context, host string, policy FederationEndpointPolicy) ([]netip.Addr, error) {
+	if address, err := netip.ParseAddr(host); err == nil {
+		address = address.Unmap()
+		if !policy.AllowPrivateAddresses && privateOrSpecialAddress(address) {
+			return nil, ErrInvalidConfig
+		}
+		return []netip.Addr{address}, nil
+	}
+	resolved, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil || len(resolved) == 0 || len(resolved) > maxFederationPeers {
+		return nil, ErrInvalidConfig
+	}
+	addresses := make([]netip.Addr, 0, len(resolved))
+	seen := make(map[netip.Addr]struct{}, len(resolved))
+	for _, address := range resolved {
+		address = address.Unmap()
+		if !policy.AllowPrivateAddresses && privateOrSpecialAddress(address) {
+			return nil, ErrInvalidConfig
+		}
+		if _, ok := seen[address]; ok {
+			continue
+		}
+		seen[address] = struct{}{}
+		addresses = append(addresses, address)
+	}
+	if len(addresses) == 0 {
+		return nil, ErrInvalidConfig
+	}
+	return addresses, nil
+}
+
+func privateOrSpecialAddress(address netip.Addr) bool {
+	address = address.Unmap()
+	if !address.IsValid() || !address.IsGlobalUnicast() || address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsMulticast() || address.IsUnspecified() {
+		return true
+	}
+	if address.Is4() {
+		return netip.MustParsePrefix("100.64.0.0/10").Contains(address) ||
+			netip.MustParsePrefix("192.0.0.0/24").Contains(address) ||
+			netip.MustParsePrefix("192.0.2.0/24").Contains(address) ||
+			netip.MustParsePrefix("198.18.0.0/15").Contains(address) ||
+			netip.MustParsePrefix("198.51.100.0/24").Contains(address) ||
+			netip.MustParsePrefix("203.0.113.0/24").Contains(address)
+	}
+	return netip.MustParsePrefix("2001:db8::/32").Contains(address)
 }

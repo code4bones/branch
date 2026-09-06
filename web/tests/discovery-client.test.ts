@@ -287,7 +287,7 @@ void test("client identity discovery reads exact BranchID from direct GitHub car
   assert.equal(discovery.status, "ok");
   assert.equal(discovery.acceptedCount, 1);
   assert.equal(discovery.observations[0]?.branchID, branchID);
-  assert.equal(discovery.observations[0]?.evidence.source, "alice/contact-carrier");
+  assert.equal(discovery.observations[0].evidence.source, "alice/contact-carrier");
   assert.match(fetched[0] ?? "", /topic%3Abranchbootstrapv0|topic:branchbootstrapv0/);
   assert.match(fetched[1] ?? "", /\.branch%2Frecords\.br0|\.branch\/records\.br0/);
 });
@@ -326,6 +326,212 @@ void test("client identity discovery keeps non-matching direct carrier records r
   assert(discovery.observations.some((observation) => observation.reason === "unsupported_event_type"));
 });
 
+void test("GitHub carrier bounds a hanging search and preserves caller cancellation", async () => {
+  const hangingFetcher = (): Promise<Response> => new Promise(() => {});
+  const timedOut = await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(hangingFetcher, { timeoutMs: 100 }),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false
+  });
+  const caller = new AbortController();
+  caller.abort();
+  const aborted = await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(hangingFetcher, { timeoutMs: 100 }),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false,
+    signal: caller.signal
+  });
+
+  assert.equal(timedOut.status, "failed");
+  assert.equal(timedOut.carrierReports[0]?.message, "GitHub search timed out");
+  assert.equal(aborted.status, "aborted");
+  assert.equal(aborted.carrierReports[0]?.message, "carrier search aborted");
+});
+
+void test("GitHub bootstrap discovery isolates an oversized records response", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  let poisonedStreamCancelled = false;
+  const fetcher = (input: string): Promise<Response> => {
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 2,
+        incomplete_results: false,
+        items: [repositoryItem("alice/poisoned"), repositoryItem("bob/valid")]
+      }));
+    }
+    if (input.includes("/repos/alice/poisoned/")) {
+      return Promise.resolve(oversizedStreamingResponse(() => { poisonedStreamCancelled = true; }));
+    }
+    return Promise.resolve(recordsResponse(wrapper));
+  };
+
+  const discovery = await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(fetcher),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false
+  });
+
+  assert.equal(discovery.status, "ok");
+  assert.equal(discovery.acceptedCount, 1);
+  const report = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
+  assert.equal(report.results[0]?.status, "error");
+  assert.equal(report.results[1]?.acceptedCount, 1);
+  assert.equal(poisonedStreamCancelled, true);
+});
+
+void test("GitHub carrier rejects declared oversized bodies before consuming the stream", async () => {
+  const response = new Response(new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new TextEncoder().encode("{}"));
+      controller.close();
+    }
+  }), {
+    status: 200,
+    headers: { "content-length": String(64 * 1024 + 1) }
+  });
+  const body = response.body;
+  assert(body !== null);
+  const discovery = await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(() => Promise.resolve(response)),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false
+  });
+
+  assert.equal(discovery.status, "failed");
+  assert.equal(body.locked, false);
+});
+
+void test("GitHub identity discovery isolates an oversized records response", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const wrapper = await createIdentityContactWrapper({ now, expiresAt: now + 3600 });
+  const validation = await validateBranchTextIdentityContact(wrapper, { now });
+  assert(validation.accepted && validation.contact !== undefined);
+  const fetcher = (input: string): Promise<Response> => {
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 2,
+        incomplete_results: false,
+        items: [repositoryItem("alice/poisoned-contact"), repositoryItem("bob/valid-contact")]
+      }));
+    }
+    if (input.includes("/repos/alice/poisoned-contact/")) {
+      return Promise.resolve(new Response("x".repeat(64 * 1024 + 1), { status: 200 }));
+    }
+    return Promise.resolve(recordsResponse(wrapper));
+  };
+
+  const discovery = await discoverClientIdentityContacts({
+    carrier: createGitHubIdentityContactSearchCarrier(fetcher),
+    branchID: validation.contact.payload.branchId,
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false
+  });
+
+  assert.equal(discovery.status, "ok");
+  assert.equal(discovery.acceptedCount, 1);
+  assert.equal(discovery.observations[0]?.evidence.source, "bob/valid-contact");
+});
+
+void test("GitHub carrier enforces includeForks before reading candidate records", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const bootstrap = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const identity = await createIdentityContactWrapper({ now, expiresAt: now + 3600 });
+  const identityValidation = await validateBranchTextIdentityContact(identity, { now });
+  assert(identityValidation.accepted && identityValidation.contact !== undefined);
+  const requests: string[] = [];
+  let records = bootstrap;
+  const fetcher = (input: string): Promise<Response> => {
+    requests.push(input);
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 2,
+        incomplete_results: false,
+        items: [repositoryItem("alice/fork", true), repositoryItem("bob/carrier")]
+      }));
+    }
+    return Promise.resolve(recordsResponse(records));
+  };
+
+  const bootstrapWithoutForks = await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(fetcher),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false,
+    includeForks: false
+  });
+  assert.equal(bootstrapWithoutForks.acceptedCount, 1);
+  assert(!requests.some((request) => request.includes("/repos/alice/fork/")));
+
+  requests.length = 0;
+  const bootstrapWithForks = await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(fetcher),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false,
+    includeForks: true
+  });
+  assert.equal(bootstrapWithForks.acceptedCount, 1);
+  assert(requests.some((request) => request.includes("/repos/alice/fork/")));
+
+  requests.length = 0;
+  records = identity;
+  const identityWithoutForks = await discoverClientIdentityContacts({
+    carrier: createGitHubIdentityContactSearchCarrier(fetcher),
+    branchID: identityValidation.contact.payload.branchId,
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false,
+    includeForks: false
+  });
+  assert.equal(identityWithoutForks.acceptedCount, 1);
+  assert(!requests.some((request) => request.includes("/repos/alice/fork/")));
+});
+
+void test("GitHub carrier requests are anonymous redirect-free GETs", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const bootstrap = await createBootstrapBeaconWrapper({ now, expiresAt: now + 3600 });
+  const identity = await createIdentityContactWrapper({ now, expiresAt: now + 3600 });
+  const identityValidation = await validateBranchTextIdentityContact(identity, { now });
+  assert(identityValidation.accepted && identityValidation.contact !== undefined);
+  const requestInits: RequestInit[] = [];
+  let records = bootstrap;
+  const fetcher = (_input: string, init?: RequestInit): Promise<Response> => {
+    assert(init !== undefined);
+    requestInits.push(init);
+    if (requestInits.length === 1 || requestInits.length === 3) {
+      return Promise.resolve(jsonResponse({
+        total_count: 1,
+        incomplete_results: false,
+        items: [repositoryItem("alice/carrier")]
+      }));
+    }
+    return Promise.resolve(recordsResponse(records));
+  };
+
+  await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(fetcher),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false
+  });
+  records = identity;
+  await discoverClientIdentityContacts({
+    carrier: createGitHubIdentityContactSearchCarrier(fetcher),
+    branchID: identityValidation.contact.payload.branchId,
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false
+  });
+
+  assert.equal(requestInits.length, 4);
+  for (const init of requestInits) {
+    assert.equal(init.method, "GET");
+    assert.equal(init.credentials, "omit");
+    assert.equal(init.redirect, "error");
+    assert(init.signal instanceof AbortSignal);
+    assert.deepEqual(init.headers, {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    });
+  }
+});
+
 function acceptedObservation(observationId: string, carrier: string, source: string): BeaconObservation {
   return {
     observationId,
@@ -348,13 +554,13 @@ function acceptedObservation(observationId: string, carrier: string, source: str
   };
 }
 
-function repositoryItem(fullName: string): unknown {
+function repositoryItem(fullName: string, fork = false): unknown {
   const [owner, name] = fullName.split("/");
   assert(owner !== undefined);
   assert(name !== undefined);
   return {
     full_name: fullName,
-    fork: false,
+    fork,
     html_url: `https://github.com/${fullName}`,
     default_branch: "main",
     owner: { login: owner },
@@ -368,6 +574,17 @@ function recordsResponse(content: string): Response {
     encoding: "base64",
     content: Buffer.from(content, "utf8").toString("base64")
   });
+}
+
+function oversizedStreamingResponse(onCancel: () => void): Response {
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(64 * 1024 + 1));
+    },
+    cancel() {
+      onCancel();
+    }
+  }), { status: 200 });
 }
 
 function jsonResponse(value: unknown, headers: Record<string, string> = {}, status = 200): Response {

@@ -1,6 +1,9 @@
 package node
 
 import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +15,7 @@ import (
 	"github.com/code4bones/branch/internal/admin"
 	"github.com/code4bones/branch/internal/relay"
 	"github.com/code4bones/branch/internal/relay/wss"
+	protocol "github.com/code4bones/branch/protocol/v0"
 )
 
 func TestNewComposesPublicRelayAndProtectedAdminSurfaces(t *testing.T) {
@@ -68,9 +72,29 @@ func TestNewRejectsInvalidFederationPeerEndpoint(t *testing.T) {
 	config.PublicAddr = "127.0.0.1:0"
 	config.AdminAddr = "127.0.0.1:0"
 	config.IdentityPath = filepath.Join(t.TempDir(), "node-identity.json")
-	config.FederationPeers = []string{"https://relay.example.test/relay/v0"}
+	config.FederationPeers = []wss.FederationPeer{{
+		Endpoint:         "https://relay.example.test/relay/v0",
+		RelayPublicKey:   "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+		ProfileMultihash: protocol.DevelopmentProfileMultihash,
+	}}
 	if _, err := New(config); err == nil {
 		t.Fatal("expected invalid federation peer endpoint error")
+	}
+}
+
+func TestNewLeavesGitHubIdentityCarrierDisabledByDefault(t *testing.T) {
+	app := newTestApp(t)
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate identity key: %v", err)
+	}
+	branchID, err := protocol.BranchIDFromPublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("branch id: %v", err)
+	}
+	result := app.identityLookup.Lookup(context.Background(), branchID)
+	if len(result.Trace) != 2 || result.Trace[0].Source != "local_cache" || result.Trace[1].Source != "relay_mesh" {
+		t.Fatalf("default identity lookup trace = %+v", result.Trace)
 	}
 }
 

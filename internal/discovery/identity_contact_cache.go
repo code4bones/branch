@@ -78,7 +78,9 @@ func NewIdentityContactCache(config IdentityContactCacheConfig) (*IdentityContac
 
 // Accept validates and stores one public identity.announce wrapper. It keeps
 // the newest non-expired sequence for the exact BranchID and evicts old
-// observations when the cache reaches its configured bound.
+// observations when the cache reaches its configured bound. An exact wrapper
+// duplicate is idempotent; a different canonical wrapper at the same sequence
+// is rejected as equivocation rather than using carrier arrival order.
 func (cache *IdentityContactCache) Accept(wrapper string, source string, options protocolv0.IdentityContactValidationOptions) IdentityContactCacheResult {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
@@ -93,10 +95,22 @@ func (cache *IdentityContactCache) Accept(wrapper string, source string, options
 	}
 	contact := result.Contact
 	branchID := contact.Payload.BranchID
-	if existing, ok := cache.entries[branchID]; ok && contact.Payload.Sequence < existing.Sequence {
-		return IdentityContactCacheResult{Reason: protocolv0.IdentityContactLowerSequence}
-	}
 	cache.pruneExpiredLocked(nowUnix)
+	if existing, ok := cache.entries[branchID]; ok {
+		switch {
+		case contact.Payload.Sequence < existing.Sequence:
+			return IdentityContactCacheResult{Reason: protocolv0.IdentityContactLowerSequence}
+		case contact.Payload.Sequence == existing.Sequence && contact.Wrapper != existing.Wrapper:
+			return IdentityContactCacheResult{Reason: protocolv0.IdentityContactEquivocation}
+		case contact.Payload.Sequence == existing.Sequence:
+			cloned := cloneIdentityContactObservation(existing)
+			return IdentityContactCacheResult{
+				Accepted:    true,
+				Reason:      protocolv0.IdentityContactAccepted,
+				Observation: &cloned,
+			}
+		}
+	}
 	if _, exists := cache.entries[branchID]; !exists && cache.maxEntries == 0 {
 		return IdentityContactCacheResult{Reason: protocolv0.IdentityContactPayloadInvalid}
 	}

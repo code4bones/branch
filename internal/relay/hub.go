@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"sync"
 	"time"
@@ -10,19 +11,21 @@ import (
 const maxIDBytes = 128
 
 var (
-	ErrBackpressure    = errors.New("relay backpressure")
-	ErrClosed          = errors.New("relay closed")
-	ErrFrameTooLarge   = errors.New("relay frame too large")
-	ErrInvalidConfig   = errors.New("relay invalid config")
-	ErrInvalidID       = errors.New("relay invalid id")
-	ErrNoRoute         = errors.New("relay route not found")
-	ErrPeerUnavailable = errors.New("relay peer unavailable")
-	ErrQuotaExceeded   = errors.New("relay quota exceeded")
-	ErrRouteExists     = errors.New("relay route exists")
-	ErrSessionClosed   = errors.New("relay session closed")
-	ErrSessionExists   = errors.New("relay session exists")
-	ErrSessionLimit    = errors.New("relay session limit")
-	ErrSessionNotFound = errors.New("relay session not found")
+	ErrBackpressure      = errors.New("relay backpressure")
+	ErrClosed            = errors.New("relay closed")
+	ErrDeliveryConflict  = errors.New("relay delivery identifier conflict")
+	ErrDuplicateDelivery = errors.New("relay duplicate delivery")
+	ErrFrameTooLarge     = errors.New("relay frame too large")
+	ErrInvalidConfig     = errors.New("relay invalid config")
+	ErrInvalidID         = errors.New("relay invalid id")
+	ErrNoRoute           = errors.New("relay route not found")
+	ErrPeerUnavailable   = errors.New("relay peer unavailable")
+	ErrQuotaExceeded     = errors.New("relay quota exceeded")
+	ErrRouteExists       = errors.New("relay route exists")
+	ErrSessionClosed     = errors.New("relay session closed")
+	ErrSessionExists     = errors.New("relay session exists")
+	ErrSessionLimit      = errors.New("relay session limit")
+	ErrSessionNotFound   = errors.New("relay session not found")
 )
 
 // Config sets explicit relay memory, frame, and quota bounds.
@@ -33,17 +36,21 @@ type Config struct {
 	MaxFramesPerSession uint64
 	MaxBytesPerSession  uint64
 	PresenceTTL         time.Duration
+	// MaxReplayEntriesPerSession bounds the volatile delivery_id replay window.
+	// A zero value selects the documented development default.
+	MaxReplayEntriesPerSession int
 }
 
 // DefaultConfig returns conservative non-zero limits for a development relay.
 func DefaultConfig() Config {
 	return Config{
-		MaxSessions:         1024,
-		MaxQueueDepth:       32,
-		MaxFrameBytes:       49_152,
-		MaxFramesPerSession: 1 << 20,
-		MaxBytesPerSession:  1 << 30,
-		PresenceTTL:         30 * time.Second,
+		MaxSessions:                1024,
+		MaxQueueDepth:              32,
+		MaxFrameBytes:              49_152,
+		MaxFramesPerSession:        1 << 20,
+		MaxBytesPerSession:         1 << 30,
+		PresenceTTL:                30 * time.Second,
+		MaxReplayEntriesPerSession: 4096,
 	}
 }
 
@@ -63,6 +70,14 @@ type Frame struct {
 	RouteID      RouteID
 	SenderPeerID PeerID
 	Payload      []byte
+}
+
+// Delivery identifies one retryable opaque ENVELOPE without exposing its
+// ciphertext to relay policy. Digest is over the canonical outer frame.
+type Delivery struct {
+	StreamID uint64
+	ID       string
+	Digest   [sha256.Size]byte
 }
 
 // Presence is a detached view of one live authenticated peer.
@@ -111,12 +126,13 @@ type Session struct {
 }
 
 type sessionState struct {
-	handle *Session
-	inbox  chan Frame
-	once   sync.Once
-	frames uint64
-	bytes  uint64
-	peerID PeerID
+	handle     *Session
+	inbox      chan Frame
+	once       sync.Once
+	frames     uint64
+	bytes      uint64
+	peerID     PeerID
+	deliveries deliveryWindow
 }
 
 type routeState struct {
@@ -127,6 +143,19 @@ type routeState struct {
 type routeEndpoint struct {
 	sessionID SessionID
 	forwarder FederatedForwarder
+	peerID    PeerID
+}
+
+type deliveryKey struct {
+	senderPeerID PeerID
+	streamID     uint64
+	id           string
+}
+
+type deliveryWindow struct {
+	entries map[deliveryKey][sha256.Size]byte
+	order   []deliveryKey
+	next    int
 }
 
 type presenceState struct {
@@ -141,6 +170,9 @@ type federatedPresenceState struct {
 
 // NewHub creates a relay core with explicit non-zero bounds.
 func NewHub(config Config) (*Hub, error) {
+	if config.MaxReplayEntriesPerSession == 0 {
+		config.MaxReplayEntriesPerSession = DefaultConfig().MaxReplayEntriesPerSession
+	}
 	if err := validateConfig(config); err != nil {
 		return nil, err
 	}
@@ -178,8 +210,9 @@ func (hub *Hub) Attach(id SessionID) (*Session, error) {
 		done: make(chan struct{}),
 	}
 	hub.sessions[id] = &sessionState{
-		handle: handle,
-		inbox:  make(chan Frame, hub.config.MaxQueueDepth),
+		handle:     handle,
+		inbox:      make(chan Frame, hub.config.MaxQueueDepth),
+		deliveries: newDeliveryWindow(hub.config.MaxReplayEntriesPerSession),
 	}
 	return handle, nil
 }
@@ -202,15 +235,17 @@ func (hub *Hub) Pair(routeID RouteID, left SessionID, right SessionID) error {
 	if _, exists := hub.routes[routeID]; exists {
 		return ErrRouteExists
 	}
-	if _, exists := hub.sessions[left]; !exists {
+	leftState, exists := hub.sessions[left]
+	if !exists {
 		return ErrSessionNotFound
 	}
-	if _, exists := hub.sessions[right]; !exists {
+	rightState, exists := hub.sessions[right]
+	if !exists {
 		return ErrSessionNotFound
 	}
 	hub.routes[routeID] = routeState{
-		left:  routeEndpoint{sessionID: left},
-		right: routeEndpoint{sessionID: right},
+		left:  routeEndpoint{sessionID: left, peerID: leftState.peerID},
+		right: routeEndpoint{sessionID: right, peerID: rightState.peerID},
 	}
 	return nil
 }
@@ -290,7 +325,20 @@ func (session *Session) Send(ctx context.Context, routeID RouteID, payload []byt
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return session.hub.forward(ctx, session.id, routeID, payload)
+	return session.hub.forward(ctx, session.id, routeID, payload, time.Now(), nil)
+}
+
+// SendDelivery forwards one opaque ENVELOPE and applies the bounded live
+// delivery_id replay window. A byte-identical retry returns ErrDuplicateDelivery
+// without forwarding a second frame; a reused key with different bytes fails.
+func (session *Session) SendDelivery(ctx context.Context, routeID RouteID, payload []byte, delivery Delivery, now time.Time) error {
+	if err := validateID(delivery.ID); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return session.hub.forward(ctx, session.id, routeID, payload, now, &delivery)
 }
 
 // Receive waits for one inbound frame or the session lifecycle to end.
@@ -358,7 +406,7 @@ func (hub *Hub) Snapshot() Snapshot {
 	return snapshot
 }
 
-func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, payload []byte) error {
+func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, payload []byte, now time.Time, delivery *Delivery) error {
 	if len(payload) > hub.config.MaxFrameBytes {
 		return ErrFrameTooLarge
 	}
@@ -391,6 +439,23 @@ func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, pa
 		hub.mu.Unlock()
 		return ErrNoRoute
 	}
+	if !hub.routeLiveLocked(route, now) {
+		closers := route.federatedForwarders()
+		delete(hub.routes, routeID)
+		hub.mu.Unlock()
+		closeForwarders(closers)
+		return ErrPeerUnavailable
+	}
+	if delivery != nil {
+		key := deliveryKey{senderPeerID: source.peerID, streamID: delivery.StreamID, id: delivery.ID}
+		if existing, ok := source.deliveries.entries[key]; ok {
+			hub.mu.Unlock()
+			if existing == delivery.Digest {
+				return ErrDuplicateDelivery
+			}
+			return ErrDeliveryConflict
+		}
+	}
 
 	nextFrames := source.frames + 1
 	nextBytes := source.bytes + uint64(len(payload))
@@ -410,6 +475,9 @@ func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, pa
 		}
 		select {
 		case destination.inbox <- frame:
+			if delivery != nil {
+				source.deliveries.remember(deliveryKey{senderPeerID: senderPeerID, streamID: delivery.StreamID, id: delivery.ID}, delivery.Digest)
+			}
 			source.frames = nextFrames
 			source.bytes = nextBytes
 			hub.stats.ForwardedFrames++
@@ -446,6 +514,11 @@ func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, pa
 		hub.mu.Unlock()
 		closeForwarders(closers)
 		return err
+	}
+	if delivery != nil {
+		if state, exists := hub.sessions[from]; exists && state == sourceState {
+			state.deliveries.remember(deliveryKey{senderPeerID: senderPeerID, streamID: delivery.StreamID, id: delivery.ID}, delivery.Digest)
+		}
 	}
 	hub.stats.ForwardedFrames++
 	hub.stats.ForwardedBytes += uint64(len(payload))
@@ -586,8 +659,8 @@ func (hub *Hub) rendezvous(from SessionID, routeID RouteID, peerID PeerID, now t
 	localPresence, ok := hub.lookupLocalLocked(peerID, now)
 	if ok {
 		hub.routes[routeID] = routeState{
-			left:  routeEndpoint{sessionID: from},
-			right: routeEndpoint{sessionID: localPresence.SessionID},
+			left:  hub.routeEndpointForSessionLocked(from),
+			right: routeEndpoint{sessionID: localPresence.SessionID, peerID: peerID},
 		}
 		return nil
 	}
@@ -596,10 +669,9 @@ func (hub *Hub) rendezvous(from SessionID, routeID RouteID, peerID PeerID, now t
 	if !ok {
 		return ErrPeerUnavailable
 	}
-	delete(hub.federatedPresence, peerID)
 	hub.routes[routeID] = routeState{
-		left:  routeEndpoint{sessionID: from},
-		right: routeEndpoint{forwarder: federatedPresence.forwarder},
+		left:  hub.routeEndpointForSessionLocked(from),
+		right: routeEndpoint{forwarder: federatedPresence.forwarder, peerID: peerID},
 	}
 	return nil
 }
@@ -675,7 +747,62 @@ func (hub *Hub) sweepExpiredLocked(now time.Time) (int, []FederatedForwarder) {
 			removed++
 		}
 	}
+	for routeID, route := range hub.routes {
+		if !hub.routeLiveLocked(route, now) {
+			closers = append(closers, route.federatedForwarders()...)
+			delete(hub.routes, routeID)
+		}
+	}
 	return removed, closers
+}
+
+func newDeliveryWindow(capacity int) deliveryWindow {
+	return deliveryWindow{
+		entries: make(map[deliveryKey][sha256.Size]byte, capacity),
+		order:   make([]deliveryKey, 0, capacity),
+	}
+}
+
+func (window *deliveryWindow) remember(key deliveryKey, digest [sha256.Size]byte) {
+	if len(window.order) < cap(window.order) {
+		window.order = append(window.order, key)
+	} else {
+		delete(window.entries, window.order[window.next])
+		window.order[window.next] = key
+		window.next = (window.next + 1) % len(window.order)
+	}
+	window.entries[key] = digest
+}
+
+func (hub *Hub) routeEndpointForSessionLocked(sessionID SessionID) routeEndpoint {
+	state := hub.sessions[sessionID]
+	return routeEndpoint{sessionID: sessionID, peerID: state.peerID}
+}
+
+func (hub *Hub) routeLiveLocked(route routeState, now time.Time) bool {
+	return hub.endpointLiveLocked(route.left, now) && hub.endpointLiveLocked(route.right, now)
+}
+
+func (hub *Hub) endpointLiveLocked(endpoint routeEndpoint, now time.Time) bool {
+	if endpoint.sessionID != "" {
+		state, exists := hub.sessions[endpoint.sessionID]
+		if !exists || state.handle.isClosed() {
+			return false
+		}
+		if endpoint.peerID == "" {
+			return true
+		}
+		presence, exists := hub.presence[endpoint.peerID]
+		if !exists || presence.sessionID != endpoint.sessionID || !presence.expiresAt.After(now) {
+			return false
+		}
+		return state.peerID == endpoint.peerID
+	}
+	if endpoint.forwarder == nil || endpoint.peerID == "" {
+		return false
+	}
+	presence, exists := hub.federatedPresence[endpoint.peerID]
+	return exists && presence.forwarder != nil && presence.expiresAt.After(now)
 }
 
 func (hub *Hub) rollbackUsageLocked(sessionID SessionID, expected *sessionState, payloadBytes int) {
@@ -802,7 +929,8 @@ func validateConfig(config Config) error {
 		config.MaxFrameBytes <= 0 ||
 		config.MaxFramesPerSession == 0 ||
 		config.MaxBytesPerSession == 0 ||
-		config.PresenceTTL <= 0 {
+		config.PresenceTTL <= 0 ||
+		config.MaxReplayEntriesPerSession <= 0 {
 		return ErrInvalidConfig
 	}
 	return nil

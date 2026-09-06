@@ -40,6 +40,9 @@ const (
 	IdentityContactInvalidBranchID          IdentityContactValidationReason = "invalid_branch_id"
 	IdentityContactBranchIDMismatch         IdentityContactValidationReason = "branch_id_mismatch"
 	IdentityContactLowerSequence            IdentityContactValidationReason = "lower_sequence"
+	// IdentityContactEquivocation reports a cache-admission conflict where two
+	// distinct canonical records claim the same BranchID and sequence.
+	IdentityContactEquivocation IdentityContactValidationReason = "equivocation"
 )
 
 // SignedIdentityContact is a validated identity.announce source record.

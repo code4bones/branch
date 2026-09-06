@@ -13,6 +13,8 @@ import {
   type BetaEchoContact
 } from "./echo-service.js";
 import {
+  betaHpkeCiphertextBytesForPlaintext,
+  betaHpkeCiphertextBytesFromSealedPayload,
   createBetaPayloadKeyPair,
   openBetaPayload,
   sealBetaPayload
@@ -158,20 +160,28 @@ class EchoAttemptController {
       client.rendezvous(recipientPeerId);
 
       const deliveryId = randomToken(16);
+      const originRouteId = client.routeId;
+      if (originRouteId === null) {
+        throw new Error("relay session is not attached");
+      }
       const plaintext = encodeEchoRequestPayload({
         type: betaEchoRequestType,
         replyHpkePublicKey: payloadKey.publicKey,
         body: options.body
       });
+      const ciphertextBytes = betaHpkeCiphertextBytesForPlaintext(plaintext);
       const sealed = await sealBetaPayload({
         recipientPublicKey: recipientHpkePublicKey,
         plaintext,
         aad: makeEchoPayloadAAD({
           route: this.route,
+          originRouteId,
           senderPeerId: identity.peerId,
           recipientPeerId,
-          deliveryId
-        })
+          deliveryId,
+          hpkeCiphertextBytes: ciphertextBytes
+        }),
+        expectedCiphertextBytes: ciphertextBytes
       });
       const response = this.waitForEchoResponse({
         client,
@@ -181,7 +191,7 @@ class EchoAttemptController {
         timeoutMs: options.timeoutMs
       });
       try {
-        client.sendSealedEnvelope(sealed, { deliveryId });
+        client.sendSealedEnvelope(sealed, { deliveryId, originRouteId });
         const echoed = await response.promise;
         if (echoed !== options.body) {
           throw new Error("echo body mismatch");
@@ -262,10 +272,13 @@ class EchoAttemptController {
           sealedPayload: event.ciphertext,
           aad: makeEchoPayloadAAD({
             route: this.route,
+            originRouteId: event.originRouteId,
             senderPeerId: options.expectedSenderPeerId,
             recipientPeerId: options.localPeerId,
-            deliveryId: event.deliveryId
-          })
+            deliveryId: event.deliveryId,
+            hpkeCiphertextBytes: betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext)
+          }),
+          expectedCiphertextBytes: betaHpkeCiphertextBytesFromSealedPayload(event.ciphertext)
         }).then((plaintext) => {
           cleanup();
           resolve(decodeEchoRequestPayload(plaintext).body);

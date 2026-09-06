@@ -3,6 +3,7 @@ package wss
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -31,8 +32,10 @@ const (
 )
 
 var (
-	ErrInvalidConfig = errors.New("wss relay invalid config")
-	ErrInvalidFrame  = errors.New("wss relay invalid frame")
+	ErrInvalidConfig        = errors.New("wss relay invalid config")
+	ErrInvalidFrame         = errors.New("wss relay invalid frame")
+	ErrAuthenticationFailed = errors.New("wss relay authentication failed")
+	ErrFrameReplayed        = errors.New("wss relay frame replayed")
 )
 
 // Config defines explicit adapter bounds and dependencies.
@@ -204,7 +207,8 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	if err != nil {
 		return err
 	}
-	if err := validateAuth(authRaw, hello.ClientNonce, relayNonce, transcriptHash); err != nil {
+	authenticatedPeerID, err := validateAuth(authRaw, hello.ClientNonce, relayNonce, transcriptHash)
+	if err != nil {
 		return err
 	}
 
@@ -243,20 +247,21 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	defer stop()
 	errs := make(chan error, 2)
 	go handler.writeLoop(runCtx, conn, session, errs)
-	go handler.readLoop(runCtx, conn, session, relay.SessionID(sessionID), errs)
+	go handler.readLoop(runCtx, conn, session, relay.SessionID(sessionID), authenticatedPeerID, errs)
 	err = <-errs
 	stop()
 	return err
 }
 
-func (handler *Handler) readLoop(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, errs chan<- error) {
+func (handler *Handler) readLoop(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, errs chan<- error) {
+	sequences := sequenceTracker{}
 	for {
 		raw, err := readFrame(ctx, conn)
 		if err != nil {
 			errs <- err
 			return
 		}
-		if err := handler.handleFrame(ctx, conn, session, sessionID, raw); err != nil {
+		if err := handler.handleFrame(ctx, conn, session, sessionID, authenticatedPeerID, &sequences, raw); err != nil {
 			if writeErr := handler.writeError(ctx, conn, mapRelayError(err)); writeErr != nil {
 				errs <- writeErr
 				return
@@ -288,7 +293,7 @@ func (handler *Handler) writeLoop(ctx context.Context, conn *connection, session
 	}
 }
 
-func (handler *Handler) handleFrame(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, raw []byte) error {
+func (handler *Handler) handleFrame(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, sequences *sequenceTracker, raw []byte) error {
 	frame, err := decodeTypedFrame(raw)
 	if err != nil {
 		return err
@@ -296,10 +301,16 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	if sid, ok := frame["session_id"].(string); ok && relay.SessionID(sid) != sessionID {
 		return ErrInvalidFrame
 	}
+	if err := sequences.accept(frame); err != nil {
+		return err
+	}
 
 	switch frame["type"] {
 	case "PRESENCE":
-		return session.AnnouncePresence(relay.PeerID(frame["peer_id"].(string)), handler.now())
+		if relay.PeerID(frame["peer_id"].(string)) != authenticatedPeerID {
+			return ErrAuthenticationFailed
+		}
+		return session.AnnouncePresence(authenticatedPeerID, handler.now())
 	case "HEARTBEAT":
 		return session.Heartbeat(handler.now())
 	case "LOOKUP":
@@ -337,7 +348,12 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 		return nil
 	case "ENVELOPE":
 		routeID := relay.RouteID(frame["route_id"].(string))
-		if err := session.Send(ctx, routeID, raw); err != nil {
+		delivery, err := deliveryFromFrame(frame)
+		if err != nil {
+			return err
+		}
+		err = session.SendDelivery(ctx, routeID, raw, delivery, handler.now())
+		if err != nil && !errors.Is(err, relay.ErrDuplicateDelivery) {
 			return err
 		}
 		if ackRequested, _ := frame["ack_requested"].(bool); ackRequested {
@@ -347,6 +363,48 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	default:
 		return nil
 	}
+}
+
+type sequenceTracker struct {
+	set  bool
+	last uint64
+}
+
+func (tracker *sequenceTracker) accept(frame map[string]any) error {
+	switch frame["type"] {
+	case "PRESENCE", "HEARTBEAT", "LOOKUP", "IDENTITY_WANT", "IDENTITY_HAVE", "RENDEZVOUS":
+		sequence, ok := numericField(frame["sequence"])
+		if !ok {
+			return ErrInvalidFrame
+		}
+		value := uint64(sequence)
+		if tracker.set && value <= tracker.last {
+			return ErrFrameReplayed
+		}
+		tracker.set = true
+		tracker.last = value
+	}
+	return nil
+}
+
+func deliveryFromFrame(frame map[string]any) (relay.Delivery, error) {
+	streamID, ok := numericField(frame["stream_id"])
+	if !ok {
+		return relay.Delivery{}, ErrInvalidFrame
+	}
+	deliveryID, ok := frame["delivery_id"].(string)
+	if !ok || deliveryID == "" {
+		return relay.Delivery{}, ErrInvalidFrame
+	}
+	canonical, err := json.Marshal(frame)
+	if err != nil {
+		return relay.Delivery{}, ErrInvalidFrame
+	}
+	return relay.Delivery{
+		StreamID: uint64(streamID),
+		ID:       deliveryID,
+		Digest:   sha256.Sum256(canonical),
+	}, nil
 }
 
 func (handler *Handler) handleIdentityWant(ctx context.Context, conn *connection, frame map[string]any) error {
@@ -502,47 +560,10 @@ func (handler *Handler) lookupFederatedPeer(ctx context.Context, peerID relay.Pe
 }
 
 func routeHintsFromFrame(frame map[string]any) ([]FederationRouteHint, error) {
-	raw, ok := frame["route_hints"]
-	if !ok {
-		return nil, nil
-	}
-	values, ok := raw.([]any)
-	if !ok || len(values) == 0 || len(values) > maxFederationPeers {
+	if _, ok := frame["route_hints"]; ok {
 		return nil, ErrInvalidFrame
 	}
-	hints := make([]FederationRouteHint, 0, len(values))
-	for _, value := range values {
-		object, ok := value.(map[string]any)
-		if !ok {
-			return nil, ErrInvalidFrame
-		}
-		endpoint, ok := object["uri"].(string)
-		if !ok {
-			return nil, ErrInvalidFrame
-		}
-		cleanedEndpoint, err := cleanFederationEndpoint(endpoint)
-		if err != nil {
-			return nil, ErrInvalidFrame
-		}
-		relayPublicKey, ok := object["relay_public_key"].(string)
-		if !ok {
-			return nil, ErrInvalidFrame
-		}
-		key, err := decodeBase64(relayPublicKey, 32)
-		if err != nil {
-			return nil, ErrInvalidFrame
-		}
-		priority, ok := numericField(object["priority"])
-		if !ok {
-			return nil, ErrInvalidFrame
-		}
-		hints = append(hints, FederationRouteHint{
-			Endpoint:       cleanedEndpoint,
-			RelayPublicKey: key,
-			Priority:       priority,
-		})
-	}
-	return hints, nil
+	return nil, nil
 }
 
 func numericField(value any) (int64, bool) {
@@ -640,16 +661,16 @@ func decodeHello(raw []byte) (helloFrame, error) {
 	}, nil
 }
 
-func validateAuth(raw []byte, clientNonce []byte, relayNonce []byte, transcriptHash []byte) error {
+func validateAuth(raw []byte, clientNonce []byte, relayNonce []byte, transcriptHash []byte) (relay.PeerID, error) {
 	if _, err := protocol.DecodeDraftRelayAttachmentFrame(raw); err != nil {
-		return err
+		return "", err
 	}
 	frame, err := decodeTypedFrame(raw)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if frame["type"] != "AUTH" {
-		return ErrInvalidFrame
+		return "", ErrAuthenticationFailed
 	}
 	for _, field := range []struct {
 		key   string
@@ -661,13 +682,24 @@ func validateAuth(raw []byte, clientNonce []byte, relayNonce []byte, transcriptH
 	} {
 		actual, err := decodeBase64(frame[field.key].(string), len(field.value))
 		if err != nil {
-			return err
+			return "", ErrAuthenticationFailed
 		}
 		if !bytes.Equal(actual, field.value) {
-			return ErrInvalidFrame
+			return "", ErrAuthenticationFailed
 		}
 	}
-	return nil
+	clientPublicKey, err := decodeBase64(frame["client_public_key"].(string), ed25519.PublicKeySize)
+	if err != nil {
+		return "", ErrAuthenticationFailed
+	}
+	clientProof, err := decodeBase64(frame["client_proof"].(string), ed25519.SignatureSize)
+	if err != nil {
+		return "", ErrAuthenticationFailed
+	}
+	if !ed25519.Verify(ed25519.PublicKey(clientPublicKey), proofInput(transcriptHash), clientProof) {
+		return "", ErrAuthenticationFailed
+	}
+	return relay.PeerID(base64URL(clientPublicKey)), nil
 }
 
 func decodeTypedFrame(raw []byte) (map[string]any, error) {
@@ -728,6 +760,10 @@ func base64URL(data []byte) string {
 
 func mapRelayError(err error) string {
 	switch {
+	case errors.Is(err, ErrAuthenticationFailed):
+		return "authentication_failed"
+	case errors.Is(err, ErrFrameReplayed), errors.Is(err, relay.ErrDeliveryConflict):
+		return "frame_replayed"
 	case errors.Is(err, relay.ErrPeerUnavailable):
 		return "peer_unavailable"
 	case errors.Is(err, relay.ErrFrameTooLarge):
@@ -744,5 +780,8 @@ func mapRelayError(err error) string {
 }
 
 func isFatal(err error) bool {
-	return !errors.Is(err, relay.ErrPeerUnavailable) && !errors.Is(err, relay.ErrNoRoute)
+	return !errors.Is(err, relay.ErrPeerUnavailable) &&
+		!errors.Is(err, relay.ErrNoRoute) &&
+		!errors.Is(err, ErrFrameReplayed) &&
+		!errors.Is(err, relay.ErrDeliveryConflict)
 }

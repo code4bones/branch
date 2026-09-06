@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 )
 
@@ -22,11 +21,8 @@ const (
 	// MaxDraftRelayAttachmentFrameBytes bounds one diagnostic relay frame.
 	MaxDraftRelayAttachmentFrameBytes = 64 * 1024
 
-	maxDraftRouteHints        = 8
-	maxDraftRouteHintURIBytes = 512
-	maxDraftIdentityRecords   = 4
-	maxDraftIdentityWrapper   = 8192
-	draftRelayAttachmentPath  = "/relay/v0"
+	maxDraftIdentityRecords = 4
+	maxDraftIdentityWrapper = 8192
 )
 
 // RelayFrameType names same-relay WSS attachment and live delivery frames.
@@ -317,7 +313,7 @@ func validateIdentityHaveFrame(frame map[string]json.RawMessage) error {
 }
 
 func validateRendezvousFrame(frame map[string]json.RawMessage) error {
-	if err := rejectUnknownRawKeysOptional(frame, []string{"type", "session_id", "route_id", "peer_id", "sequence"}, []string{"route_hints"}); err != nil {
+	if err := rejectUnknownRawKeys(frame, "type", "session_id", "route_id", "peer_id", "sequence"); err != nil {
 		return err
 	}
 	if err := readBase64Field(frame, "session_id", 32); err != nil {
@@ -332,17 +328,20 @@ func validateRendezvousFrame(frame map[string]json.RawMessage) error {
 	if _, err := readBoundedUintField(frame, "sequence", 0, MaxDraftTimestamp); err != nil {
 		return err
 	}
-	return validateRouteHints(frame)
+	return nil
 }
 
 func validateEnvelopeFrame(frame map[string]json.RawMessage) error {
-	if err := rejectUnknownRawKeysOptional(frame, []string{"type", "session_id", "route_id", "path_epoch", "stream_id", "delivery_id", "ciphertext", "ack_requested"}, []string{"sender_peer_id"}); err != nil {
+	if err := rejectUnknownRawKeysOptional(frame, []string{"type", "session_id", "route_id", "origin_route_id", "path_epoch", "stream_id", "delivery_id", "ciphertext", "ack_requested"}, []string{"sender_peer_id"}); err != nil {
 		return err
 	}
 	if err := readBase64Field(frame, "session_id", 32); err != nil {
 		return err
 	}
 	if err := readBase64Field(frame, "route_id", 16); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "origin_route_id", 16); err != nil {
 		return err
 	}
 	if _, err := readBoundedUintField(frame, "path_epoch", 0, MaxDraftTimestamp); err != nil {
@@ -543,62 +542,6 @@ func rejectUnknownRawKeysOptional(frame map[string]json.RawMessage, required []s
 		if _, ok := known[key]; !ok {
 			return fmt.Errorf("%w: unknown %s", ErrInvalidRelayAttachmentFrame, key)
 		}
-	}
-	return nil
-}
-
-func validateRouteHints(frame map[string]json.RawMessage) error {
-	raw, ok := frame["route_hints"]
-	if !ok {
-		return nil
-	}
-	var hints []map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &hints); err != nil || len(hints) == 0 || len(hints) > maxDraftRouteHints {
-		return fmt.Errorf("%w: invalid route_hints", ErrInvalidRelayAttachmentFrame)
-	}
-	seen := make(map[string]struct{}, len(hints))
-	for _, hint := range hints {
-		if err := rejectUnknownRawKeys(hint, "transport", "uri", "relay_public_key", "priority"); err != nil {
-			return err
-		}
-		transport, err := readStringField(hint, "transport")
-		if err != nil {
-			return err
-		}
-		if transport != "wss" && transport != "ws" {
-			return fmt.Errorf("%w: invalid route_hints", ErrInvalidRelayAttachmentFrame)
-		}
-		uri, err := readStringField(hint, "uri")
-		if err != nil {
-			return err
-		}
-		if err := validateRouteHintURI(transport, uri); err != nil {
-			return err
-		}
-		if _, exists := seen[transport+"\x00"+uri]; exists {
-			return fmt.Errorf("%w: duplicate route_hints", ErrInvalidRelayAttachmentFrame)
-		}
-		seen[transport+"\x00"+uri] = struct{}{}
-		if err := readBase64Field(hint, "relay_public_key", 32); err != nil {
-			return err
-		}
-		if _, err := readBoundedUintField(hint, "priority", 0, MaxDraftTimestamp); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateRouteHintURI(transport string, value string) error {
-	if len([]byte(value)) > maxDraftRouteHintURIBytes {
-		return fmt.Errorf("%w: invalid route_hints", ErrInvalidRelayAttachmentFrame)
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != transport || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
-		return fmt.Errorf("%w: invalid route_hints", ErrInvalidRelayAttachmentFrame)
-	}
-	if parsed.Path != draftRelayAttachmentPath {
-		return fmt.Errorf("%w: invalid route_hints", ErrInvalidRelayAttachmentFrame)
 	}
 	return nil
 }

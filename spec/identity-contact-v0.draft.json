@@ -61,6 +61,7 @@
     "mesh_distribution": "bounded signed observations and HAVE/WANT summaries",
     "relay_storage": "memory-only optional cache",
     "relay_restart_restores_contacts": false,
+    "equal_sequence_policy": "exact canonical wrapper duplicate is idempotent; distinct canonical wrappers for the same BranchID and sequence are rejected as equivocation",
     "global_directory": false,
     "presence_claim": false
   }

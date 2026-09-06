@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -80,6 +82,68 @@ type relayAttachmentVectorCase struct {
 	Expect string          `json:"expect"`
 	Reason string          `json:"reason"`
 	Frame  json.RawMessage `json:"frame"`
+}
+
+func TestDraftRelayAttachmentFrameSchemaParity(t *testing.T) {
+	expectedFrames := []string{
+		string(RelayFrameHello),
+		string(RelayFrameChallenge),
+		string(RelayFrameAuth),
+		string(RelayFrameReady),
+		string(RelayFramePresence),
+		string(RelayFrameHeartbeat),
+		string(RelayFrameLookup),
+		string(RelayFrameIdentityWant),
+		string(RelayFrameIdentityHave),
+		string(RelayFrameRendezvous),
+		string(RelayFrameEnvelope),
+		string(RelayFrameAck),
+		string(RelayFrameError),
+	}
+
+	for _, frameType := range expectedFrames {
+		if !KnownRelayFrameType(RelayFrameType(frameType)) {
+			t.Fatalf("known relay frame type %q is missing", frameType)
+		}
+	}
+
+	root := filepath.Join("..", "..")
+	manifestData, err := os.ReadFile(filepath.Join(root, "testdata", "vectors", "protocol-v0", "manifest.json"))
+	if err != nil {
+		t.Fatalf("read vector manifest: %v", err)
+	}
+	var manifest vectorManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("decode vector manifest: %v", err)
+	}
+	if !slices.Equal(manifest.RelayAttachment.RequiredFrameTypes, expectedFrames) {
+		t.Fatalf("vector frame types = %v, want %v", manifest.RelayAttachment.RequiredFrameTypes, expectedFrames)
+	}
+
+	cddlData, err := os.ReadFile(filepath.Join(root, "spec", "protocol-v0.cddl"))
+	if err != nil {
+		t.Fatalf("read CDDL: %v", err)
+	}
+	cddl := string(cddlData)
+	for _, rule := range []string{
+		"relay-hello",
+		"relay-challenge",
+		"relay-auth",
+		"relay-ready",
+		"relay-presence",
+		"relay-heartbeat",
+		"relay-lookup",
+		"relay-identity-want",
+		"relay-identity-have",
+		"relay-rendezvous",
+		"relay-envelope",
+		"relay-ack",
+		"relay-error",
+	} {
+		if !strings.Contains(cddl, rule+" = {") || !strings.Contains(cddl, "  "+rule) {
+			t.Fatalf("CDDL does not enumerate relay frame rule %q", rule)
+		}
+	}
 }
 
 func TestDraftEnvelopeVectors(t *testing.T) {

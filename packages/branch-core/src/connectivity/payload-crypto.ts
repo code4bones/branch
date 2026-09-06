@@ -5,6 +5,7 @@ import { decodeBase64URL, encodeBase64URL } from "../protocol/v0/base64url.js";
 
 export const betaHpkePayloadSuiteID = "branch.hpke/0.draft" as const;
 export const betaHpkeCiphersuite = "DHKEM(X25519,HKDF-SHA256)+HKDF-SHA256+AES-128-GCM" as const;
+export const betaHpkeAADVersion = "branch.hpke.aad/1.draft" as const;
 
 export interface BetaPayloadKeyPair {
   readonly publicKey: string;
@@ -20,12 +21,14 @@ export interface SealBetaPayloadOptions {
   readonly recipientPublicKey: string;
   readonly plaintext: string | Uint8Array;
   readonly aad: string | Uint8Array;
+  readonly expectedCiphertextBytes: number;
 }
 
 export interface OpenBetaPayloadOptions {
   readonly recipientPrivateKey: CryptoKey;
   readonly sealedPayload: string;
   readonly aad: string | Uint8Array;
+  readonly expectedCiphertextBytes: number;
 }
 
 interface EncodedSealedPayload {
@@ -38,6 +41,7 @@ interface EncodedSealedPayload {
 const maxPlaintextBytes = 4_096;
 const maxAADBytes = 2_048;
 const maxSealedPayloadBytes = 8_192;
+const hpkeAuthenticationTagBytes = 16;
 const suite = new CipherSuite({
   kem: new DhkemX25519HkdfSha256(),
   kdf: new HkdfSha256(),
@@ -73,6 +77,7 @@ export async function importBetaPayloadKeyPair(keyPair: BetaPayloadKeyExport): P
 export async function sealBetaPayload(options: SealBetaPayloadOptions): Promise<string> {
   const plaintext = boundedBytes(options.plaintext, maxPlaintextBytes, "payload plaintext");
   const aad = boundedBytes(options.aad, maxAADBytes, "payload aad");
+  const expectedCiphertextBytes = boundedCiphertextBytes(options.expectedCiphertextBytes);
   const recipientPublicKey = await suite.kem.deserializePublicKey(decodeBase64URL(options.recipientPublicKey));
   const sealed = await suite.seal({
     recipientPublicKey,
@@ -84,6 +89,9 @@ export async function sealBetaPayload(options: SealBetaPayloadOptions): Promise<
     enc: encodeBase64URL(new Uint8Array(sealed.enc)),
     ct: encodeBase64URL(new Uint8Array(sealed.ct))
   };
+  if (decodeBase64URL(payload.ct).byteLength !== expectedCiphertextBytes) {
+    throw new Error("unexpected HPKE ciphertext length");
+  }
   const encoded = encodeBase64URL(textEncoder.encode(JSON.stringify(payload)));
   if (encoded.length > maxSealedPayloadBytes) {
     throw new Error("sealed payload too large");
@@ -94,35 +102,59 @@ export async function sealBetaPayload(options: SealBetaPayloadOptions): Promise<
 export async function openBetaPayload(options: OpenBetaPayloadOptions): Promise<Uint8Array> {
   const aad = boundedBytes(options.aad, maxAADBytes, "payload aad");
   const payload = decodeSealedPayload(options.sealedPayload);
+  const ciphertext = decodeBase64URL(payload.ct);
+  if (ciphertext.byteLength !== boundedCiphertextBytes(options.expectedCiphertextBytes)) {
+    throw new Error("unexpected HPKE ciphertext length");
+  }
   const plaintext = await suite.open({
     recipientKey: options.recipientPrivateKey,
     enc: decodeBase64URL(payload.enc),
     info: textEncoder.encode(betaHpkePayloadSuiteID)
-  }, decodeBase64URL(payload.ct), aad);
+  }, ciphertext, aad);
   return new Uint8Array(plaintext);
+}
+
+export function betaHpkeCiphertextBytesForPlaintext(plaintext: string | Uint8Array): number {
+  return boundedBytes(plaintext, maxPlaintextBytes, "payload plaintext").byteLength + hpkeAuthenticationTagBytes;
+}
+
+export function betaHpkeCiphertextBytesFromSealedPayload(sealedPayload: string): number {
+  return boundedCiphertextBytes(decodeBase64URL(decodeSealedPayload(sealedPayload).ct).byteLength);
 }
 
 export function makeBetaPayloadAAD(fields: {
   readonly protocol: string;
   readonly profileMultihash: string;
-  readonly senderPeerId: string;
-  readonly recipientPeerId: string;
+  readonly originRouteId: string;
+  readonly senderPeerKey: string;
+  readonly recipientPeerKey: string;
   readonly deliveryId: string;
   readonly pathEpoch: number;
   readonly streamId: number;
   readonly frameType: "ENVELOPE";
   readonly ackRequested: boolean;
+  readonly hpkeCiphertextBytes: number;
 }): Uint8Array {
+  requireBase64URLBytes(fields.originRouteId, 16, "origin route id");
+  requireBase64URLBytes(fields.senderPeerKey, 32, "sender peer key");
+  requireBase64URLBytes(fields.recipientPeerKey, 32, "recipient peer key");
+  requireBase64URLBytes(fields.deliveryId, 16, "delivery id");
+  if (!Number.isSafeInteger(fields.pathEpoch) || fields.pathEpoch < 0 || !Number.isSafeInteger(fields.streamId) || fields.streamId < 0) {
+    throw new Error("invalid payload sequence");
+  }
   return textEncoder.encode(JSON.stringify({
-    ack_requested: fields.ackRequested,
-    delivery_id: fields.deliveryId,
-    frame_type: fields.frameType,
-    path_epoch: fields.pathEpoch,
-    profile_multihash: fields.profileMultihash,
+    aad_version: betaHpkeAADVersion,
     protocol: fields.protocol,
-    recipient_peer_id: fields.recipientPeerId,
-    sender_peer_id: fields.senderPeerId,
-    stream_id: fields.streamId
+    profile_multihash: fields.profileMultihash,
+    origin_route_id: fields.originRouteId,
+    sender_peer_key: fields.senderPeerKey,
+    recipient_peer_key: fields.recipientPeerKey,
+    delivery_id: fields.deliveryId,
+    path_epoch: fields.pathEpoch,
+    stream_id: fields.streamId,
+    frame_type: fields.frameType,
+    ack_requested: fields.ackRequested,
+    hpke_ciphertext_bytes: boundedCiphertextBytes(fields.hpkeCiphertextBytes)
   }));
 }
 
@@ -152,6 +184,19 @@ function boundedBytes(value: string | Uint8Array, maxBytes: number, name: string
     throw new Error(`${name} too large`);
   }
   return bytes;
+}
+
+function boundedCiphertextBytes(value: number): number {
+  if (!Number.isSafeInteger(value) || value < hpkeAuthenticationTagBytes || value > maxPlaintextBytes + hpkeAuthenticationTagBytes) {
+    throw new Error("invalid HPKE ciphertext length");
+  }
+  return value;
+}
+
+function requireBase64URLBytes(value: string, size: number, name: string): void {
+  if (decodeBase64URL(value).byteLength !== size) {
+    throw new Error(`invalid ${name}`);
+  }
 }
 
 function isEncodedSealedPayload(value: unknown): value is EncodedSealedPayload {

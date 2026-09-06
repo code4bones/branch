@@ -151,31 +151,13 @@
       }
     },
     {
-      "name": "rendezvous-route-hinted-live-federation",
-      "expect": "accept",
-      "frame": {
-        "type": "RENDEZVOUS",
-        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
-        "route_id": "AAECAwQFBgcICQoLDA0ODw",
-        "peer_id": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
-        "sequence": 5,
-        "route_hints": [
-          {
-            "transport": "wss",
-            "uri": "wss://relay02.undoo.ru:443/relay/v0",
-            "relay_public_key": "1O-cIlvcggU9pIqkgWIPmm8R8vpZXDyh0PYZiOUxW2k",
-            "priority": 0
-          }
-        ]
-      }
-    },
-    {
       "name": "envelope-opaque-live-forward",
       "expect": "accept",
       "frame": {
         "type": "ENVELOPE",
         "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         "route_id": "AAECAwQFBgcICQoLDA0ODw",
+        "origin_route_id": "AAECAwQFBgcICQoLDA0ODw",
         "path_epoch": 0,
         "stream_id": 0,
         "delivery_id": "AAECAwQFBgcICQoLDA0ODw",
@@ -361,7 +343,7 @@
       }
     },
     {
-      "name": "rendezvous-rejects-too-many-route-hints",
+      "name": "rendezvous-rejects-raw-route-hints",
       "expect": "reject",
       "reason": "frame_malformed",
       "frame": {
@@ -436,12 +418,29 @@
         "type": "ENVELOPE",
         "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         "route_id": "AAECAwQFBgcICQoLDA0ODw",
+        "origin_route_id": "AAECAwQFBgcICQoLDA0ODw",
         "path_epoch": 0,
         "stream_id": 0,
         "delivery_id": "AAECAwQFBgcICQoLDA0ODw",
         "ciphertext": "b3BhcXVlIGVuY3J5cHRlZCB0ZXN0IGJ5dGVz",
         "ack_requested": true,
         "plaintext": "forbidden"
+      }
+    },
+    {
+      "name": "envelope-rejects-malformed-origin-route-id",
+      "expect": "reject",
+      "reason": "frame_malformed",
+      "frame": {
+        "type": "ENVELOPE",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "route_id": "AAECAwQFBgcICQoLDA0ODw",
+        "origin_route_id": "bad",
+        "path_epoch": 0,
+        "stream_id": 0,
+        "delivery_id": "AAECAwQFBgcICQoLDA0ODw",
+        "ciphertext": "b3BhcXVlIGVuY3J5cHRlZCB0ZXN0IGJ5dGVz",
+        "ack_requested": true
       }
     },
     {

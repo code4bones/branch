@@ -64,11 +64,11 @@ export type SameRelayTransportEvent =
   | { readonly type: "heartbeat_sent"; readonly sequence: number }
   | { readonly type: "lookup_requested"; readonly peerId: string; readonly sequence: number }
   | { readonly type: "rendezvous_ready"; readonly peerId: string; readonly routeId: string; readonly sequence: number; readonly routeHintCount: number }
-  | { readonly type: "envelope_sent"; readonly deliveryId: string; readonly routeId: string }
+  | { readonly type: "envelope_sent"; readonly deliveryId: string; readonly routeId: string; readonly originRouteId: string }
   | { readonly type: "relay_ack"; readonly deliveryId: string; readonly ackType: "relay.accepted" | "relay.forwarded"; readonly durable: false }
   | { readonly type: "peer_receipt"; readonly deliveryId: string; readonly durable: false }
   | { readonly type: "peer_unavailable"; readonly retryable: boolean; readonly pendingCount: number }
-  | { readonly type: "envelope_received"; readonly deliveryId: string; readonly ciphertext: string; readonly routeId: string; readonly senderPeerId: string | null }
+  | { readonly type: "envelope_received"; readonly deliveryId: string; readonly ciphertext: string; readonly routeId: string; readonly originRouteId: string; readonly senderPeerId: string | null }
   | { readonly type: "pending_retried"; readonly count: number }
   | { readonly type: "disconnected"; readonly pendingCount: number }
   | { readonly type: "error"; readonly message: string };
@@ -95,6 +95,7 @@ interface ReadyState {
 interface PendingEnvelope {
   readonly deliveryId: string;
   readonly ciphertext: string;
+  readonly originRouteId: string;
   readonly streamId: number;
   readonly ackRequested: boolean;
 }
@@ -102,6 +103,7 @@ interface PendingEnvelope {
 export interface SameRelayPendingEnvelope {
   readonly deliveryId: string;
   readonly ciphertext: string;
+  readonly originRouteId: string;
   readonly streamId: number;
   readonly ackRequested: boolean;
 }
@@ -115,6 +117,7 @@ const socketOpenState = 1;
 const defaultMaxFrameBytes = 49_152;
 const defaultHandshakeTimeoutMs = 10_000;
 const defaultPresenceTTLSeconds = 30;
+const maxChallengeClockSkewSeconds = 30;
 const defaultStreamID = 0;
 const defaultPathEpoch = 0;
 
@@ -237,6 +240,15 @@ export class SameRelayTransportClient {
 
     const challenge = await this.readNextFrame();
     assertFrameType(challenge, "CHALLENGE");
+    const issuedAt = readNumber(challenge, "issued_at");
+    const expiresAt = readNumber(challenge, "expires_at");
+    const currentTime = this.now();
+    if (expiresAt <= currentTime) {
+      throw new Error("relay challenge expired");
+    }
+    if (issuedAt > currentTime + maxChallengeClockSkewSeconds) {
+      throw new Error("relay challenge issued in the future");
+    }
     const selected = readObject(challenge, "selected");
     const transcriptHash = await this.computeTranscriptHash(
       helloRaw,
@@ -335,16 +347,21 @@ export class SameRelayTransportClient {
     this.emit({ type: "rendezvous_ready", peerId, routeId: ready.routeId, sequence, routeHintCount: routeHints.length });
   }
 
-  sendEnvelope(ciphertext: string, options: { readonly deliveryId?: string; readonly ackRequested?: boolean } = {}): string {
+  sendEnvelope(ciphertext: string, options: { readonly deliveryId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
     return this.sendSealedEnvelope(encodeBase64URL(new TextEncoder().encode(ciphertext)), options);
   }
 
-  sendSealedEnvelope(sealedPayload: string, options: { readonly deliveryId?: string; readonly ackRequested?: boolean } = {}): string {
+  sendSealedEnvelope(sealedPayload: string, options: { readonly deliveryId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
     decodeBase64URL(sealedPayload);
+    const originRouteId = options.originRouteId ?? this.requireReady().routeId;
+    if (decodeBase64URL(originRouteId).byteLength !== 16) {
+      throw new Error("invalid origin route id");
+    }
     const deliveryId = options.deliveryId ?? this.randomToken(16);
     const pending = {
       deliveryId,
       ciphertext: sealedPayload,
+      originRouteId,
       streamId: defaultStreamID,
       ackRequested: options.ackRequested ?? true
     } satisfies PendingEnvelope;
@@ -391,13 +408,14 @@ export class SameRelayTransportClient {
       type: "ENVELOPE",
       session_id: ready.sessionId,
       route_id: ready.routeId,
+      origin_route_id: pending.originRouteId,
       path_epoch: defaultPathEpoch,
       stream_id: pending.streamId,
       delivery_id: pending.deliveryId,
       ciphertext: pending.ciphertext,
       ack_requested: pending.ackRequested
     });
-    this.emit({ type: "envelope_sent", deliveryId: pending.deliveryId, routeId: ready.routeId });
+    this.emit({ type: "envelope_sent", deliveryId: pending.deliveryId, routeId: ready.routeId, originRouteId: pending.originRouteId });
   }
 
   private readonly handleSocketMessage = (event: RelaySocketEvent): void => {
@@ -460,6 +478,7 @@ export class SameRelayTransportClient {
           deliveryId,
           ciphertext: readString(record, "ciphertext"),
           routeId: readString(record, "route_id"),
+          originRouteId: readString(record, "origin_route_id"),
           senderPeerId: readOptionalString(record, "sender_peer_id")
         });
         return;
