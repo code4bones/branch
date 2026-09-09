@@ -751,11 +751,11 @@ export function ClientTool(): React.JSX.Element {
           </div>
         </dl>
 
-        <section className="federation-trace" aria-label="Federation trace">
+        {client.federationTrace.events.length === 0 ? null : <section className="federation-trace" aria-label="Carrier-hop trace">
           <div className="section-heading">
-            <h2>Federation trace</h2>
+            <h2>Carrier-hop trace</h2>
             <p className={client.federationTrace.migrated ? "status-good" : "status-warn"}>
-              {federationTraceStatus(client.federationTrace.migrated, client.federationTrace.events.length)}
+              {carrierHopTraceStatus(client.federationTrace.migrated)}
             </p>
           </div>
           <div className="federation-path" aria-label="Current relay path">
@@ -794,7 +794,7 @@ export function ClientTool(): React.JSX.Element {
             scroll={{ x: 1040 }}
             size="small"
           />
-        </section>
+        </section>}
         <ol className="client-event-log" aria-label="Transport events">
           {client.transportEvents.map((event, index) => (
             <li key={`${String(index)}-${event}`}>{event}</li>
@@ -945,10 +945,7 @@ function traceStatusColor(status: CarrierHoppingTraceStatus): string {
   }
 }
 
-function federationTraceStatus(migrated: boolean, eventCount: number): string {
-  if (eventCount === 0) {
-    return "no trace yet";
-  }
+function carrierHopTraceStatus(migrated: boolean): string {
   return migrated ? "migration observed" : "route observed";
 }
 

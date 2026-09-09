@@ -225,7 +225,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(clientTool, /directObservations/);
   assert.match(clientTool, /identityLookupTraceColumns/);
   assert.match(clientTool, /className="federation-trace"/);
-  assert.match(clientTool, /Federation trace/);
+  assert.match(clientTool, /Carrier-hop trace/);
+  assert.match(clientTool, /client\.federationTrace\.events\.length === 0 \? null/);
   assert.match(clientTool, /traceColumns/);
   assert.match(store, /federationTrace/);
   assert.doesNotMatch(clientTool, /className="tool-grid is-active client-tool"/);
