@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,7 +32,9 @@ const (
 	maxFederationResponses       = 4
 )
 
-// StaticPeerRouterConfig configures an optional beta relay-to-relay probe path.
+// StaticPeerRouterConfig is retained as a bounded test adapter for pinned WSS
+// fixtures. The branch-node composition root does not expose it as deployment
+// configuration; discovered federation uses DiscoveredPeerRouter instead.
 type StaticPeerRouterConfig struct {
 	Peers            []FederationPeer
 	LocalHub         *relay.Hub
@@ -59,8 +62,8 @@ type FederationEndpointPolicy struct {
 	AllowPrivateAddresses bool
 }
 
-// StaticPeerRouter probes a bounded static peer relay set for live peers. It is
-// disabled when no endpoints are configured and keeps no durable route catalog.
+// StaticPeerRouter probes a bounded fixture peer set for tests and keeps no
+// durable route catalog. It is not the production discovery topology.
 type StaticPeerRouter struct {
 	peers          []federationCandidate
 	localHub       *relay.Hub
@@ -72,6 +75,7 @@ type StaticPeerRouter struct {
 	writeTimeout   time.Duration
 	diagMu         sync.Mutex
 	diagnostics    map[string]FederationPeerObservation
+	nextPeerRef    uint64
 }
 
 type federationCandidate struct {
@@ -79,12 +83,15 @@ type federationCandidate struct {
 	relayPublicKey   []byte
 	profileMultihash string
 	priority         int64
+	identityKey      string
+	expiresAt        time.Time
 }
 
-// FederationPeerObservation is a bounded operator snapshot of one static or
-// hinted relay peer probe. It carries no payloads, peer IDs, or keys.
+// FederationPeerObservation is a bounded operator snapshot of one relay peer
+// probe. PeerRef is process-local and intentionally does not expose a public
+// endpoint URL, key, BranchID, route, session, or payload.
 type FederationPeerObservation struct {
-	Endpoint     string
+	PeerRef      string
 	State        string
 	LastLookupAt time.Time
 	LastReason   string
@@ -93,7 +100,7 @@ type FederationPeerObservation struct {
 	FreshUntil   time.Time
 }
 
-// NewStaticPeerRouter creates a beta static relay federation adapter.
+// NewStaticPeerRouter creates the bounded fixture adapter.
 func NewStaticPeerRouter(config StaticPeerRouterConfig) (*StaticPeerRouter, error) {
 	if config.LocalHub == nil {
 		return nil, ErrInvalidConfig
@@ -121,7 +128,7 @@ func NewStaticPeerRouter(config StaticPeerRouterConfig) (*StaticPeerRouter, erro
 	if err != nil {
 		return nil, err
 	}
-	return &StaticPeerRouter{
+	router := &StaticPeerRouter{
 		peers:          peers,
 		localHub:       config.LocalHub,
 		endpointPolicy: config.EndpointPolicy,
@@ -131,7 +138,15 @@ func NewStaticPeerRouter(config StaticPeerRouterConfig) (*StaticPeerRouter, erro
 		dialTimeout:    config.DialTimeout,
 		writeTimeout:   config.WriteTimeout,
 		diagnostics:    make(map[string]FederationPeerObservation, len(peers)),
-	}, nil
+	}
+	for _, peer := range peers {
+		router.nextPeerRef++
+		router.diagnostics[peer.endpoint] = FederationPeerObservation{
+			PeerRef: "peer-" + strconv.FormatUint(router.nextPeerRef, 10),
+			State:   "configured",
+		}
+	}
+	return router, nil
 }
 
 // ID returns the bounded source identifier used in operator lookup traces.
@@ -212,6 +227,7 @@ func (router *StaticPeerRouter) FederationSnapshot() []FederationPeerObservation
 	router.diagMu.Lock()
 	defer router.diagMu.Unlock()
 
+	router.prunePeerObservationsLocked(router.now())
 	observations := make([]FederationPeerObservation, 0, len(router.peers)+len(router.diagnostics))
 	included := make(map[string]struct{}, len(router.peers)+len(router.diagnostics))
 	for _, peer := range router.peers {
@@ -219,9 +235,10 @@ func (router *StaticPeerRouter) FederationSnapshot() []FederationPeerObservation
 		observation, ok := router.diagnostics[endpoint]
 		if !ok {
 			observation = FederationPeerObservation{
-				Endpoint: endpoint,
-				State:    "configured",
+				PeerRef: router.nextPeerReferenceLocked(),
+				State:   "configured",
 			}
+			router.diagnostics[endpoint] = observation
 		}
 		observations = append(observations, observation)
 		included[endpoint] = struct{}{}
@@ -233,7 +250,7 @@ func (router *StaticPeerRouter) FederationSnapshot() []FederationPeerObservation
 		observations = append(observations, observation)
 	}
 	slices.SortFunc(observations, func(left, right FederationPeerObservation) int {
-		return strings.Compare(left.Endpoint, right.Endpoint)
+		return strings.Compare(left.PeerRef, right.PeerRef)
 	})
 	if len(observations) > maxFederationPeers {
 		return observations[:maxFederationPeers]
@@ -258,15 +275,21 @@ func (router *StaticPeerRouter) remotePeerAvailable(ctx context.Context, candida
 }
 
 func (router *StaticPeerRouter) recordPeerObservation(endpoint string, state string, reason string, bridgeCount int, now time.Time) {
+	router.recordPeerObservationUntil(endpoint, state, reason, bridgeCount, now, now.Add(router.localHub.PresenceTTL()))
+}
+
+func (router *StaticPeerRouter) recordPeerObservationUntil(endpoint string, state string, reason string, bridgeCount int, now time.Time, freshUntil time.Time) {
 	router.diagMu.Lock()
 	defer router.diagMu.Unlock()
 
-	var freshUntil time.Time
-	if state == "reachable" {
-		freshUntil = now.Add(router.localHub.PresenceTTL())
-	}
+	router.prunePeerObservationsLocked(now)
 	observation := router.diagnostics[endpoint]
-	observation.Endpoint = endpoint
+	if observation.PeerRef == "" {
+		if len(router.diagnostics) >= maxFederationPeers {
+			router.evictOldestPeerObservationLocked()
+		}
+		observation.PeerRef = router.nextPeerReferenceLocked()
+	}
 	observation.State = state
 	observation.LastLookupAt = now.UTC()
 	observation.LastReason = reason
@@ -274,6 +297,32 @@ func (router *StaticPeerRouter) recordPeerObservation(endpoint string, state str
 	observation.BridgeCount = bridgeCount
 	observation.FreshUntil = freshUntil.UTC()
 	router.diagnostics[endpoint] = observation
+}
+
+func (router *StaticPeerRouter) prunePeerObservationsLocked(now time.Time) {
+	for endpoint, observation := range router.diagnostics {
+		if !observation.FreshUntil.IsZero() && !observation.FreshUntil.After(now) {
+			delete(router.diagnostics, endpoint)
+		}
+	}
+}
+
+func (router *StaticPeerRouter) evictOldestPeerObservationLocked() {
+	var oldestEndpoint string
+	var oldest time.Time
+	for endpoint, observation := range router.diagnostics {
+		if oldestEndpoint == "" || observation.LastLookupAt.Before(oldest) {
+			oldestEndpoint, oldest = endpoint, observation.LastLookupAt
+		}
+	}
+	if oldestEndpoint != "" {
+		delete(router.diagnostics, oldestEndpoint)
+	}
+}
+
+func (router *StaticPeerRouter) nextPeerReferenceLocked() string {
+	router.nextPeerRef++
+	return "peer-" + strconv.FormatUint(router.nextPeerRef, 10)
 }
 
 func (router *StaticPeerRouter) dial(parent context.Context, candidate federationCandidate) (*federationClient, error) {
@@ -310,6 +359,7 @@ type federatedWSSForwarder struct {
 	endpoint       string
 	relayPublicKey []byte
 	peerID         relay.PeerID
+	dial           func(context.Context, federationCandidate) (*federationClient, error)
 	mu             sync.Mutex
 	client         *federationClient
 	routeID        relay.RouteID
@@ -350,7 +400,11 @@ func (forwarder *federatedWSSForwarder) liveClientLocked(ctx context.Context, ro
 		}
 		return forwarder.client, nil
 	}
-	client, err := forwarder.router.dial(ctx, federationCandidate{
+	dial := forwarder.dial
+	if dial == nil {
+		dial = forwarder.router.dial
+	}
+	client, err := dial(ctx, federationCandidate{
 		endpoint:         forwarder.endpoint,
 		relayPublicKey:   forwarder.relayPublicKey,
 		profileMultihash: protocol.DevelopmentProfileMultihash,
@@ -394,6 +448,10 @@ type federationClient struct {
 	closeOnce              sync.Once
 	expectedRelayPublicKey []byte
 	expectedProfile        string
+	requestedRole          string
+	relayBeacon            string
+	clientPublicKey        ed25519.PublicKey
+	clientSign             func([]byte) []byte
 }
 
 func (client *federationClient) attach(ctx context.Context) error {
@@ -401,11 +459,15 @@ func (client *federationClient) attach(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	requestedRole := client.requestedRole
+	if requestedRole == "" {
+		requestedRole = protocol.RelayForwardLiveRole
+	}
 	hello := map[string]any{
 		"type":            "HELLO",
 		"client_nonce":    base64URL(clientNonce),
 		"client_time":     client.now().Unix(),
-		"requested_role":  "relay.forward.live/0",
+		"requested_role":  requestedRole,
 		"max_frame_bytes": client.maxFrameBytes,
 		"offers": []map[string]any{{
 			"wire_version":          0,
@@ -416,6 +478,12 @@ func (client *federationClient) attach(ctx context.Context) error {
 			"extensions":            []string{},
 			"required_extensions":   []string{},
 		}},
+	}
+	if requestedRole == protocol.RelayFederationLiveRole {
+		if client.relayBeacon == "" || len(client.clientPublicKey) != ed25519.PublicKeySize || client.clientSign == nil {
+			return ErrInvalidFrame
+		}
+		hello["relay_beacon"] = client.relayBeacon
 	}
 	helloRaw, err := json.Marshal(hello)
 	if err != nil {
@@ -435,15 +503,21 @@ func (client *federationClient) attach(ctx context.Context) error {
 	if err := verifyFederationChallenge(helloRaw, challenge, client.expectedRelayPublicKey, client.expectedProfile); err != nil {
 		return err
 	}
-	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(client.random)
-	if err != nil {
-		return err
+	clientPublicKey := client.clientPublicKey
+	clientSign := client.clientSign
+	if len(clientPublicKey) == 0 {
+		generatedPublicKey, clientPrivateKey, err := ed25519.GenerateKey(client.random)
+		if err != nil {
+			return err
+		}
+		clientPublicKey = generatedPublicKey
+		clientSign = func(input []byte) []byte { return ed25519.Sign(clientPrivateKey, input) }
 	}
 	transcriptHash, err := decodeBase64(challenge["transcript_hash"].(string), 32)
 	if err != nil {
 		return err
 	}
-	clientProof := ed25519.Sign(clientPrivateKey, proofInput(transcriptHash))
+	clientProof := clientSign(proofInput(transcriptHash))
 	auth := map[string]any{
 		"type":              "AUTH",
 		"client_public_key": base64URL(clientPublicKey),
@@ -494,6 +568,48 @@ func (client *federationClient) lookupIdentityContact(ctx context.Context, branc
 		"branch_id":  branchID,
 		"sequence":   1,
 		"hop_limit":  0,
+	}); err != nil {
+		return nil, err
+	}
+	responseCtx, cancel := context.WithTimeout(ctx, client.writeTimeout)
+	defer cancel()
+	raw, err := readFederationRaw(responseCtx, client.conn)
+	if err != nil {
+		return nil, err
+	}
+	response, err := readFederationObject(raw)
+	if err != nil {
+		return nil, err
+	}
+	switch response["type"] {
+	case "IDENTITY_HAVE":
+		if response["branch_id"] != branchID {
+			return nil, ErrInvalidFrame
+		}
+		return identityRecordStringsFromFrame(response)
+	case "ERROR":
+		return nil, relayErrorFromFrame(response)
+	default:
+		return nil, ErrInvalidFrame
+	}
+}
+
+func (client *federationClient) lookupFederatedIdentityContact(ctx context.Context, branchID string) ([]string, error) {
+	if client.requestedRole != protocol.RelayFederationLiveRole || len(client.clientPublicKey) != ed25519.PublicKeySize {
+		return nil, ErrInvalidFrame
+	}
+	requestID, err := randomBytes(client.random, 16)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.writeTyped(ctx, map[string]any{
+		"type":             "IDENTITY_WANT",
+		"session_id":       client.sessionID,
+		"branch_id":        branchID,
+		"sequence":         1,
+		"request_id":       base64URL(requestID),
+		"origin_relay_key": base64URL(client.clientPublicKey),
+		"hop_limit":        1,
 	}); err != nil {
 		return nil, err
 	}

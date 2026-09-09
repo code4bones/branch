@@ -56,6 +56,29 @@
       }
     },
     {
+      "name": "federation-hello-carries-bounded-signed-beacon-provenance",
+      "expect": "accept",
+      "frame": {
+        "type": "HELLO",
+        "client_nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "client_time": 1789000000,
+        "requested_role": "relay.federate.live/0.draft",
+        "relay_beacon": "BRANCH0.federationbeaconplaceholder",
+        "max_frame_bytes": 49152,
+        "offers": [
+          {
+            "wire_version": 0,
+            "protocol": "branch/connectivity/0",
+            "profile_multihash": "uEiCaVLmVxHgth49YdSwXKM201oM4W6PHc61z_1rz-J_xVw",
+            "capabilities": ["relay.forward.live/0", "route.relay.wss/0"],
+            "required_capabilities": ["relay.forward.live/0"],
+            "extensions": [],
+            "required_extensions": []
+          }
+        ]
+      }
+    },
+    {
       "name": "auth-binds-client-and-relay-nonces",
       "expect": "accept",
       "frame": {
@@ -140,6 +163,19 @@
       }
     },
     {
+      "name": "federation-identity-want-has-one-hop-context",
+      "expect": "accept",
+      "frame": {
+        "type": "IDENTITY_WANT",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "sequence": 4,
+        "request_id": "AAECAwQFBgcICQoLDA0ODw",
+        "origin_relay_key": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+        "hop_limit": 1
+      }
+    },
+    {
       "name": "rendezvous-live-route",
       "expect": "accept",
       "frame": {
@@ -188,6 +224,33 @@
     }
   ],
   "invalid": [
+    {
+      "name": "federation-hello-rejects-missing-signed-beacon",
+      "expect": "reject",
+      "reason": "frame_malformed",
+      "frame": {
+        "type": "HELLO",
+        "client_nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "client_time": 1789000000,
+        "requested_role": "relay.federate.live/0.draft",
+        "max_frame_bytes": 49152,
+        "offers": []
+      }
+    },
+    {
+      "name": "federation-identity-want-rejects-more-than-one-hop",
+      "expect": "reject",
+      "reason": "frame_malformed",
+      "frame": {
+        "type": "IDENTITY_WANT",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "sequence": 4,
+        "request_id": "AAECAwQFBgcICQoLDA0ODw",
+        "origin_relay_key": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+        "hop_limit": 2
+      }
+    },
     {
       "name": "hello-rejects-unsupported-wire-version",
       "expect": "reject",

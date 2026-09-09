@@ -89,6 +89,51 @@ func TestIdentityContactSourceLookupRejectsTimeout(t *testing.T) {
 	}
 }
 
+func TestIdentityContactSourceReturnsBoundedBootstrapBeaconCandidates(t *testing.T) {
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate relay key: %v", err)
+	}
+	wrapper, err := protocol.CreateBootstrapBeaconWrapper(protocol.BootstrapBeaconOptions{
+		NowUnix:         now.Unix(),
+		ExpiresAtUnix:   now.Add(time.Hour).Unix(),
+		SenderPublicKey: publicKey,
+		RelayEndpoints: []protocol.BootstrapRelayEndpoint{{
+			Transport: "wss",
+			URI:       "wss://relay.example.test:443/relay/v0",
+			Priority:  0,
+		}},
+		Sign: func(input []byte) ([]byte, error) { return ed25519.Sign(privateKey, input), nil },
+	})
+	if err != nil {
+		t.Fatalf("create beacon: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/search/repositories":
+			_, _ = response.Write([]byte(`{"items":[{"full_name":"owner/repo","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":"repo"}]}`))
+		case "/repos/owner/repo/contents/.branch/records.br0":
+			content := base64.StdEncoding.EncodeToString([]byte(wrapper + "\nBRANCH0.poison\n"))
+			_, _ = fmt.Fprintf(response, `{"type":"file","encoding":"base64","content":%q}`, content)
+		default:
+			t.Fatalf("unexpected path %q", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("new source: %v", err)
+	}
+	candidates, err := source.LookupBootstrapBeacons(context.Background())
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if len(candidates) != 2 || candidates[0].Wrapper != wrapper || candidates[0].Source != "owner/repo/.branch/records.br0" {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+}
+
 func TestIdentityContactSourceSkipsFailedRecordsReadWhenLaterRepositoryIsValid(t *testing.T) {
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	branchID, wrapper := testIdentityContact(t, now, now.Add(time.Hour))

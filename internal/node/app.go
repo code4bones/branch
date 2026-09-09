@@ -20,18 +20,18 @@ var ErrInvalidConfig = errors.New("node invalid config")
 
 // Config is parsed once at startup and then treated as immutable.
 type Config struct {
-	PublicAddr               string
-	AdminAddr                string
-	IdentityPath             string
-	AdminToken               string
-	Relay                    relay.Config
-	Version                  string
-	Monitor                  RelayMonitorConfig
-	MonitorToken             string
-	WSSOrigins               []string
-	FederationPeers          []wss.FederationPeer
-	FederationEndpointPolicy wss.FederationEndpointPolicy
-	GitHubIdentityLookup     bool
+	PublicAddr                string
+	AdminAddr                 string
+	IdentityPath              string
+	AdminToken                string
+	Relay                     relay.Config
+	Version                   string
+	Monitor                   RelayMonitorConfig
+	MonitorToken              string
+	WSSOrigins                []string
+	FederationEndpointPolicy  wss.FederationEndpointPolicy
+	GitHubIdentityLookup      bool
+	GitHubFederationDiscovery bool
 }
 
 // DefaultConfig returns development-safe defaults for a relay behind a local
@@ -77,7 +77,6 @@ func New(config Config) (*App, error) {
 		return nil, fmt.Errorf("create identity contact cache: %w", err)
 	}
 	peerRouter, err := wss.NewStaticPeerRouter(wss.StaticPeerRouterConfig{
-		Peers:          config.FederationPeers,
 		LocalHub:       hub,
 		EndpointPolicy: config.FederationEndpointPolicy,
 		MaxFrameBytes:  int64(config.Relay.MaxFrameBytes),
@@ -88,6 +87,31 @@ func New(config Config) (*App, error) {
 		return nil, fmt.Errorf("create relay federation router: %w", err)
 	}
 	identitySources := []discovery.IdentityContactLookupSource{peerRouter}
+	var forwardingPeerRouter wss.PeerRouter = peerRouter
+	var federationMonitor interface {
+		FederationSnapshot() []wss.FederationPeerObservation
+	} = peerRouter
+	if config.GitHubFederationDiscovery {
+		githubSource, sourceErr := githubcarrier.NewIdentityContactSource(githubcarrier.IdentityContactSourceConfig{})
+		if sourceErr != nil {
+			return nil, fmt.Errorf("create github federation carrier: %w", sourceErr)
+		}
+		discoveredRouter, routerErr := wss.NewDiscoveredPeerRouter(wss.DiscoveredPeerRouterConfig{
+			Source:         githubSource,
+			Identity:       nodeIdentity,
+			LocalHub:       hub,
+			EndpointPolicy: config.FederationEndpointPolicy,
+			MaxFrameBytes:  int64(config.Relay.MaxFrameBytes),
+			DialTimeout:    2 * time.Second,
+			WriteTimeout:   5 * time.Second,
+		})
+		if routerErr != nil {
+			return nil, fmt.Errorf("create discovered relay federation router: %w", routerErr)
+		}
+		forwardingPeerRouter = discoveredRouter
+		federationMonitor = discoveredRouter
+		identitySources = []discovery.IdentityContactLookupSource{discoveredRouter}
+	}
 	if config.GitHubIdentityLookup {
 		githubSource, sourceErr := githubcarrier.NewIdentityContactSource(githubcarrier.IdentityContactSourceConfig{})
 		if sourceErr != nil {
@@ -106,7 +130,7 @@ func New(config Config) (*App, error) {
 		Hub:              hub,
 		Identity:         nodeIdentity,
 		IdentityContacts: identityContactCache,
-		PeerRouter:       peerRouter,
+		PeerRouter:       forwardingPeerRouter,
 		OriginPatterns:   config.WSSOrigins,
 		MaxFrameBytes:    int64(config.Relay.MaxFrameBytes),
 		HandshakeTimeout: 10 * time.Second,
@@ -143,7 +167,7 @@ func New(config Config) (*App, error) {
 			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
 		})),
 	)
-	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: peerRouter})
+	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor})
 	if err != nil {
 		return nil, err
 	}

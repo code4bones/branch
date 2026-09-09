@@ -32,7 +32,7 @@ func (provider *bootstrapBeaconProvider) BootstrapBeacon(request admin.Bootstrap
 		RelayEndpoints:     endpoints,
 		ProtocolVersions:   []string{protocol.ProtocolID},
 		ProfileMultihashes: []string{protocol.DevelopmentProfileMultihash},
-		RelayCapabilities:  []string{"relay.forward.live/0", "route.relay.wss/0"},
+		RelayCapabilities:  []string{"relay.federate.live/0.draft", "relay.forward.live/0", "route.relay.wss/0"},
 		Sign: func(message []byte) ([]byte, error) {
 			return provider.identity.Sign(message), nil
 		},

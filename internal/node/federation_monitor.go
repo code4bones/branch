@@ -8,7 +8,9 @@ import (
 )
 
 type staticFederationMonitor struct {
-	router *wss.StaticPeerRouter
+	router interface {
+		FederationSnapshot() []wss.FederationPeerObservation
+	}
 }
 
 func (monitor staticFederationMonitor) FederationLinks() []admin.RelayMonitorFederationLink {
@@ -19,7 +21,9 @@ func (monitor staticFederationMonitor) FederationLinks() []admin.RelayMonitorFed
 	links := make([]admin.RelayMonitorFederationLink, 0, len(snapshot))
 	for _, observation := range snapshot {
 		link := admin.RelayMonitorFederationLink{
-			PeerEndpoint: observation.Endpoint,
+			// PeerEndpoint is retained for the protected beta monitor wire shape,
+			// but contains only the process-local peer reference, never a URL.
+			PeerEndpoint: observation.PeerRef,
 			State:        observation.State,
 			LastLookupAt: nonZeroTimePtr(observation.LastLookupAt),
 			LastReason:   observation.LastReason,

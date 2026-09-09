@@ -56,8 +56,6 @@ func parseConfig() (node.Config, error) {
 	flag.StringVar(&config.Monitor.PushToken, "monitor-push-token", os.Getenv("BRANCH_MONITOR_PUSH_TOKEN"), "relay monitor push bearer token; defaults to BRANCH_MONITOR_PUSH_TOKEN")
 	wssOriginPatterns := os.Getenv("BRANCH_WSS_ORIGIN_PATTERNS")
 	flag.StringVar(&wssOriginPatterns, "wss-origin-patterns", wssOriginPatterns, "comma-separated WebSocket Origin host patterns; defaults to BRANCH_WSS_ORIGIN_PATTERNS")
-	federationPeers := os.Getenv("BRANCH_FEDERATION_PEERS")
-	flag.StringVar(&federationPeers, "federation-peers", federationPeers, "comma-separated endpoint|base64url-ed25519-key|profile entries; defaults to BRANCH_FEDERATION_PEERS")
 	allowFederationWS, err := envBool("BRANCH_FEDERATION_ALLOW_INSECURE_WS")
 	if err != nil {
 		return node.Config{}, err
@@ -73,6 +71,11 @@ func parseConfig() (node.Config, error) {
 		return node.Config{}, err
 	}
 	flag.BoolVar(&githubIdentityLookup, "identity-github-enabled", githubIdentityLookup, "enable bounded anonymous GitHub IdentityContact lookup; defaults to BRANCH_IDENTITY_GITHUB_ENABLED")
+	githubFederationDiscovery, err := envBool("BRANCH_FEDERATION_GITHUB_ENABLED")
+	if err != nil {
+		return node.Config{}, err
+	}
+	flag.BoolVar(&githubFederationDiscovery, "federation-github-enabled", githubFederationDiscovery, "enable on-demand signed BootstrapBeacon federation discovery; defaults to BRANCH_FEDERATION_GITHUB_ENABLED")
 	monitorInterval, err := envDuration("BRANCH_MONITOR_INTERVAL")
 	if err != nil {
 		return node.Config{}, err
@@ -80,16 +83,12 @@ func parseConfig() (node.Config, error) {
 	flag.DurationVar(&config.Monitor.Interval, "monitor-interval", monitorInterval, "relay monitor reporter interval; defaults to BRANCH_MONITOR_INTERVAL")
 	flag.Parse()
 	config.WSSOrigins = splitCSV(wssOriginPatterns)
-	peers, err := parseFederationPeers(federationPeers)
-	if err != nil {
-		return node.Config{}, err
-	}
-	config.FederationPeers = peers
 	config.FederationEndpointPolicy = wss.FederationEndpointPolicy{
 		AllowInsecureWS:       allowFederationWS,
 		AllowPrivateAddresses: allowFederationPrivateAddresses,
 	}
 	config.GitHubIdentityLookup = githubIdentityLookup
+	config.GitHubFederationDiscovery = githubFederationDiscovery
 	return config, nil
 }
 
@@ -135,21 +134,4 @@ func splitCSV(raw string) []string {
 		}
 	}
 	return values
-}
-
-func parseFederationPeers(raw string) ([]wss.FederationPeer, error) {
-	entries := splitCSV(raw)
-	peers := make([]wss.FederationPeer, 0, len(entries))
-	for _, entry := range entries {
-		parts := strings.Split(entry, "|")
-		if len(parts) != 3 {
-			return nil, fmt.Errorf("invalid federation peer; expected endpoint|base64url-ed25519-key|profile")
-		}
-		peers = append(peers, wss.FederationPeer{
-			Endpoint:         strings.TrimSpace(parts[0]),
-			RelayPublicKey:   strings.TrimSpace(parts[1]),
-			ProfileMultihash: strings.TrimSpace(parts[2]),
-		})
-	}
-	return peers, nil
 }

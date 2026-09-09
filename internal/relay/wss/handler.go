@@ -13,6 +13,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,9 @@ const (
 	// Path is the public same-relay WSS attachment endpoint.
 	Path = "/relay/v0"
 
-	maxIdentityHaveRecords = 4
+	maxIdentityHaveRecords      = 4
+	maxFederationRequestEntries = 64
+	federationRequestLifetime   = time.Minute
 )
 
 var (
@@ -69,16 +72,17 @@ type FederationRouteHint struct {
 // Handler adapts a live non-durable relay Hub to the /relay/v0 WebSocket
 // attachment surface.
 type Handler struct {
-	hub              *relay.Hub
-	identity         *identity.NodeIdentity
-	identityContacts *discovery.IdentityContactCache
-	peerRouter       PeerRouter
-	random           io.Reader
-	now              func() time.Time
-	originPatterns   []string
-	maxFrameBytes    int64
-	handshakeTimeout time.Duration
-	writeTimeout     time.Duration
+	hub                *relay.Hub
+	identity           *identity.NodeIdentity
+	identityContacts   *discovery.IdentityContactCache
+	peerRouter         PeerRouter
+	random             io.Reader
+	now                func() time.Time
+	originPatterns     []string
+	maxFrameBytes      int64
+	handshakeTimeout   time.Duration
+	writeTimeout       time.Duration
+	federationRequests federationRequestWindow
 }
 
 // NewHandler creates a WSS relay adapter with explicit bounds.
@@ -106,16 +110,17 @@ func NewHandler(config Config) (*Handler, error) {
 		return nil, err
 	}
 	return &Handler{
-		hub:              config.Hub,
-		identity:         config.Identity,
-		identityContacts: config.IdentityContacts,
-		peerRouter:       config.PeerRouter,
-		random:           config.Random,
-		now:              config.Now,
-		originPatterns:   originPatterns,
-		maxFrameBytes:    config.MaxFrameBytes,
-		handshakeTimeout: config.HandshakeTimeout,
-		writeTimeout:     config.WriteTimeout,
+		hub:                config.Hub,
+		identity:           config.Identity,
+		identityContacts:   config.IdentityContacts,
+		peerRouter:         config.PeerRouter,
+		random:             config.Random,
+		now:                config.Now,
+		originPatterns:     originPatterns,
+		maxFrameBytes:      config.MaxFrameBytes,
+		handshakeTimeout:   config.HandshakeTimeout,
+		writeTimeout:       config.WriteTimeout,
+		federationRequests: federationRequestWindow{entries: make(map[federationRequestKey]time.Time, maxFederationRequestEntries)},
 	}, nil
 }
 
@@ -176,7 +181,7 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	if err != nil {
 		return err
 	}
-	hello, err := decodeHello(helloRaw)
+	hello, err := decodeHello(helloRaw, handler.now().Unix())
 	if err != nil {
 		return err
 	}
@@ -207,7 +212,7 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	if err != nil {
 		return err
 	}
-	authenticatedPeerID, err := validateAuth(authRaw, hello.ClientNonce, relayNonce, transcriptHash)
+	authenticatedPeerID, err := validateAuth(authRaw, hello.ClientNonce, relayNonce, transcriptHash, hello.FederationPublicKey)
 	if err != nil {
 		return err
 	}
@@ -247,13 +252,13 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	defer stop()
 	errs := make(chan error, 2)
 	go handler.writeLoop(runCtx, conn, session, errs)
-	go handler.readLoop(runCtx, conn, session, relay.SessionID(sessionID), authenticatedPeerID, errs)
+	go handler.readLoop(runCtx, conn, session, relay.SessionID(sessionID), authenticatedPeerID, len(hello.FederationPublicKey) > 0, errs)
 	err = <-errs
 	stop()
 	return err
 }
 
-func (handler *Handler) readLoop(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, errs chan<- error) {
+func (handler *Handler) readLoop(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, federationAttachment bool, errs chan<- error) {
 	sequences := sequenceTracker{}
 	for {
 		raw, err := readFrame(ctx, conn)
@@ -261,7 +266,7 @@ func (handler *Handler) readLoop(ctx context.Context, conn *connection, session 
 			errs <- err
 			return
 		}
-		if err := handler.handleFrame(ctx, conn, session, sessionID, authenticatedPeerID, &sequences, raw); err != nil {
+		if err := handler.handleFrame(ctx, conn, session, sessionID, authenticatedPeerID, federationAttachment, &sequences, raw); err != nil {
 			if writeErr := handler.writeError(ctx, conn, mapRelayError(err)); writeErr != nil {
 				errs <- writeErr
 				return
@@ -293,7 +298,7 @@ func (handler *Handler) writeLoop(ctx context.Context, conn *connection, session
 	}
 }
 
-func (handler *Handler) handleFrame(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, sequences *sequenceTracker, raw []byte) error {
+func (handler *Handler) handleFrame(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, federationAttachment bool, sequences *sequenceTracker, raw []byte) error {
 	frame, err := decodeTypedFrame(raw)
 	if err != nil {
 		return err
@@ -319,13 +324,15 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 		if _, ok := handler.hub.Lookup(peerID, now); ok {
 			return nil
 		}
-		if forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, nil, now); ok {
-			closeFederatedForwarder(forwarder)
-			return nil
+		if !federationAttachment {
+			if forwarder, ok := handler.lookupFederatedPeer(ctx, peerID, nil, now); ok {
+				closeFederatedForwarder(forwarder)
+				return nil
+			}
 		}
 		return relay.ErrPeerUnavailable
 	case "IDENTITY_WANT":
-		return handler.handleIdentityWant(ctx, conn, frame)
+		return handler.handleIdentityWant(ctx, conn, frame, authenticatedPeerID, federationAttachment)
 	case "IDENTITY_HAVE":
 		return handler.handleIdentityHave(frame)
 	case "RENDEZVOUS":
@@ -339,6 +346,9 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 		if err := session.Rendezvous(routeID, peerID, now); err != nil {
 			if !errors.Is(err, relay.ErrPeerUnavailable) {
 				return err
+			}
+			if federationAttachment {
+				return relay.ErrPeerUnavailable
 			}
 			if federatedErr := handler.announceFederatedPeer(ctx, peerID, hints, now); federatedErr != nil {
 				return err
@@ -407,7 +417,7 @@ func deliveryFromFrame(frame map[string]any) (relay.Delivery, error) {
 	}, nil
 }
 
-func (handler *Handler) handleIdentityWant(ctx context.Context, conn *connection, frame map[string]any) error {
+func (handler *Handler) handleIdentityWant(ctx context.Context, conn *connection, frame map[string]any, authenticatedPeerID relay.PeerID, federationAttachment bool) error {
 	branchID := frame["branch_id"].(string)
 	sequence, ok := numericField(frame["sequence"])
 	if !ok {
@@ -415,6 +425,24 @@ func (handler *Handler) handleIdentityWant(ctx context.Context, conn *connection
 	}
 	hopLimit, ok := numericField(frame["hop_limit"])
 	if !ok {
+		return ErrInvalidFrame
+	}
+	if federationAttachment {
+		origin, ok := frame["origin_relay_key"].(string)
+		if !ok || origin != string(authenticatedPeerID) {
+			return ErrAuthenticationFailed
+		}
+		requestID, ok := frame["request_id"].(string)
+		if !ok || hopLimit > 1 {
+			return ErrInvalidFrame
+		}
+		if !handler.federationRequests.reserve(authenticatedPeerID, requestID, handler.now()) {
+			return ErrFrameReplayed
+		}
+		// A federated request is consumed here. It may read its own volatile
+		// cache, but can never invoke carrier or relay discovery recursively.
+		hopLimit = 0
+	} else if _, hasFederationContext := frame["request_id"]; hasFederationContext {
 		return ErrInvalidFrame
 	}
 	records := handler.identityRecordsForBranchID(ctx, branchID, int(hopLimit))
@@ -426,6 +454,46 @@ func (handler *Handler) handleIdentityWant(ctx context.Context, conn *connection
 		"records":    records,
 	}
 	return writeJSON(ctx, conn, handler.writeTimeout, response)
+}
+
+type federationRequestKey struct {
+	origin    relay.PeerID
+	requestID string
+}
+
+// federationRequestWindow is deliberately process-local. It suppresses a
+// repeated one-hop federation request without retaining identity records,
+// topology, presence, or request state across restart.
+type federationRequestWindow struct {
+	mu      sync.Mutex
+	entries map[federationRequestKey]time.Time
+}
+
+func (window *federationRequestWindow) reserve(origin relay.PeerID, requestID string, now time.Time) bool {
+	window.mu.Lock()
+	defer window.mu.Unlock()
+
+	for key, expiresAt := range window.entries {
+		if !expiresAt.After(now) {
+			delete(window.entries, key)
+		}
+	}
+	key := federationRequestKey{origin: origin, requestID: requestID}
+	if _, exists := window.entries[key]; exists {
+		return false
+	}
+	if len(window.entries) >= maxFederationRequestEntries {
+		var oldest federationRequestKey
+		var oldestExpiry time.Time
+		for existing, expiresAt := range window.entries {
+			if oldestExpiry.IsZero() || expiresAt.Before(oldestExpiry) {
+				oldest, oldestExpiry = existing, expiresAt
+			}
+		}
+		delete(window.entries, oldest)
+	}
+	window.entries[key] = now.Add(federationRequestLifetime)
+	return true
 }
 
 func (handler *Handler) handleIdentityHave(frame map[string]any) error {
@@ -628,11 +696,12 @@ func writeRaw(parent context.Context, conn *connection, timeout time.Duration, d
 }
 
 type helloFrame struct {
-	ClientNonce   []byte
-	SelectedOffer map[string]any
+	ClientNonce         []byte
+	SelectedOffer       map[string]any
+	FederationPublicKey []byte
 }
 
-func decodeHello(raw []byte) (helloFrame, error) {
+func decodeHello(raw []byte, nowUnix int64) (helloFrame, error) {
 	if _, err := protocol.DecodeDraftRelayAttachmentFrame(raw); err != nil {
 		return helloFrame{}, err
 	}
@@ -655,13 +724,26 @@ func decodeHello(raw []byte) (helloFrame, error) {
 	if !ok {
 		return helloFrame{}, ErrInvalidFrame
 	}
+	var federationPublicKey []byte
+	if frame["requested_role"] == protocol.RelayFederationLiveRole {
+		beaconWrapper, ok := frame["relay_beacon"].(string)
+		if !ok {
+			return helloFrame{}, ErrInvalidFrame
+		}
+		result := protocol.ValidateBranchTextBootstrapBeacon(beaconWrapper, protocol.BootstrapBeaconValidationOptions{NowUnix: nowUnix})
+		if !result.Accepted || result.Beacon == nil || !slices.Contains(result.Beacon.Payload.RelayCapabilities, protocol.RelayFederationLiveRole) {
+			return helloFrame{}, ErrAuthenticationFailed
+		}
+		federationPublicKey = append([]byte(nil), result.Beacon.Envelope.Sender.PublicKey...)
+	}
 	return helloFrame{
-		ClientNonce:   clientNonce,
-		SelectedOffer: selected,
+		ClientNonce:         clientNonce,
+		SelectedOffer:       selected,
+		FederationPublicKey: federationPublicKey,
 	}, nil
 }
 
-func validateAuth(raw []byte, clientNonce []byte, relayNonce []byte, transcriptHash []byte) (relay.PeerID, error) {
+func validateAuth(raw []byte, clientNonce []byte, relayNonce []byte, transcriptHash []byte, expectedFederationPublicKey []byte) (relay.PeerID, error) {
 	if _, err := protocol.DecodeDraftRelayAttachmentFrame(raw); err != nil {
 		return "", err
 	}
@@ -697,6 +779,9 @@ func validateAuth(raw []byte, clientNonce []byte, relayNonce []byte, transcriptH
 		return "", ErrAuthenticationFailed
 	}
 	if !ed25519.Verify(ed25519.PublicKey(clientPublicKey), proofInput(transcriptHash), clientProof) {
+		return "", ErrAuthenticationFailed
+	}
+	if len(expectedFederationPublicKey) > 0 && !bytes.Equal(clientPublicKey, expectedFederationPublicKey) {
 		return "", ErrAuthenticationFailed
 	}
 	return relay.PeerID(base64URL(clientPublicKey)), nil

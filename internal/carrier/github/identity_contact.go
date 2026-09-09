@@ -28,6 +28,7 @@ const (
 	defaultMaxRecordBytes  = 64 * 1024
 	maxRecordBytesLimit    = 64 * 1024
 	maxWrappersPerRecord   = 16
+	maxBootstrapCandidates = 8
 )
 
 var ErrInvalidConfig = errors.New("invalid github identity carrier config")
@@ -154,6 +155,51 @@ func (source *IdentityContactSource) LookupIdentityContact(ctx context.Context, 
 				Source:  repository.FullName + "/.branch/records.br0",
 			})
 			if len(candidates) >= maxWrappersPerRecord {
+				break
+			}
+		}
+	}
+	if len(candidates) == 0 && recordsErr != nil {
+		return nil, fmt.Errorf("read github repository records: %w", recordsErr)
+	}
+	return candidates, nil
+}
+
+// LookupBootstrapBeacons performs the same bounded anonymous carrier pass as
+// identity lookup, but returns public BRANCH0 candidates without assigning
+// carrier authority. The federation adapter validates each beacon signature,
+// freshness, profile, capability, and endpoint before any dial.
+func (source *IdentityContactSource) LookupBootstrapBeacons(ctx context.Context) ([]discovery.BootstrapBeaconCandidate, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, source.timeout)
+	defer cancel()
+
+	repositories, err := source.searchRepositories(requestCtx)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]discovery.BootstrapBeaconCandidate, 0, maxBootstrapCandidates)
+	var recordsErr error
+	for _, repository := range repositories {
+		if len(candidates) >= maxBootstrapCandidates {
+			break
+		}
+		wrappers, err := source.readRepositoryRecords(requestCtx, repository)
+		if err != nil {
+			if requestCtx.Err() != nil {
+				return nil, requestCtx.Err()
+			}
+			if errors.Is(err, errRecordsMissing) {
+				continue
+			}
+			recordsErr = err
+			continue
+		}
+		for _, wrapper := range wrappers {
+			candidates = append(candidates, discovery.BootstrapBeaconCandidate{
+				Wrapper: wrapper,
+				Source:  repository.FullName + "/.branch/records.br0",
+			})
+			if len(candidates) >= maxBootstrapCandidates {
 				break
 			}
 		}

@@ -10,6 +10,7 @@ import (
 )
 
 func TestStaticPeerRouterFederationSnapshotReportsConfiguredAndObservedPeers(t *testing.T) {
+	now := time.Date(2026, 9, 2, 13, 0, 0, 0, time.UTC)
 	hub, err := relay.NewHub(relay.DefaultConfig())
 	if err != nil {
 		t.Fatalf("hub: %v", err)
@@ -20,6 +21,7 @@ func TestStaticPeerRouterFederationSnapshotReportsConfiguredAndObservedPeers(t *
 			{Endpoint: "wss://relay04.undoo.ru:443/relay/v0", RelayPublicKey: testB64x32, ProfileMultihash: protocol.DevelopmentProfileMultihash},
 		},
 		LocalHub: hub,
+		Now:      func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatalf("router: %v", err)
@@ -33,16 +35,15 @@ func TestStaticPeerRouterFederationSnapshotReportsConfiguredAndObservedPeers(t *
 		t.Fatalf("configured snapshot = %+v", snapshot[0])
 	}
 
-	now := time.Date(2026, 9, 2, 13, 0, 0, 0, time.UTC)
 	router.recordPeerObservation("wss://relay04.undoo.ru:443/relay/v0", "reachable", "lookup_ok", 1, now)
 	snapshot = router.FederationSnapshot()
 	var observed FederationPeerObservation
 	for _, item := range snapshot {
-		if item.Endpoint == "wss://relay04.undoo.ru:443/relay/v0" {
+		if item.State == "reachable" {
 			observed = item
 		}
 	}
-	if observed.State != "reachable" || observed.LastReason != "lookup_ok" || observed.LookupCount != 1 || observed.BridgeCount != 1 {
+	if observed.PeerRef == "" || observed.State != "reachable" || observed.LastReason != "lookup_ok" || observed.LookupCount != 1 || observed.BridgeCount != 1 {
 		t.Fatalf("observed snapshot = %+v", observed)
 	}
 	if !observed.FreshUntil.After(now) {

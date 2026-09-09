@@ -186,6 +186,7 @@ Optional variables:
 | `BRANCH_RELAY01_PROXY_PORT`, `BRANCH_RELAY02_PROXY_PORT` | `8088` / `8089` | Host port NPM forwards to. |
 | `BRANCH_RELAY01_ADMIN_HOST_PORT`, `BRANCH_RELAY02_ADMIN_HOST_PORT` | `18081` / `18082` | Loopback admin ports used by deploy checks. |
 | `BRANCH_RELAY01_WSS_ORIGIN_PATTERNS`, `BRANCH_RELAY02_WSS_ORIGIN_PATTERNS` | `BRANCH_WSS_ORIGIN_PATTERNS` | Per-relay browser Origin host allowlist override. |
+| `BRANCH_RELAY01_FEDERATION_GITHUB_ENABLED`, `BRANCH_RELAY02_FEDERATION_GITHUB_ENABLED` | `BRANCH_FEDERATION_GITHUB_ENABLED` (default `false`) | Enables bounded signed BootstrapBeacon carrier discovery; it does not configure relay peer addresses. |
 | `BRANCH_RELAY04_GOARCH`, `BRANCH_RELAY05_GOARCH` | `amd64` | Use `arm64` for ARM builder/runtime hosts. |
 | `BRANCH_RELAY04_PROXY_BIND`, `BRANCH_RELAY05_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
 | `BRANCH_RELAY04_PROXY_PORT`, `BRANCH_RELAY05_PROXY_PORT` | `8092` / `8093` | Host port NPM forwards to. |

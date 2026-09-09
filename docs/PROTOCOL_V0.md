@@ -1917,20 +1917,65 @@ database. A client may carry signed beacons between relay islands; authenticity
 comes from issuer signatures and freshness checks, not from the relay that
 transported the record.
 
-The executable beta federation slice uses a bounded static WSS peer-relay list
-configured by the operator. Each configured entry pins `endpoint`, the
-base64url Ed25519 relay public key, and the selected profile multihash; entries
-without any of those values are rejected at startup. The dialer resolves and
-filters destination addresses immediately before connection, disables redirects
-and proxies, and verifies the pinned key and profile in the attachment
-challenge. A relay may probe a configured peer relay with the same draft
-`LOOKUP`, `RENDEZVOUS`, and `ENVELOPE` frames used by clients, and may expose
-the result to its local hub only as short-lived federated presence.
-`BRANCH_FEDERATION_PEERS` is a comma-separated list of
-`endpoint|base64url-ed25519-key|profile-multihash` entries. Legacy URL-only
-configuration is deliberately rejected. `BRANCH_FEDERATION_ALLOW_INSECURE_WS`
-and `BRANCH_FEDERATION_ALLOW_PRIVATE_ADDRESSES` are separate false-by-default
-development overrides and must not be set for an Internet relay.
+The beta federation slice derives a peer candidate only from a fresh validated
+signed `bootstrap.beacon`, as recorded in D-BRANCH-048. The candidate binds the
+beacon sender's Ed25519 key, one ordered `wss` endpoint, an accepted profile
+multihash, and `relay.forward.live/0`; carrier rank, GitLab/GitHub ownership,
+MASTER reports, peer lists, and client-provided route hints are not provenance
+for relay admission. Relay discovery is on demand after a local authenticated
+`LOOKUP` miss: one bounded configured SearchCarrier pass, at most eight distinct
+relay identities, and no periodic crawl, topology exchange, directory, or
+durable cache. Candidate state is memory-only and expires no later than the
+beacon. A local hit never triggers carrier discovery.
+
+Within one carrier pass, observations merge by the beacon sender key. Only the
+highest valid signed sequence for one sender can supply a candidate; two
+different canonical wrappers at the same sequence are equivocation and supply
+no candidate for that sender in that pass. At most one ordered acceptable `wss`
+endpoint is selected for each accepted relay identity. A failed candidate may
+enter one process-local retry backoff for at most 30 seconds and never beyond
+its signed beacon expiry. This transient observation is not topology, negative
+trust, presence, or a durable relay cache.
+
+Before a discovered candidate is dialled, the relay validates canonical signed
+bytes, signature, freshness, sequence, profile, capability and endpoint shape;
+then resolves the hostname immediately before connection, rejects special or
+private addresses, disables proxies and redirects, and requires attachment
+challenge proof by the exact beacon sender key and profile. `ws` and private
+address exceptions remain explicit false-by-default development policy. A
+candidate failure is a bounded local backoff observation, not a statement that
+the relay, user, or route is absent or untrusted. Configuration and carrier
+records cannot authorize arbitrary egress.
+
+Federation attachment has a distinct draft relay role. Its `HELLO` carries the
+origin relay's signed bootstrap wrapper; the receiver validates it, binds its
+sender key to the peer authentication proof, and admits only bounded live
+federation actions. A relay-to-relay exact identity request carries a fresh
+16-byte `request_id`, origin relay public key, exact BranchID, and `hop_limit`.
+The origin sends at most `hop_limit = 1`; the remote relay decrements it to zero
+and consults only its own volatile observations. It does not discover, fan out,
+or forward on behalf of another relay. The request id and origin key are kept
+only in a bounded short-lived duplicate-suppression view.
+
+Federated data forwarding is one live hop only. A relay may bridge an opaque
+`ENVELOPE` over the successfully authenticated federation attachment while both
+client routes and that attachment are live. It must not dial or forward to a
+second relay, queue, persist, replay, index, decrypt, or modify the
+HPKE-authenticated `origin_route_id`. Bridge failure, expiry, remote disconnect,
+or peer refusal returns a typed transient result and forgets the bridge.
+
+Route selection remains client-local. A client first applies the normal direct
+and shared-relay preference, then ranks compatible federated WSS candidates by
+signed priority, recent bounded local probe or attachment latency, deterministic
+relay-public-key order, and bounded failure backoff. The relay is not a nearest
+path oracle and never receives or publishes client-local measurements.
+
+Federation diagnostics are optional protected operator observations. They use a
+process-local bounded `peer_ref` rather than endpoint URL, relay public key,
+BranchID, route/session identifier, ciphertext, or global trace identifier.
+There are at most eight live observation entries; each is removed at expiry and
+on process restart. The `peer_ref` is not a protocol field, directory key, or
+stable identifier.
 `BRANCH_IDENTITY_GITHUB_ENABLED` is a separate false-by-default operator
 switch for the bounded public GitHub IdentityContact adapter. When enabled, a
 lookup performs at most one anonymous `topic:branchbootstrapv0` repository
@@ -1938,6 +1983,12 @@ search and five `.branch/records.br0` reads under one short deadline. It has no
 GitHub token setting, does not follow redirects, does not crawl in the
 background, and retains accepted candidates only in the existing volatile
 IdentityContact cache.
+`BRANCH_FEDERATION_GITHUB_ENABLED` separately enables that bounded public
+carrier shape for relay BootstrapBeacon discovery. It configures a carrier
+adapter, never a peer list: the local relay and a candidate relay must each
+already have published their own fresh signed federation-capable beacon through
+an interchangeable carrier. Disabling it removes that carrier from new local
+route attempts without affecting an already-live attachment.
 This does not add a new published frame type, does not advertise a new
 mandatory capability, does not create a global presence directory, and does not
 authorize store-and-forward. A local sender receives `relay.forwarded` only

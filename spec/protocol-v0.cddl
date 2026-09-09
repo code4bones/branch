@@ -77,6 +77,7 @@ branch-draft-profile = {
 
 branch-relay-attachment-frame =
   relay-hello /
+  relay-federation-hello /
   relay-challenge /
   relay-auth /
   relay-ready /
@@ -84,6 +85,7 @@ branch-relay-attachment-frame =
   relay-heartbeat /
   relay-lookup /
   relay-identity-want /
+  relay-federation-identity-want /
   relay-identity-have /
   relay-rendezvous /
   relay-envelope /
@@ -95,6 +97,19 @@ relay-hello = {
   client_nonce: b64url-32,
   client_time: draft-timestamp,
   requested_role: "relay.forward.live/0",
+  max_frame_bytes: 1..49152,
+  offers: [1*8 version-offer],
+}
+
+; D-BRANCH-048: a federation HELLO is distinct from client attachment. The
+; supplied wrapper remains a signed source record and is revalidated by the
+; accepting relay before peer admission.
+relay-federation-hello = {
+  type: "HELLO",
+  client_nonce: b64url-32,
+  client_time: draft-timestamp,
+  requested_role: "relay.federate.live/0.draft",
+  relay_beacon: branch-text-wrapper,
   max_frame_bytes: 1..49152,
   offers: [1*8 version-offer],
 }
@@ -162,6 +177,18 @@ relay-identity-want = {
   branch_id: branch-id,
   sequence: draft-timestamp,
   hop_limit: 0..4,
+}
+
+; A federation request originates at one relay and is consumed at exactly one
+; discovered peer. It cannot recursively invoke discovery or another peer.
+relay-federation-identity-want = {
+  type: "IDENTITY_WANT",
+  session_id: b64url-32,
+  branch_id: branch-id,
+  sequence: draft-timestamp,
+  request_id: b64url-16,
+  origin_relay_key: b64url-32,
+  hop_limit: 0..1,
 }
 
 relay-identity-have = {

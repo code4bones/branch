@@ -23,6 +23,12 @@ const (
 
 	maxDraftIdentityRecords = 4
 	maxDraftIdentityWrapper = 8192
+
+	// RelayForwardLiveRole is the ordinary client attachment role.
+	RelayForwardLiveRole = "relay.forward.live/0"
+	// RelayFederationLiveRole is the draft relay-to-relay attachment role from
+	// D-BRANCH-048. Its HELLO supplies a signed BootstrapBeacon wrapper.
+	RelayFederationLiveRole = "relay.federate.live/0.draft"
 )
 
 // RelayFrameType names same-relay WSS attachment and live delivery frames.
@@ -138,18 +144,29 @@ func validateRelayFrame(frameType RelayFrameType, frame map[string]json.RawMessa
 }
 
 func validateHelloFrame(frame map[string]json.RawMessage) error {
-	if err := rejectUnknownRawKeys(frame, "type", "client_nonce", "client_time", "requested_role", "max_frame_bytes", "offers"); err != nil {
-		return err
-	}
 	if err := readBase64Field(frame, "client_nonce", 32); err != nil {
 		return err
 	}
 	if _, err := readTimestampField(frame, "client_time"); err != nil {
 		return err
 	}
-	if role, err := readStringField(frame, "requested_role"); err != nil {
+	role, err := readStringField(frame, "requested_role")
+	if err != nil {
 		return err
-	} else if role != "relay.forward.live/0" {
+	}
+	switch role {
+	case RelayForwardLiveRole:
+		if err := rejectUnknownRawKeys(frame, "type", "client_nonce", "client_time", "requested_role", "max_frame_bytes", "offers"); err != nil {
+			return err
+		}
+	case RelayFederationLiveRole:
+		if err := rejectUnknownRawKeys(frame, "type", "client_nonce", "client_time", "requested_role", "relay_beacon", "max_frame_bytes", "offers"); err != nil {
+			return err
+		}
+		if err := readBootstrapWrapperField(frame, "relay_beacon"); err != nil {
+			return err
+		}
+	default:
 		return fmt.Errorf("%w: unsupported requested_role", ErrInvalidRelayAttachmentFrame)
 	}
 	if value, err := readBoundedUintField(frame, "max_frame_bytes", 1, 49152); err != nil {
@@ -272,7 +289,22 @@ func validateLookupFrame(frame map[string]json.RawMessage) error {
 }
 
 func validateIdentityWantFrame(frame map[string]json.RawMessage) error {
-	if err := rejectUnknownRawKeys(frame, "type", "session_id", "branch_id", "sequence", "hop_limit"); err != nil {
+	_, hasRequestID := frame["request_id"]
+	_, hasOriginKey := frame["origin_relay_key"]
+	if hasRequestID != hasOriginKey {
+		return fmt.Errorf("%w: incomplete federation request context", ErrInvalidRelayAttachmentFrame)
+	}
+	if hasRequestID {
+		if err := rejectUnknownRawKeys(frame, "type", "session_id", "branch_id", "sequence", "request_id", "origin_relay_key", "hop_limit"); err != nil {
+			return err
+		}
+		if err := readBase64Field(frame, "request_id", 16); err != nil {
+			return err
+		}
+		if err := readBase64Field(frame, "origin_relay_key", 32); err != nil {
+			return err
+		}
+	} else if err := rejectUnknownRawKeys(frame, "type", "session_id", "branch_id", "sequence", "hop_limit"); err != nil {
 		return err
 	}
 	if err := readBase64Field(frame, "session_id", 32); err != nil {
@@ -288,7 +320,11 @@ func validateIdentityWantFrame(frame map[string]json.RawMessage) error {
 	if _, err := readBoundedUintField(frame, "sequence", 0, MaxDraftTimestamp); err != nil {
 		return err
 	}
-	_, err = readBoundedUintField(frame, "hop_limit", 0, 4)
+	maxHopLimit := int64(4)
+	if hasRequestID {
+		maxHopLimit = 1
+	}
+	_, err = readBoundedUintField(frame, "hop_limit", 0, maxHopLimit)
 	return err
 }
 
@@ -634,6 +670,17 @@ func readIdentityRecordsField(frame map[string]json.RawMessage, key string) erro
 		if len(record) == 0 || len([]byte(record)) > maxDraftIdentityWrapper || !strings.HasPrefix(record, BranchTextWrapperPrefix) {
 			return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
 		}
+	}
+	return nil
+}
+
+func readBootstrapWrapperField(frame map[string]json.RawMessage, key string) error {
+	value, err := readStringField(frame, key)
+	if err != nil {
+		return err
+	}
+	if len([]byte(value)) > maxDraftIdentityWrapper || !strings.HasPrefix(value, BranchTextWrapperPrefix) {
+		return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
 	}
 	return nil
 }

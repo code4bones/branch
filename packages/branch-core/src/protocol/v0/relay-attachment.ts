@@ -12,6 +12,9 @@ const maxDraftIdentityRecords = 4;
 const maxDraftIdentityWrapperBytes = 8192;
 const draftRelayAttachmentPath = "/relay/v0";
 
+export const relayForwardLiveRole = "relay.forward.live/0" as const;
+export const relayFederationLiveRole = "relay.federate.live/0.draft" as const;
+
 const relayFrameTypes = [
   "HELLO",
   "CHALLENGE",
@@ -134,10 +137,17 @@ export function validateDraftRelayAttachmentFrame(value: unknown): DraftRelayAtt
 }
 
 function validateHello(record: Record<string, unknown>): void {
-  rejectUnknownKeys(record, ["type", "client_nonce", "client_time", "requested_role", "max_frame_bytes", "offers"]);
   readBase64URLBytes(record, "client_nonce", 32);
   readInteger(record, "client_time");
-  readLiteral(record, "requested_role", "relay.forward.live/0");
+  const role = readString(record, "requested_role");
+  if (role === relayForwardLiveRole) {
+    rejectUnknownKeys(record, ["type", "client_nonce", "client_time", "requested_role", "max_frame_bytes", "offers"]);
+  } else if (role === relayFederationLiveRole) {
+    rejectUnknownKeys(record, ["type", "client_nonce", "client_time", "requested_role", "relay_beacon", "max_frame_bytes", "offers"]);
+    readBootstrapWrapper(record, "relay_beacon");
+  } else {
+    throw new RelayAttachmentError("unsupported requested_role");
+  }
   readBoundedInteger(record, "max_frame_bytes", 1, 49152);
   readVersionOffers(record, "offers");
 }
@@ -205,11 +215,22 @@ function validateLookup(record: Record<string, unknown>): void {
 }
 
 function validateIdentityWant(record: Record<string, unknown>): void {
-  rejectUnknownKeys(record, ["type", "session_id", "branch_id", "sequence", "hop_limit"]);
+  const hasRequestID = record.request_id !== undefined;
+  const hasOriginRelayKey = record.origin_relay_key !== undefined;
+  if (hasRequestID !== hasOriginRelayKey) {
+    throw new RelayAttachmentError("incomplete federation request context");
+  }
+  if (hasRequestID) {
+    rejectUnknownKeys(record, ["type", "session_id", "branch_id", "sequence", "request_id", "origin_relay_key", "hop_limit"]);
+    readBase64URLBytes(record, "request_id", 16);
+    readBase64URLBytes(record, "origin_relay_key", 32);
+  } else {
+    rejectUnknownKeys(record, ["type", "session_id", "branch_id", "sequence", "hop_limit"]);
+  }
   readBase64URLBytes(record, "session_id", 32);
   readBranchID(record, "branch_id");
   readBoundedInteger(record, "sequence", 0, maxDraftTimestamp);
-  readBoundedInteger(record, "hop_limit", 0, 4);
+  readBoundedInteger(record, "hop_limit", 0, hasRequestID ? 1 : 4);
 }
 
 function validateIdentityHave(record: Record<string, unknown>): void {
@@ -460,6 +481,17 @@ function readIdentityRecords(record: Record<string, unknown>, key: string): read
     ) {
       throw new RelayAttachmentError(`invalid ${key}`);
     }
+  }
+  return value;
+}
+
+function readBootstrapWrapper(record: Record<string, unknown>, key: string): string {
+  const value = readString(record, key);
+  if (
+    new TextEncoder().encode(value).byteLength > maxDraftIdentityWrapperBytes ||
+    !value.startsWith(branchTextWrapperPrefix)
+  ) {
+    throw new RelayAttachmentError(`invalid ${key}`);
   }
   return value;
 }
