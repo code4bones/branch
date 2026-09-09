@@ -33,6 +33,7 @@ var (
 	ErrRelayMonitorInvalidReport = errors.New("relay monitor invalid report")
 	ErrRelayMonitorFull          = errors.New("relay monitor registry full")
 	relayMonitorWrapperPattern   = regexp.MustCompile(`^BRANCH0\.[A-Za-z0-9_-]+$`)
+	relayMonitorPeerRefPattern   = regexp.MustCompile(`^peer-[1-9][0-9]*$`)
 )
 
 // RelayMonitorConfig controls the process-local in-memory relay observation
@@ -242,7 +243,7 @@ func validRelayMonitorFederationLinks(links []RelayMonitorFederationLink) bool {
 		if link.PeerRelayID != "" && !validRelayMonitorID(link.PeerRelayID) {
 			return false
 		}
-		if !validRelayMonitorEndpoint(link.PeerEndpoint) {
+		if !validRelayMonitorPeerReference(link.PeerEndpoint) {
 			return false
 		}
 		if !validRelayMonitorFederationState(link.State) {
@@ -266,6 +267,13 @@ func validRelayMonitorFederationLinks(links []RelayMonitorFederationLink) bool {
 		seen[link.PeerEndpoint] = struct{}{}
 	}
 	return true
+}
+
+// validRelayMonitorPeerReference accepts only the process-local reference
+// emitted by federation monitoring. The protected monitor API deliberately
+// does not publish peer relay endpoints.
+func validRelayMonitorPeerReference(value string) bool {
+	return validRelayMonitorText(value, 1, maxRelayMonitorEndpointLength) && relayMonitorPeerRefPattern.MatchString(value)
 }
 
 func validRelayMonitorFederationState(value string) bool {

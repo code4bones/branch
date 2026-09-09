@@ -63,7 +63,7 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 		Wrapper:   "BRANCH0.relay01",
 		ExpiresAt: 1800000000,
 	}}, staticNodeFederationProvider{links: []admin.RelayMonitorFederationLink{{
-		PeerEndpoint: "wss://relay02.undoo.ru:443/relay/v0",
+		PeerEndpoint: "peer-1",
 		State:        "configured",
 		LookupCount:  0,
 		BridgeCount:  0,
@@ -88,7 +88,7 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 		if report.BootstrapBeacon.Wrapper != "BRANCH0.relay01" || report.BootstrapBeacon.ExpiresAt != 1800000000 {
 			t.Fatalf("unexpected bootstrap beacon: %+v", report.BootstrapBeacon)
 		}
-		if len(report.Federation) != 1 || report.Federation[0].PeerEndpoint != "wss://relay02.undoo.ru:443/relay/v0" {
+		if len(report.Federation) != 1 || report.Federation[0].PeerEndpoint != "peer-1" {
 			t.Fatalf("unexpected federation links: %+v", report.Federation)
 		}
 	case <-time.After(time.Second):
