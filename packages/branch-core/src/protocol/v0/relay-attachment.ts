@@ -6,6 +6,10 @@ import { branchTextWrapperPrefix } from "./text-carrier.js";
 export const relayAttachmentSchema = "branch.relay-attachment/0.draft" as const;
 export const relayProofDomain = "BRANCH relay attachment v0\n" as const;
 export const maxDraftRelayAttachmentFrameBytes = maxDraftEnvelopeBytes;
+// A beta HPKE sealed payload is itself base64url JSON. Its bounded 8 KiB
+// representation is larger than the generic small-string bound, while all
+// other attachment text fields retain that stricter limit.
+export const maxDraftRelayCiphertextBytes = 8 * 1024;
 const maxDraftRouteHints = 8;
 const maxDraftRouteHintUriBytes = 512;
 const maxDraftIdentityRecords = 4;
@@ -258,7 +262,7 @@ function validateEnvelope(record: Record<string, unknown>): void {
   readBoundedInteger(record, "path_epoch", 0, maxDraftTimestamp);
   readBoundedInteger(record, "stream_id", 0, maxDraftTimestamp);
   readBase64URLBytes(record, "delivery_id", 16);
-  readBase64URLString(record, "ciphertext");
+  readBase64URLString(record, "ciphertext", maxDraftRelayCiphertextBytes);
   if (record.sender_peer_id !== undefined) {
     readBase64URLBytes(record, "sender_peer_id", 32);
   }
@@ -439,12 +443,12 @@ function readLiteral<T extends string>(record: Record<string, unknown>, key: str
   return expected;
 }
 
-function readString(record: Record<string, unknown>, key: string): string {
+function readString(record: Record<string, unknown>, key: string, maxBytes = maxDraftStringBytes): string {
   const value = record[key];
   if (
     typeof value !== "string" ||
     value.length === 0 ||
-    new TextEncoder().encode(value).byteLength > maxDraftStringBytes
+    new TextEncoder().encode(value).byteLength > maxBytes
   ) {
     throw new RelayAttachmentError(`invalid ${key}`);
   }
@@ -521,8 +525,8 @@ function readBoolean(record: Record<string, unknown>, key: string): boolean {
   return value;
 }
 
-function readBase64URLString(record: Record<string, unknown>, key: string): string {
-  const value = readString(record, key);
+function readBase64URLString(record: Record<string, unknown>, key: string, maxBytes = maxDraftStringBytes): string {
+  const value = readString(record, key, maxBytes);
   try {
     decodeBase64URL(value);
   } catch {

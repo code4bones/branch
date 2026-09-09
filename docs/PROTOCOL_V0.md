@@ -387,6 +387,10 @@ operator configuration; those exceptions are off by default.
 
 `ENVELOPE` sent by a client contains `session_id`, `route_id`, `origin_route_id`,
 `path_epoch`, `stream_id`, `delivery_id`, `ciphertext`, and `ack_requested`.
+All attachment strings remain capped at 1024 UTF-8 bytes except
+`ENVELOPE.ciphertext`, which is capped at 8192 bytes of unpadded base64url. The
+exception admits the already bounded beta HPKE sealed-payload representation;
+it does not raise any other field, frame, queue, or retention limit.
 `origin_route_id` is the 16-byte route nonce the sender received in `READY`; it
 is public, copied unchanged over all live hops, and is never used as a relay
 lookup, directory, or retained routing record. It is authenticated by the draft

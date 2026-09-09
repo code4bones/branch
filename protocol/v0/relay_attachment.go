@@ -2,6 +2,7 @@ package v0
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,11 @@ const (
 
 	// MaxDraftRelayAttachmentFrameBytes bounds one diagnostic relay frame.
 	MaxDraftRelayAttachmentFrameBytes = 64 * 1024
+
+	// MaxDraftRelayCiphertextBytes bounds the base64url beta HPKE sealed
+	// payload carried by ENVELOPE. Other attachment strings retain the shared
+	// smaller MaxDraftStringBytes bound.
+	MaxDraftRelayCiphertextBytes = 8 * 1024
 
 	maxDraftIdentityRecords = 4
 	maxDraftIdentityWrapper = 8192
@@ -389,7 +395,7 @@ func validateEnvelopeFrame(frame map[string]json.RawMessage) error {
 	if err := readBase64Field(frame, "delivery_id", 16); err != nil {
 		return err
 	}
-	if err := readBase64StringField(frame, "ciphertext"); err != nil {
+	if err := readBase64StringFieldBounded(frame, "ciphertext", MaxDraftRelayCiphertextBytes); err != nil {
 		return err
 	}
 	if _, ok := frame["sender_peer_id"]; ok {
@@ -691,6 +697,21 @@ func readBase64StringField(frame map[string]json.RawMessage, key string) error {
 		return err
 	}
 	if !validBase64URLString(value) {
+		return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
+	}
+	return nil
+}
+
+func readBase64StringFieldBounded(frame map[string]json.RawMessage, key string, maxBytes int) error {
+	raw, ok := frame[key]
+	if !ok {
+		return fmt.Errorf("%w: missing %s", ErrInvalidRelayAttachmentFrame, key)
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil || value == "" || len([]byte(value)) > maxBytes {
+		return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
+	}
+	if _, err := base64.RawURLEncoding.DecodeString(value); err != nil {
 		return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
 	}
 	return nil

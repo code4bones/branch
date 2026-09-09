@@ -40,6 +40,9 @@ payload-mode = "public" / "sealed"
 
 non-empty-text = text .size (1..1024)
 b64url-text = non-empty-text
+; ENVELOPE carries the bounded beta HPKE sealed-payload representation, which
+; is base64url JSON and may exceed ordinary attachment text fields.
+b64url-ciphertext = text .size (1..8192)
 b64url-16 = text .size 22
 b64url-32 = text .size 43
 b64url-64 = text .size 86
@@ -215,7 +218,7 @@ relay-envelope = {
   path_epoch: draft-timestamp,
   stream_id: draft-timestamp,
   delivery_id: b64url-16,
-  ciphertext: b64url-text,
+  ciphertext: b64url-ciphertext,
   ack_requested: bool,
 }
 
