@@ -201,6 +201,12 @@ export class SameRelayTransportClient {
     return this.ready?.routeId ?? null;
   }
 
+  // Relay-negotiated cadence, exposed so adapters do not guess a heartbeat
+  // interval that could outlive the presence TTL selected by this relay.
+  get heartbeatIntervalSeconds(): number | null {
+    return this.ready?.heartbeatIntervalSeconds ?? null;
+  }
+
   get pendingCount(): number {
     return this.pending.size;
   }
@@ -332,6 +338,9 @@ export class SameRelayTransportClient {
     this.emit({ type: "lookup_requested", peerId, sequence });
   }
 
+  // A same-route/same-peer repeat is intentionally idempotent at the relay.
+  // Adapters call this immediately before a live ENVELOPE so a peer that
+  // refreshed its WebSocket can be rebound without retaining any route state.
   rendezvous(peerId: string, options: { readonly routeHints?: readonly RelayRouteHint[] } = {}): void {
     const ready = this.requireReady();
     const sequence = this.nextSequence();

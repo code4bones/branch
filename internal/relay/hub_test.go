@@ -224,6 +224,48 @@ func TestHubRendezvousCanLoopBackToSameLivePeer(t *testing.T) {
 	}
 }
 
+func TestHubRendezvousIsIdempotentOnlyForSameLiveBinding(t *testing.T) {
+	hub := newTestHub(t, Config{
+		MaxSessions:         3,
+		MaxQueueDepth:       2,
+		MaxFrameBytes:       16,
+		MaxFramesPerSession: 4,
+		MaxBytesPerSession:  64,
+		PresenceTTL:         10 * time.Second,
+	})
+	now := time.Unix(1_789_000_000, 0)
+	alice := attach(t, hub, "alice-session")
+	bob := attach(t, hub, "bob-session")
+	charlie := attach(t, hub, "charlie-session")
+	if err := bob.AnnouncePresence("bob-peer", now); err != nil {
+		t.Fatalf("announce bob presence: %v", err)
+	}
+	if err := charlie.AnnouncePresence("charlie-peer", now); err != nil {
+		t.Fatalf("announce charlie presence: %v", err)
+	}
+	if err := alice.Rendezvous("route-recovery", "bob-peer", now); err != nil {
+		t.Fatalf("initial rendezvous: %v", err)
+	}
+	if err := alice.Rendezvous("route-recovery", "bob-peer", now); err != nil {
+		t.Fatalf("idempotent rendezvous: %v", err)
+	}
+	if snapshot := hub.Snapshot(); snapshot.RoutesActive != 1 {
+		t.Fatalf("repeated rendezvous changed live routes: %+v", snapshot)
+	}
+	if err := alice.Send(context.Background(), "route-recovery", []byte("live")); err != nil {
+		t.Fatalf("send after idempotent rendezvous: %v", err)
+	}
+	if frame := receive(t, bob); string(frame.Payload) != "live" {
+		t.Fatalf("unexpected forwarded payload: %+v", frame)
+	}
+	if err := alice.Rendezvous("route-recovery", "charlie-peer", now); !errors.Is(err, ErrRouteExists) {
+		t.Fatalf("different target reused route id: %v", err)
+	}
+	if err := charlie.Rendezvous("route-recovery", "bob-peer", now); !errors.Is(err, ErrRouteExists) {
+		t.Fatalf("different session reused route id: %v", err)
+	}
+}
+
 func TestHubFederatedPresenceForwardsAcrossLiveRelays(t *testing.T) {
 	now := time.Unix(1_789_000_000, 0)
 	leftHub := newTestHub(t, Config{

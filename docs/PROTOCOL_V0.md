@@ -331,6 +331,16 @@ routes currently permitted by local policy. A relay may bind `RENDEZVOUS` to the
 requester's own live peer id for bounded loopback diagnostics; this still
 creates only an in-memory route and never authorizes durable delivery.
 
+For recovery from a normal peer attachment refresh, a relay treats a repeated
+`RENDEZVOUS` as idempotent only when its `route_id` is already bound to that
+same authenticated requester session and the same target peer. It preserves
+the existing live binding; if the old route was removed when either session
+closed, a subsequent live rendezvous creates a fresh binding. A different
+requester or target for an occupied `route_id` remains a `route_exists` error.
+Clients may issue this idempotent operation immediately before an online-only
+`ENVELOPE`. It must not create a queue, retry store, mailbox, or a delivery
+claim while the target is unavailable.
+
 `IDENTITY_WANT` and `IDENTITY_HAVE` are beta relay-assisted control-plane
 gossip frames for D-BRANCH-043. `IDENTITY_WANT` contains `session_id`,
 `branch_id`, `sequence`, and `hop_limit`. `branch_id` is an exact self-

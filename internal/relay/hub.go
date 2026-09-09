@@ -652,7 +652,15 @@ func (hub *Hub) rendezvous(from SessionID, routeID RouteID, peerID PeerID, now t
 	if _, exists := hub.sessions[from]; !exists {
 		return ErrSessionClosed
 	}
-	if _, exists := hub.routes[routeID]; exists {
+	if existing, exists := hub.routes[routeID]; exists {
+		// A client repeats RENDEZVOUS after a peer may have refreshed its
+		// attachment. Keeping the exact same live binding idempotent lets the
+		// client issue that recovery probe before every online-only delivery.
+		// Any attempt to reuse a route id for another session or peer remains a
+		// collision, not a route rewrite.
+		if existing.left.sessionID == from && existing.right.peerID == peerID {
+			return nil
+		}
 		return ErrRouteExists
 	}
 
