@@ -8,6 +8,7 @@ import {
 } from "@code4bones/branch-core";
 
 import { fixedAckRequested, fixedPathEpoch, fixedStreamId } from "./payload-aad-defaults.js";
+import { encodeChatTextApplicationPayload } from "./application-payload.js";
 import { encodeBetaPwaMessagePayload, encodeBetaPwaPresencePing, encodeBetaPwaPresencePong } from "./message-payload.js";
 import { clearDelivery, getRelaySessionClient, trackDelivery } from "./relay-session.js";
 
@@ -50,6 +51,25 @@ export async function sealAndSendMessage(options: SealAndSendOptions): Promise<s
   return deliveryId;
 }
 
+// Sends the registered generic text kind as exact deterministic-CBOR bytes
+// inside the existing HPKE boundary. Its application message id is deliberately
+// independent of the live relay delivery id.
+export async function sealAndSendApplicationTextMessage(options: Omit<SealAndSendOptions, "senderHpkePublicKey" | "senderDisplayName">): Promise<string> {
+  const deliveryId = options.deliveryId ?? createDeliveryID();
+  await sealAndSendPayload({
+    senderPeerId: options.senderPeerId,
+    recipientPeerId: options.recipientPeerId,
+    recipientHpkePublicKey: options.recipientHpkePublicKey,
+    deliveryId,
+    plaintext: encodeChatTextApplicationPayload({
+      messageId: createDeliveryID(),
+      body: options.plaintext
+    }),
+    track: { contactId: options.contactId, onTimeout: options.onRelayOutcomeTimeout }
+  });
+  return deliveryId;
+}
+
 export async function sendPresencePing(options: Omit<PresenceControlOptions, "pingId"> & { readonly pingId?: string }): Promise<string> {
   const pingId = options.pingId ?? createDeliveryID();
   await sealAndSendPayload({
@@ -76,7 +96,7 @@ export async function sendApplicationControl(options: {
   readonly senderPeerId: string;
   readonly recipientPeerId: string;
   readonly recipientHpkePublicKey: string;
-  readonly plaintext: string;
+  readonly plaintext: Uint8Array;
 }): Promise<void> {
   await sealAndSendPayload({
     senderPeerId: options.senderPeerId,
@@ -92,7 +112,7 @@ interface SealPayloadOptions {
   readonly recipientPeerId: string;
   readonly recipientHpkePublicKey: string;
   readonly deliveryId: string;
-  readonly plaintext: string;
+  readonly plaintext: string | Uint8Array;
   readonly track?: { readonly contactId: string; readonly onTimeout: () => void };
 }
 

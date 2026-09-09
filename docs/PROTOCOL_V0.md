@@ -530,6 +530,17 @@ absence means unsupported, not offline. Existing
 `branch.application-control/0.draft` controls remain a separate family and are
 not ordinary messages.
 
+D-BRANCH-058 fixes the beta PWA adapter transition: canonical application
+payload and application-control CBOR values are passed as raw `Uint8Array`
+HPKE plaintext, not text/base64 wrappers. Its receiver attempts locally
+registered bounded binary controls and payload descriptors first; a valid
+unknown kind is inert. Only a plaintext that is not a valid binary envelope may
+fall through to strict UTF-8 decoding of the former beta JSON message/presence
+and text-wrapped typing compatibility forms. The PWA text descriptor body is
+non-empty strict UTF-8 up to 3000 bytes; its random application `message_id` is
+separate from a relay `delivery_id`. This adapter rule changes neither relay
+frames nor the immutable connectivity profile.
+
 The attachment kinds are `branch.attachment.manifest/0.draft`,
 `branch.attachment.decision/0.draft`, and `branch.attachment.chunk/0.draft`;
 their bodies use the schemas below. `branch.attachment/0.draft` is a separate

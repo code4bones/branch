@@ -9,8 +9,9 @@ import { ContactRouteLookup } from "../app/ContactRouteLookup.js";
 import { DetailHeader } from "../app/DetailHeader.js";
 import { MessageComposer } from "../app/MessageComposer.js";
 import { MessageLog } from "../app/MessageLog.js";
+import { peerSupportsChatText, sendApplicationCapabilities } from "../connectivity/application-capabilities-control.js";
 import { getRelaySessionClient, hasAttachedRelaySession } from "../connectivity/relay-session.js";
-import { createDeliveryID, sealAndSendMessage } from "../connectivity/seal-and-send.js";
+import { createDeliveryID, sealAndSendApplicationTextMessage, sealAndSendMessage } from "../connectivity/seal-and-send.js";
 import { sendTypingControl } from "../connectivity/typing-control.js";
 import { CHATS_PATH } from "../app/paths.js";
 import { useContacts, useConversation, useIdentity, useMarkContactRead, useTransportStatus } from "../state/hooks.js";
@@ -90,22 +91,51 @@ export function ChatPage(): React.JSX.Element {
     setDraft("");
 
     if (peerId !== null && hpkePublicKey !== null && hasAttachedRelaySession()) {
-      sealAndSendMessage({
-        senderPeerId: identity.identity.peerId,
-        senderHpkePublicKey: identity.identity.hpkePublicKey,
-        senderDisplayName: identity.identity.displayName ?? "Branch peer",
-        recipientPeerId: peerId,
-        recipientHpkePublicKey: hpkePublicKey,
-        contactId: contact.contactId,
-        deliveryId,
-        plaintext: body,
-        onRelayOutcomeTimeout: () => {
-          conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
-        }
-      }).catch((cause: unknown) => {
+      const supportsGenericText = peerSupportsChatText(peerId);
+      const send = supportsGenericText
+        ? sealAndSendApplicationTextMessage({
+          senderPeerId: identity.identity.peerId,
+          recipientPeerId: peerId,
+          recipientHpkePublicKey: hpkePublicKey,
+          contactId: contact.contactId,
+          deliveryId,
+          plaintext: body,
+          onRelayOutcomeTimeout: () => {
+            conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
+          }
+        })
+        : sealAndSendMessage({
+          senderPeerId: identity.identity.peerId,
+          senderHpkePublicKey: identity.identity.hpkePublicKey,
+          senderDisplayName: identity.identity.displayName ?? "Branch peer",
+          recipientPeerId: peerId,
+          recipientHpkePublicKey: hpkePublicKey,
+          contactId: contact.contactId,
+          deliveryId,
+          plaintext: body,
+          onRelayOutcomeTimeout: () => {
+            conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
+          }
+        });
+      void send.catch((cause: unknown) => {
         conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
         setSendError(cause instanceof Error ? cause.message : "send failed");
       });
+      if (!supportsGenericText) {
+        void sendApplicationCapabilities({
+          senderPeerId: identity.identity.peerId,
+          recipientPeerId: peerId,
+          recipientHpkePublicKey: hpkePublicKey,
+          attached: true
+        }).then((result) => {
+          if (result === "sent") {
+            storeApi.getState().recordTransportTrace("application capabilities: outbound_sent");
+          }
+        }).catch(() => {
+          // Advisory capabilities are never queued and do not alter the visible
+          // compatibility message's own live delivery outcome.
+        });
+      }
       return;
     }
     if (isReachable) {

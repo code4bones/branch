@@ -4,13 +4,16 @@ import { resolve, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  applicationCapabilitiesControlKind,
   applicationControlSigningBytes,
+  applicationPayloadVersion,
   betaHpkeCiphertextBytesForPlaintext,
   createBetaPayloadKeyPair,
   decodeBase64URL,
   decodeDraftRelayAttachmentFrameText,
   developmentProfileMultihash,
   encodeApplicationControl,
+  encodeApplicationPayload,
   encodeBase64URL,
   makeBetaPayloadAAD,
   maxDraftRelayCiphertextBytes,
@@ -23,6 +26,14 @@ import {
 
 import { openIncomingEnvelope } from "../src/connectivity/open-envelope.js";
 import { createDeliveryID } from "../src/connectivity/seal-and-send.js";
+import { encodeChatTextApplicationPayload } from "../src/connectivity/application-payload.js";
+import {
+  applicationCapabilitiesControlDescriptor,
+  applicationCapabilitiesControlTTLms,
+  localApplicationCapabilities,
+  peerSupportsChatText,
+  receiveApplicationCapabilities
+} from "../src/connectivity/application-capabilities-control.js";
 import { classifyIncomingMessage } from "../src/connectivity/incoming-message.js";
 import { receiveTypingControl, typingControlKind, typingControlPayloadPrefix, typingControlTTLms } from "../src/connectivity/typing-control.js";
 import {
@@ -762,7 +773,7 @@ void test("incoming envelope opens only when the delivered origin route is bound
     deliveryId,
     sealedPayload
   });
-  assert.equal(opened, plaintext);
+  assert.equal(new TextDecoder().decode(opened), plaintext);
   await assert.rejects(openIncomingEnvelope({
     senderPeerId,
     recipientPeerId,
@@ -771,6 +782,82 @@ void test("incoming envelope opens only when the delivered origin route is bound
     deliveryId,
     sealedPayload
   }));
+});
+
+void test("PWA dispatches registered generic text bytes before explicit beta JSON compatibility", () => {
+  const senderPeerId = Buffer.alloc(32, 7).toString("base64url");
+  const generic = encodeChatTextApplicationPayload({
+    messageId: Buffer.alloc(16, 2).toString("base64url"),
+    body: "canonical generic text"
+  });
+  const genericResult = classifyIncomingMessage({ plaintext: generic, senderPeerId, knownContactId: "contact-alice" });
+  assert.deepEqual(genericResult, { kind: "known_contact_message", contactId: "contact-alice", body: "canonical generic text" });
+
+  const unknown = encodeApplicationPayload({
+    version: applicationPayloadVersion,
+    kind: "example.unknown/0.draft",
+    messageId: Buffer.alloc(16, 3).toString("base64url"),
+    body: new Uint8Array([1])
+  });
+  assert.deepEqual(classifyIncomingMessage({ plaintext: unknown, senderPeerId, knownContactId: "contact-alice" }), { kind: "drop_unknown_application" });
+  assert.deepEqual(classifyIncomingMessage({ plaintext: new Uint8Array([0xa4]), senderPeerId, knownContactId: "contact-alice" }), { kind: "drop_unknown_legacy" });
+
+  const legacy = encodeBetaPwaMessagePayload({
+    body: "legacy text",
+    replyHpkePublicKey: Buffer.alloc(32, 4).toString("base64url"),
+    senderDisplayName: "Alice"
+  });
+  assert.equal(classifyIncomingMessage({ plaintext: legacy, senderPeerId, knownContactId: "contact-alice" }).kind, "known_contact_message");
+});
+
+void test("PWA accepts a signed raw application-capabilities control only for a known contact", async () => {
+  const [sender, recipient] = await Promise.all([
+    SameRelayTransportClient.createIdentity(),
+    SameRelayTransportClient.createIdentity()
+  ]);
+  const now = Date.now();
+  const unsigned = prepareOutboundApplicationControl({
+    kind: applicationCapabilitiesControlKind,
+    controlId: Buffer.alloc(16, 8).toString("base64url"),
+    issuedAt: now,
+    expiresAt: now + applicationCapabilitiesControlTTLms,
+    senderPeerId: sender.peerId,
+    recipientPeerId: recipient.peerId,
+    body: localApplicationCapabilities()
+  }, applicationCapabilitiesControlDescriptor, {
+    now,
+    localPeerId: sender.peerId,
+    isKnownContact: () => true,
+    isAllowed: () => true,
+    consumeRateLimit: () => true,
+    maxClockSkewMs: 1_000
+  });
+  const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", sender.privateKey, new Uint8Array(applicationControlSigningBytes(unsigned)).buffer));
+  const tamperedSignature = new Uint8Array(signature);
+  tamperedSignature[0] = (tamperedSignature[0] ?? 0) ^ 1;
+  const tampered = await receiveApplicationCapabilities({
+    plaintext: encodeApplicationControl({ ...unsigned, signature: tamperedSignature }),
+    localPeerId: recipient.peerId,
+    senderPeerId: sender.peerId,
+    knownContactId: "contact-alice"
+  });
+  assert.equal(tampered.outcome, "signature_invalid");
+  const result = await receiveApplicationCapabilities({
+    plaintext: encodeApplicationControl({ ...unsigned, signature }),
+    localPeerId: recipient.peerId,
+    senderPeerId: sender.peerId,
+    knownContactId: "contact-alice"
+  });
+  assert.equal(result.outcome, "accepted");
+  assert.equal(peerSupportsChatText(sender.peerId), true);
+
+  const unknownContact = await receiveApplicationCapabilities({
+    plaintext: encodeApplicationControl({ ...unsigned, signature }),
+    localPeerId: recipient.peerId,
+    senderPeerId: sender.peerId,
+    knownContactId: null
+  });
+  assert.equal(unknownContact.outcome, "unknown_contact");
 });
 
 void test("real contacts carry peerId/hpkePublicKey and settings expose a JSON invite to add them", async () => {

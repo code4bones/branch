@@ -1,6 +1,5 @@
 import {
   betaHpkeCiphertextBytesFromSealedPayload,
-  decodeBetaPayloadText,
   developmentProfileMultihash,
   makeBetaPayloadAAD,
   openBetaPayload,
@@ -18,9 +17,10 @@ export interface OpenEnvelopeOptions {
   readonly sealedPayload: string;
 }
 
-// Opens an incoming human-to-human ENVELOPE (plain UTF-8 text body). Echo
-// replies use a different shape — see src/connectivity/echo-protocol.ts.
-export async function openIncomingEnvelope(options: OpenEnvelopeOptions): Promise<string> {
+// Opens an incoming human-to-human ENVELOPE without assigning a text encoding
+// to its plaintext. New application/control envelopes are canonical CBOR bytes;
+// the incoming adapter owns the explicit legacy UTF-8 compatibility branch.
+export async function openIncomingEnvelope(options: OpenEnvelopeOptions): Promise<Uint8Array> {
   const expectedCiphertextBytes = betaHpkeCiphertextBytesFromSealedPayload(options.sealedPayload);
   const aad = makeBetaPayloadAAD({
     protocol: protocolID,
@@ -41,5 +41,5 @@ export async function openIncomingEnvelope(options: OpenEnvelopeOptions): Promis
     aad,
     expectedCiphertextBytes
   });
-  return decodeBetaPayloadText(plaintext);
+  return plaintext;
 }

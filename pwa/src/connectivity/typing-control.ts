@@ -1,9 +1,9 @@
 import {
   applicationControlSigningBytes,
   createApplicationControlRegistry,
+  decodeApplicationControl,
   decodeBase64URL,
   encodeApplicationControl,
-  encodeBase64URL,
   prepareOutboundApplicationControl,
   processApplicationControl,
   type ApplicationControlDescriptor,
@@ -94,7 +94,7 @@ export async function sendTypingControl(options: {
     throw cause;
   }
   const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", keys.relayPrivateKey, toArrayBuffer(applicationControlSigningBytes(unsigned))));
-  const payload = typingControlPayloadPrefix + encodeBase64URL(encodeApplicationControl({ ...unsigned, signature }));
+  const payload = encodeApplicationControl({ ...unsigned, signature });
   await sendApplicationControl({
     senderPeerId: options.senderPeerId,
     recipientPeerId: options.recipientPeerId,
@@ -105,21 +105,23 @@ export async function sendTypingControl(options: {
 }
 
 export async function receiveTypingControl(options: {
-  readonly plaintext: string;
+  readonly plaintext: Uint8Array | string;
   readonly localPeerId: string;
   readonly senderPeerId: string;
   readonly knownContactId: string | null;
 }): Promise<ReceivedTypingControl> {
-  if (!options.plaintext.startsWith(typingControlPayloadPrefix)) {
-    return { handled: false };
-  }
   const now = Date.now();
   pruneReplayWindow(now);
-  let bytes: Uint8Array;
+  const bytes = decodeTypingControlBytes(typeof options.plaintext === "string" ? new TextEncoder().encode(options.plaintext) : options.plaintext);
+  if (bytes === null) {
+    return { handled: false };
+  }
   try {
-    bytes = decodeBase64URL(options.plaintext.slice(typingControlPayloadPrefix.length));
+    if (decodeApplicationControl(bytes).kind !== typingControlKind) {
+      return { handled: false };
+    }
   } catch {
-    return { handled: true, outcome: "malformed" };
+    return { handled: false };
   }
   const result = await processApplicationControl(bytes, typingRegistry, {
     now,
@@ -141,6 +143,26 @@ export async function receiveTypingControl(options: {
   return effect?.kind === "ephemeral_projection"
     ? { handled: true, outcome: "accepted", contactId: options.knownContactId, expiresAt: effect.expiresAt }
     : { handled: true, outcome: "projection_missing" };
+}
+
+function decodeTypingControlBytes(plaintext: Uint8Array): Uint8Array | null {
+  // Current controls are raw canonical CBOR. The text prefix remains a receive-
+  // only compatibility form for beta PWA typing traffic.
+  try {
+    decodeApplicationControl(plaintext);
+    return plaintext;
+  } catch {
+    // Continue with the deliberately narrow former textual encoding.
+  }
+  try {
+    const legacy = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+    if (!legacy.startsWith(typingControlPayloadPrefix)) {
+      return null;
+    }
+    return decodeBase64URL(legacy.slice(typingControlPayloadPrefix.length));
+  } catch {
+    return null;
+  }
 }
 
 function consumeTypingRate(peerId: string, now: number): boolean {

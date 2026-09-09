@@ -2,6 +2,7 @@ import type { SameRelayTransportClient, SameRelayTransportEvent } from "@code4bo
 import { useEffect, useRef } from "react";
 
 import { openIncomingEnvelope } from "./open-envelope.js";
+import { receiveApplicationCapabilities } from "./application-capabilities-control.js";
 import { classifyIncomingMessage } from "./incoming-message.js";
 import { orderedAttachmentRoutes } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
@@ -336,6 +337,16 @@ async function handleIncomingEnvelope(
       if (typing.contactId !== undefined && typing.expiresAt !== undefined) {
         state.setContactTyping(typing.contactId, typing.expiresAt);
       }
+      return;
+    }
+    const applicationCapabilities = await receiveApplicationCapabilities({
+      plaintext,
+      localPeerId: state.identity.peerId,
+      senderPeerId,
+      knownContactId
+    });
+    if (applicationCapabilities.handled) {
+      state.recordTransportTrace(`application capabilities: ${applicationCapabilities.outcome ?? "rejected"}`);
       return;
     }
     const disposition = classifyIncomingMessage({ plaintext, senderPeerId, knownContactId });
