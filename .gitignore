@@ -27,6 +27,12 @@ web/.npm/
 web/dist/
 web/dist-test/
 web/coverage/
+packages/branch-core/dist-test/
+pwa/node_modules/
+pwa/.npm/
+pwa/dist/
+pwa/dist-test/
+pwa/coverage/
 
 # Editor and OS noise
 .DS_Store

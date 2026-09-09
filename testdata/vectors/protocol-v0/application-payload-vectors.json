@@ -1,0 +1,103 @@
+{
+  "schema": "branch.application-payload-vectors/0.draft",
+  "application_payload_version": "branch.application-payload/0.draft",
+  "attachment_version": "branch.attachment/0.draft",
+  "notes": [
+    "Bodies are base64url fixture encodings; protocol bytes are deterministic CBOR produced by Go and TypeScript cores.",
+    "Attachment chunks are application payload bodies inside existing HPKE ENVELOPEs, never relay files or relay frames."
+  ],
+  "valid": {
+    "text": { "kind": "branch.chat.text/0.draft", "message_id": "AQEBAQEBAQEBAQEBAQEBAQ", "body": "aGVsbG8" },
+    "inline_binary": { "kind": "branch.binary.inline/0.draft", "message_id": "AgICAgICAgICAgICAgICAg", "body": "AAECAw" },
+    "unknown_kind": { "kind": "example.future/9", "message_id": "AwMDAwMDAwMDAwMDAwMDAw", "body": "eA" },
+    "manifest": {
+      "transfer_id": "BAQEBAQEBAQEBAQEBAQEBA",
+      "manifest_id": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU",
+      "issued_at": 1700000000000,
+      "expires_at": 1700000900000,
+      "file_name": "image.bin",
+      "media_type": "application/octet-stream",
+      "byte_count": 3073,
+      "chunk_bytes": 2048,
+      "chunk_count": 2,
+      "sha256": "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY",
+      "signature": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw"
+    },
+    "first_chunk": { "index": 0, "body": "CAgICAgI" },
+    "last_chunk": { "index": 1, "body": "CQkJCQ" },
+    "application_capabilities": {
+      "application_versions": ["branch.application-payload/0.draft"],
+      "kinds": ["branch.attachment.chunk/0.draft", "branch.binary.inline/0.draft", "branch.chat.text/0.draft"],
+      "max_inline_bytes": 3000,
+      "attachment_mode": "receiver-accept",
+      "max_relay_attachment_bytes": 4194304,
+      "max_direct_attachment_bytes": 16777216,
+      "canonical_body": "pmVraW5kc4N4H2JyYW5jaC5hdHRhY2htZW50LmNodW5rLzAuZHJhZnR4HGJyYW5jaC5iaW5hcnkuaW5saW5lLzAuZHJhZnR4GGJyYW5jaC5jaGF0LnRleHQvMC5kcmFmdG9hdHRhY2htZW50X21vZGVvcmVjZWl2ZXItYWNjZXB0cG1heF9pbmxpbmVfYnl0ZXMZC7h0YXBwbGljYXRpb25fdmVyc2lvbnOBeCJicmFuY2guYXBwbGljYXRpb24tcGF5bG9hZC8wLmRyYWZ0eBptYXhfcmVsYXlfYXR0YWNobWVudF9ieXRlcxoAQAAAeBttYXhfZGlyZWN0X2F0dGFjaG1lbnRfYnl0ZXMaAQAAAA"
+    }
+  },
+  "invalid_application_capabilities": [
+    {
+      "name": "duplicate application version rejects",
+      "application_versions": ["branch.application-payload/0.draft", "branch.application-payload/0.draft"],
+      "kinds": [],
+      "max_inline_bytes": 0,
+      "attachment_mode": "none",
+      "max_relay_attachment_bytes": 0,
+      "max_direct_attachment_bytes": 0
+    },
+    {
+      "name": "unordered kind identifiers reject",
+      "application_versions": [],
+      "kinds": ["branch.chat.text/0.draft", "branch.binary.inline/0.draft"],
+      "max_inline_bytes": 0,
+      "attachment_mode": "none",
+      "max_relay_attachment_bytes": 0,
+      "max_direct_attachment_bytes": 0
+    },
+    {
+      "name": "non-ascii identifiers reject",
+      "application_versions": ["bränch.application-payload/0.draft"],
+      "kinds": [],
+      "max_inline_bytes": 0,
+      "attachment_mode": "none",
+      "max_relay_attachment_bytes": 0,
+      "max_direct_attachment_bytes": 0
+    },
+    {
+      "name": "inline limit rejects",
+      "application_versions": [],
+      "kinds": [],
+      "max_inline_bytes": 3001,
+      "attachment_mode": "none",
+      "max_relay_attachment_bytes": 0,
+      "max_direct_attachment_bytes": 0
+    },
+    {
+      "name": "unsupported attachment mode rejects",
+      "application_versions": [],
+      "kinds": [],
+      "max_inline_bytes": 0,
+      "attachment_mode": "relay-storage",
+      "max_relay_attachment_bytes": 0,
+      "max_direct_attachment_bytes": 0
+    },
+    {
+      "name": "direct attachment upper bound rejects",
+      "application_versions": [],
+      "kinds": [],
+      "max_inline_bytes": 0,
+      "attachment_mode": "none",
+      "max_relay_attachment_bytes": 0,
+      "max_direct_attachment_bytes": 16777217
+    }
+  ],
+  "invalid": [
+    "unknown application payload fields reject",
+    "unknown application kind has no projection",
+    "inline binary over 3000 bytes rejects at descriptor boundary",
+    "attachment manifest TTL over 15 minutes rejects",
+    "attachment chunk before accept is rejected by the transfer adapter",
+    "attachment chunk mismatching transfer, manifest, index, or exact nonfinal size aborts",
+    "recipient unavailable sends neither offer nor chunks and has no relay retry state"
+  ]
+}

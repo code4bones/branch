@@ -39,7 +39,8 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "echo": "npm run build && node scripts/run-echo-service.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test \"dist-test/tests/**/*.test.js\""
   },
   "dependencies": {
     "@hpke/core": "^1.9.0",

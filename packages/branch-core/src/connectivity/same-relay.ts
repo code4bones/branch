@@ -4,7 +4,8 @@ import { developmentProfileMultihash } from "../protocol/v0/profile.js";
 import {
   decodeDraftRelayAttachmentFrameText,
   maxDraftRelayAttachmentFrameBytes,
-  relayProofDomain
+  relayProofDomain,
+  type RelayFrameType
 } from "../protocol/v0/relay-attachment.js";
 
 export const relayForwardLiveCapability = "relay.forward.live/0" as const;
@@ -34,7 +35,11 @@ export interface SameRelayIdentityExport {
 }
 
 export type RelaySocketEventType = "open" | "message" | "error" | "close";
-export type RelaySocketEvent = Event | MessageEvent<unknown>;
+export interface RelaySocketCloseEvent extends Event {
+  readonly code?: number;
+}
+
+export type RelaySocketEvent = Event | MessageEvent<unknown> | RelaySocketCloseEvent;
 
 export interface BrowserRelaySocket {
   readonly readyState: number;
@@ -60,6 +65,9 @@ export interface SameRelayTransportOptions {
 
 export type SameRelayTransportEvent =
   | { readonly type: "attached"; readonly sessionId: string; readonly routeId: string; readonly endpointUri: string }
+  // A bounded protocol label only: no raw frame, route, session, delivery ID,
+  // ciphertext, or peer material crosses into diagnostics.
+  | { readonly type: "frame_sent"; readonly frameType: RelayFrameType }
   | { readonly type: "presence_announced"; readonly peerId: string; readonly sequence: number }
   | { readonly type: "heartbeat_sent"; readonly sequence: number }
   | { readonly type: "lookup_requested"; readonly peerId: string; readonly sequence: number }
@@ -70,7 +78,12 @@ export type SameRelayTransportEvent =
   | { readonly type: "peer_unavailable"; readonly retryable: boolean; readonly pendingCount: number }
   | { readonly type: "envelope_received"; readonly deliveryId: string; readonly ciphertext: string; readonly routeId: string; readonly originRouteId: string; readonly senderPeerId: string | null }
   | { readonly type: "pending_retried"; readonly count: number }
-  | { readonly type: "disconnected"; readonly pendingCount: number }
+  | {
+    readonly type: "disconnected";
+    readonly pendingCount: number;
+    readonly source: "local" | "remote";
+    readonly closeCode?: number;
+  }
   | { readonly type: "error"; readonly message: string };
 
 type SameRelayEventListener = (event: SameRelayTransportEvent) => void;
@@ -407,7 +420,7 @@ export class SameRelayTransportClient {
       socket.removeEventListener("close", this.handleSocketClose);
       socket.removeEventListener("error", this.handleSocketError);
       socket.close(1000, "client disconnect");
-      this.emit({ type: "disconnected", pendingCount: this.pending.size });
+      this.emit({ type: "disconnected", pendingCount: this.pending.size, source: "local" });
     }
   }
 
@@ -453,11 +466,12 @@ export class SameRelayTransportClient {
     this.processReadyFrame(record);
   };
 
-  private readonly handleSocketClose = (): void => {
+  private readonly handleSocketClose = (event: RelaySocketEvent): void => {
     this.ready = null;
     this.socket = null;
     this.rejectDeferredFrames(new Error("relay socket closed"));
-    this.emit({ type: "disconnected", pendingCount: this.pending.size });
+    const details = closeDetails(event);
+    this.emit({ type: "disconnected", pendingCount: this.pending.size, source: "remote", ...details });
   };
 
   private readonly handleSocketError = (): void => {
@@ -574,7 +588,11 @@ export class SameRelayTransportClient {
     if (socket === null || socket.readyState !== socketOpenState) {
       throw new Error("relay socket is not open");
     }
+    // Validate outbound frames with the normative decoder before writing them
+    // to a relay, so adapter regressions fail locally and deterministically.
+    const decoded = decodeDraftRelayAttachmentFrameText(frame);
     socket.send(frame);
+    this.emit({ type: "frame_sent", frameType: decoded.type });
   }
 
   private requireReady(): ReadyState {
@@ -638,6 +656,13 @@ export class SameRelayTransportClient {
       listener(event);
     }
   }
+}
+
+function closeDetails(event: RelaySocketEvent): { readonly closeCode?: number } {
+  if (!("code" in event) || typeof event.code !== "number") {
+    return {};
+  }
+  return { closeCode: event.code };
 }
 
 export function makeVersionOffer(): VersionOffer {

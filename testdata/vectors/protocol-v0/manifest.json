@@ -68,6 +68,12 @@
       "frame_malformed"
     ]
   },
+  "application_payload": {
+    "fixture": "application-payload-vectors.json",
+    "schema": "branch.application-payload-vectors/0.draft",
+    "application_payload_version": "branch.application-payload/0.draft",
+    "attachment_version": "branch.attachment/0.draft"
+  },
   "cases": [
     {
       "name": "valid-rendezvous-offer-envelope",

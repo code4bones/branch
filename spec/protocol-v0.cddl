@@ -277,3 +277,51 @@ protocol-error-code =
   "rate_limited" /
   "timeout" /
   "internal_unavailable"
+
+; D-BRANCH-057 endpoint-only application payloads. These values are HPKE
+; plaintext, not relay frames. Attachment chunks remain bounded opaque payloads.
+application-payload = {
+  version: "branch.application-payload/0.draft",
+  kind: text .size (1..96),
+  message_id: bstr .size 16,
+  body: bstr .size (1..4096),
+}
+
+; This is the deterministic-CBOR body of the signed endpoint-only
+; branch.application.capabilities/0.draft application-control. It is at most
+; 2048 bytes, is never relay metadata, and grants no relay action. Identifier
+; arrays contain zero to sixteen unique printable-ASCII identifiers in strictly
+; ascending ASCII byte order.
+application-capabilities = {
+  application_versions: [*16 application-identifier],
+  kinds: [*16 application-identifier],
+  max_inline_bytes: 0..3000,
+  attachment_mode: "none" / "receiver-accept",
+  max_relay_attachment_bytes: 0..4194304,
+  max_direct_attachment_bytes: 0..16777216,
+}
+
+application-identifier = text .size (1..96)
+
+attachment-manifest = {
+  version: "branch.attachment/0.draft",
+  transfer_id: bstr .size 16,
+  manifest_id: bstr .size 32,
+  issued_at: draft-timestamp,
+  expires_at: draft-timestamp,
+  file_name: text .size (1..160),
+  media_type: text .size (1..128),
+  byte_count: 1..16777216,
+  chunk_bytes: 256..3072,
+  chunk_count: 1..8192,
+  sha256: bstr .size 32,
+  signature: bstr .size 64,
+}
+
+attachment-chunk = {
+  version: "branch.attachment/0.draft",
+  transfer_id: bstr .size 16,
+  manifest_id: bstr .size 32,
+  index: draft-timestamp,
+  bytes: bstr .size (1..3072),
+}

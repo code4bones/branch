@@ -1,0 +1,19 @@
+{
+  "id": "/pwa/",
+  "name": "B.R.A.N.C.H.",
+  "short_name": "BRANCH",
+  "description": "Blue Ribbon Autonomous Network for Carrier Hopping — beta client",
+  "start_url": "/pwa/",
+  "scope": "/pwa/",
+  "display": "standalone",
+  "background_color": "#0a0d11",
+  "theme_color": "#0a0d11",
+  "icons": [
+    {
+      "src": "/pwa/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -490,6 +490,87 @@ presence compatibility payloads cannot establish Delivered or Read. Controls
 are best-effort live traffic only: relays never retain, replay, index, or use
 them to create a mailbox or store-and-forward path.
 
+### Extensible application payload and attachment boundary
+
+D-BRANCH-057 introduces the pre-publication, endpoint-only
+`branch.application-payload/0.draft` family. It is canonical deterministic CBOR
+inside the plaintext of an existing HPKE `ENVELOPE`, not an attachment frame,
+relay capability, carrier record, or change to connectivity negotiation. Its
+exact map is `{version, kind, message_id, body}`. `message_id` is a random
+16-byte value, `kind` is a bounded versioned ASCII identifier, and `body` is
+bounded opaque bytes. The whole encoded application payload is at most 4096
+bytes. Implementations compile a local descriptor registry; a descriptor fixes
+the exact body codec, maximum body size, required application capability,
+authentication mode, replay class, and permitted local projection. Descriptors
+are never supplied by the network. Unknown versions or kinds are inert: an
+endpoint MUST NOT render them, create a contact, mutate conversation state, or
+send an automatic reply.
+
+Initial ordinary kinds are `branch.chat.text/0.draft` and
+`branch.binary.inline/0.draft`. Inline binary is at most 3000 bytes; an image
+may use this kind only when it fits. The body of each kind is owned only by its
+descriptor: adding a kind never adds an application-envelope field or relay
+branch. A nested body may have its own deterministic CBOR schema, but it MUST
+not be interpreted by an implementation that lacks that descriptor.
+
+Application capabilities use the signed control kind
+`branch.application.capabilities/0.draft`, with a five-minute maximum TTL. Its
+deterministic-CBOR body is `{application_versions, kinds, max_inline_bytes,
+attachment_mode, max_relay_attachment_bytes, max_direct_attachment_bytes}`.
+`application_versions` and `kinds` are unique deterministically ordered arrays
+of zero to 16 printable-ASCII identifiers (strict ascending ASCII byte order,
+each at most 96 bytes); the encoded control body is at most 2048 bytes;
+`attachment_mode` is `none` or
+`receiver-accept`; the numeric fields are upper bounds, not promises. The
+capability control is advisory and expires locally. It is neither
+a relay capability nor a connectivity-profile capability, is never forwarded to
+a relay as metadata, and does not authorize a relay action. A sender MUST NOT
+send an optional kind until it has a current accepted capability from that peer;
+absence means unsupported, not offline. Existing
+`branch.application-control/0.draft` controls remain a separate family and are
+not ordinary messages.
+
+The attachment kinds are `branch.attachment.manifest/0.draft`,
+`branch.attachment.decision/0.draft`, and `branch.attachment.chunk/0.draft`;
+their bodies use the schemas below. `branch.attachment/0.draft` is a separate
+live transfer protocol, not a
+"large relay message". A signed canonical manifest offer contains random
+16-byte `transfer_id`, random 32-byte `manifest_id`, issue/expiry, bounded file
+name and media type, byte count, fixed chunk size/count, and a SHA-256 digest
+of the complete file. The manifest and `accept`, `reject`, and `cancel`
+decisions use the domain-separated
+`branch.attachment.signature/0.draft\0 || deterministic_cbor(unsigned_value)`
+signature input and require the known contact Ed25519 key. A recipient MUST
+explicitly accept a valid unexpired manifest before it admits chunks. A chunk
+contains `{version, transfer_id, manifest_id, index, bytes}` inside the normal
+application payload and HPKE boundary. It is authenticated by HPKE, the
+accepted signed manifest, and final whole-file SHA-256 verification; the
+recipient rejects any transfer/manifest mismatch, out-of-range index, bad
+non-final size, duplicate conflicting bytes, final digest mismatch, or chunk
+after reject/cancel/expiry.
+
+The draft chunk size is 256..3072 bytes, there are at most 8192 chunks, and a
+transfer expires within 15 minutes. A client allows at most one active transfer
+per peer direction and bounds outstanding/reorder, replay, temporary storage,
+and diagnostic state. The relay-route ceiling is 4 MiB; the direct-route
+ceiling is 16 MiB. These are client admission limits, never relay storage
+quotas. Transfer and chunk identities are deduplicated only in bounded
+client-owned state. The existing HPKE AAD remains mandatory and binds protocol,
+profile, origin route id, sender/recipient keys, delivery id, epoch, stream,
+frame type, ACK flag, and ciphertext length; application attachment fields are
+therefore protected inside the ciphertext and cannot be reassigned after open.
+
+Attachments are live best-effort traffic. If the recipient is unavailable or
+has not supplied a current accepted attachment capability, the sender emits no
+offer and no chunks, reports unavailable locally, and may only re-offer from
+user-owned state after a later live session. Cancellation drops local transfer
+state and never asks a relay to retain or delete anything. A relay sees only
+bounded opaque `ENVELOPE` ciphertext while both routes are live; it stores no
+manifest, file, chunk, transfer queue, retry state, or delivery promise, and a
+restart restores none of them. Auto-resume, file hosting, mailbox delivery,
+thumbnail generation, and cross-device transfer are out of scope for this
+draft.
+
 ### Path migration state machine
 
 Path migration is a session state transition, not a relay feature. Either peer
