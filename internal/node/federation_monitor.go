@@ -11,6 +11,27 @@ type staticFederationMonitor struct {
 	router interface {
 		FederationSnapshot() []wss.FederationPeerObservation
 	}
+	carrierRouter interface {
+		FederationCarrierSnapshot() *wss.FederationCarrierObservation
+	}
+}
+
+func (monitor staticFederationMonitor) FederationCarrier() *admin.RelayMonitorFederationCarrier {
+	if monitor.carrierRouter == nil {
+		return nil
+	}
+	observation := monitor.carrierRouter.FederationCarrierSnapshot()
+	if observation == nil {
+		return nil
+	}
+	return &admin.RelayMonitorFederationCarrier{
+		Carrier:        observation.Carrier,
+		State:          observation.State,
+		LastLookupAt:   nonZeroTimePtr(observation.LastLookupAt),
+		LastReason:     observation.LastReason,
+		CandidateCount: observation.CandidateCount,
+		FreshUntil:     nonZeroTimePtr(observation.FreshUntil),
+	}
 }
 
 func (monitor staticFederationMonitor) FederationLinks() []admin.RelayMonitorFederationLink {

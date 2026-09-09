@@ -135,11 +135,16 @@ type staticNodeBootstrapProvider struct {
 }
 
 type staticNodeFederationProvider struct {
-	links []admin.RelayMonitorFederationLink
+	links   []admin.RelayMonitorFederationLink
+	carrier *admin.RelayMonitorFederationCarrier
 }
 
 func (provider staticNodeFederationProvider) FederationLinks() []admin.RelayMonitorFederationLink {
 	return provider.links
+}
+
+func (provider staticNodeFederationProvider) FederationCarrier() *admin.RelayMonitorFederationCarrier {
+	return provider.carrier
 }
 
 func (provider staticNodeBootstrapProvider) BootstrapBeacon(request admin.BootstrapBeaconRequest) (admin.BootstrapBeaconResponse, error) {

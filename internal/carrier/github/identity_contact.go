@@ -175,7 +175,7 @@ func (source *IdentityContactSource) LookupBootstrapBeacons(ctx context.Context)
 
 	repositories, err := source.searchRepositories(requestCtx)
 	if err != nil {
-		return nil, err
+		return nil, githubBootstrapLookupFailure(err)
 	}
 	candidates := make([]discovery.BootstrapBeaconCandidate, 0, maxBootstrapCandidates)
 	var recordsErr error
@@ -186,7 +186,7 @@ func (source *IdentityContactSource) LookupBootstrapBeacons(ctx context.Context)
 		wrappers, err := source.readRepositoryRecords(requestCtx, repository)
 		if err != nil {
 			if requestCtx.Err() != nil {
-				return nil, requestCtx.Err()
+				return nil, githubBootstrapLookupFailure(requestCtx.Err())
 			}
 			if errors.Is(err, errRecordsMissing) {
 				continue
@@ -205,9 +205,23 @@ func (source *IdentityContactSource) LookupBootstrapBeacons(ctx context.Context)
 		}
 	}
 	if len(candidates) == 0 && recordsErr != nil {
-		return nil, fmt.Errorf("read github repository records: %w", recordsErr)
+		return nil, githubBootstrapLookupFailure(recordsErr)
 	}
 	return candidates, nil
+}
+
+func githubBootstrapLookupFailure(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return discovery.NewBootstrapBeaconLookupFailure("github_timeout", err)
+	}
+	var statusErr githubHTTPStatusError
+	if errors.As(err, &statusErr) {
+		if statusErr.status == http.StatusForbidden || statusErr.status == http.StatusTooManyRequests {
+			return discovery.NewBootstrapBeaconLookupFailure("github_rate_limited", err)
+		}
+		return discovery.NewBootstrapBeaconLookupFailure("github_http_error", err)
+	}
+	return discovery.NewBootstrapBeaconLookupFailure("github_lookup_failed", err)
 }
 
 type githubRepositorySearch struct {
@@ -232,6 +246,15 @@ type githubContentFile struct {
 
 var errRecordsMissing = errors.New("github records missing")
 
+type githubHTTPStatusError struct {
+	operation string
+	status    int
+}
+
+func (err githubHTTPStatusError) Error() string {
+	return fmt.Sprintf("github %s status %d", err.operation, err.status)
+}
+
 func (source *IdentityContactSource) searchRepositories(ctx context.Context) ([]githubRepository, error) {
 	endpoint := source.apiBaseURL.JoinPath("search", "repositories")
 	query := endpoint.Query()
@@ -245,7 +268,7 @@ func (source *IdentityContactSource) searchRepositories(ctx context.Context) ([]
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("github repository search status %d", status)
+		return nil, githubHTTPStatusError{operation: "repository_search", status: status}
 	}
 	var response githubRepositorySearch
 	if err := json.Unmarshal(body, &response); err != nil {
@@ -278,7 +301,7 @@ func (source *IdentityContactSource) readRepositoryRecords(ctx context.Context, 
 		return nil, errRecordsMissing
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("github records status %d", status)
+		return nil, githubHTTPStatusError{operation: "records_read", status: status}
 	}
 	var response githubContentFile
 	if err := json.Unmarshal(body, &response); err != nil {

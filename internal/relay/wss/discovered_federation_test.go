@@ -18,11 +18,46 @@ import (
 type testBootstrapBeaconSource struct {
 	calls        int
 	observations []discovery.BootstrapBeaconCandidate
+	err          error
 }
 
 func (source *testBootstrapBeaconSource) LookupBootstrapBeacons(context.Context) ([]discovery.BootstrapBeaconCandidate, error) {
 	source.calls++
+	if source.err != nil {
+		return nil, source.err
+	}
 	return append([]discovery.BootstrapBeaconCandidate(nil), source.observations...), nil
+}
+
+func (source *testBootstrapBeaconSource) ID() string { return "github" }
+
+func TestDiscoveredPeerRouterRecordsSafeCarrierLookupFailure(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	localIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate local identity: %v", err)
+	}
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewDiscoveredPeerRouter(DiscoveredPeerRouterConfig{
+		Source:   &testBootstrapBeaconSource{err: discovery.NewBootstrapBeaconLookupFailure("github_rate_limited", context.DeadlineExceeded)},
+		Identity: localIdentity,
+		LocalHub: hub,
+		Now:      func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	localBeacon, candidates := router.discover(context.Background(), now)
+	if localBeacon != "" || len(candidates) != 0 {
+		t.Fatalf("unexpected discovery result: local=%q candidates=%+v", localBeacon, candidates)
+	}
+	observation := router.FederationCarrierSnapshot()
+	if observation == nil || observation.Carrier != "github" || observation.State != "unavailable" || observation.LastReason != "github_rate_limited" || observation.CandidateCount != 0 {
+		t.Fatalf("unexpected carrier observation: %+v", observation)
+	}
 }
 
 func TestDiscoveredPeerRouterDerivesEphemeralCandidatesFromSignedBeacons(t *testing.T) {

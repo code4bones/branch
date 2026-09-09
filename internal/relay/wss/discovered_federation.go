@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -47,8 +48,22 @@ type DiscoveredPeerRouter struct {
 	base     *StaticPeerRouter
 	now      func() time.Time
 
-	backoffMu sync.Mutex
-	backoff   map[string]time.Time
+	backoffMu       sync.Mutex
+	backoff         map[string]time.Time
+	discoveryMu     sync.Mutex
+	discoveryStatus FederationCarrierObservation
+}
+
+// FederationCarrierObservation is a short-lived, protected operator summary
+// of one carrier pass. It contains no candidate endpoint, identity, route,
+// session, or carrier response data.
+type FederationCarrierObservation struct {
+	Carrier        string
+	State          string
+	LastLookupAt   time.Time
+	LastReason     string
+	CandidateCount int
+	FreshUntil     time.Time
 }
 
 func NewDiscoveredPeerRouter(config DiscoveredPeerRouterConfig) (*DiscoveredPeerRouter, error) {
@@ -178,9 +193,24 @@ func (router *DiscoveredPeerRouter) FederationSnapshot() []FederationPeerObserva
 	return router.base.FederationSnapshot()
 }
 
+// FederationCarrierSnapshot returns the latest process-local carrier outcome
+// while it remains fresh. It is observational only and cannot influence
+// discovery or forwarding.
+func (router *DiscoveredPeerRouter) FederationCarrierSnapshot() *FederationCarrierObservation {
+	router.discoveryMu.Lock()
+	defer router.discoveryMu.Unlock()
+	if router.discoveryStatus.FreshUntil.IsZero() || !router.discoveryStatus.FreshUntil.After(router.now()) {
+		router.discoveryStatus = FederationCarrierObservation{}
+		return nil
+	}
+	observation := router.discoveryStatus
+	return &observation
+}
+
 func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time) (string, []federationCandidate) {
 	observations, err := router.source.LookupBootstrapBeacons(ctx)
 	if err != nil {
+		router.recordCarrierObservation("unavailable", carrierLookupFailureReason(err), 0, now)
 		return "", nil
 	}
 	localKey := router.identity.PublicKey()
@@ -247,7 +277,67 @@ func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time)
 	if len(candidates) > maxFederationPeers {
 		candidates = candidates[:maxFederationPeers]
 	}
+	carrierState, carrierReason := "ready", "candidates_ready"
+	if localBeacon == "" {
+		carrierState, carrierReason = "unavailable", "local_beacon_missing"
+	} else if len(candidates) == 0 {
+		carrierState, carrierReason = "unavailable", "no_valid_candidates"
+	}
+	router.recordCarrierObservation(carrierState, carrierReason, len(candidates), now)
 	return localBeacon, candidates
+}
+
+func (router *DiscoveredPeerRouter) recordCarrierObservation(state string, reason string, candidateCount int, now time.Time) {
+	carrier := "carrier"
+	if source, ok := router.source.(discovery.BootstrapBeaconSourceID); ok && validFederationCarrierID(source.ID()) {
+		carrier = source.ID()
+	}
+	router.discoveryMu.Lock()
+	defer router.discoveryMu.Unlock()
+	router.discoveryStatus = FederationCarrierObservation{
+		Carrier:        carrier,
+		State:          state,
+		LastLookupAt:   now.UTC(),
+		LastReason:     reason,
+		CandidateCount: candidateCount,
+		FreshUntil:     now.Add(router.base.localHub.PresenceTTL()).UTC(),
+	}
+}
+
+func carrierLookupFailureReason(err error) string {
+	if reason, ok := discovery.BootstrapBeaconLookupFailureReason(err); ok && validFederationDiagnosticReason(reason) {
+		return reason
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "carrier_timeout"
+	}
+	return "carrier_lookup_failed"
+}
+
+func validFederationCarrierID(value string) bool {
+	if len(value) == 0 || len(value) > 32 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validFederationDiagnosticReason(value string) bool {
+	if len(value) == 0 || len(value) > 96 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (router *DiscoveredPeerRouter) backoffActive(identityKey string, now time.Time) bool {

@@ -103,6 +103,26 @@ func TestRelayMonitorRegistryRejectsUnboundedReports(t *testing.T) {
 	if err != ErrRelayMonitorInvalidReport {
 		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
 	}
+
+	report = validRelayMonitorReport()
+	report.FederationCarrier = &RelayMonitorFederationCarrier{
+		Carrier:        "github",
+		State:          "ready",
+		LastLookupAt:   timePtr(time.Now()),
+		LastReason:     "candidates_ready",
+		CandidateCount: 2,
+		FreshUntil:     timePtr(time.Now().Add(time.Minute)),
+	}
+	if err = registry.Accept(report, time.Now()); err != nil {
+		t.Fatalf("accept valid federation carrier: %v", err)
+	}
+
+	report = validRelayMonitorReport()
+	report.FederationCarrier = &RelayMonitorFederationCarrier{Carrier: "github", State: "ready"}
+	err = registry.Accept(report, time.Now())
+	if err != ErrRelayMonitorInvalidReport {
+		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
+	}
 }
 
 func TestRelayMonitorHTTPIngestRequiresDedicatedToken(t *testing.T) {
@@ -232,4 +252,8 @@ func encodeRelayMonitorReport(t *testing.T, report RelayMonitorReport) []byte {
 		t.Fatalf("encode report: %v", err)
 	}
 	return body
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
 }

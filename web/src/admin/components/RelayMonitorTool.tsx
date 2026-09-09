@@ -301,11 +301,17 @@ function counterText(observation: RelayMonitorObservation): string {
 
 function federationText(observation: RelayMonitorObservation | null): ReactNode {
   const links = observation?.federation ?? [];
-  if (links.length === 0) {
+  const carrier = observation?.federation_carrier;
+  if (links.length === 0 && carrier === undefined) {
     return "-";
   }
   return (
     <Space wrap size={[4, 4]}>
+      {carrier === undefined ? null : (
+        <Tag color={carrier.state === "ready" ? "cyan" : "volcano"}>
+          {carrier.carrier} {carrier.state}{carrier.last_reason === undefined ? "" : ` / ${carrier.last_reason}`}{` / candidates ${String(carrier.candidate_count)}`}
+        </Tag>
+      )}
       {links.map((link) => (
         <Tag key={link.peer_endpoint} color={federationColor(link.state)}>
           {federationShortEndpoint(link.peer_endpoint)} {link.state}{link.last_reason === undefined ? "" : ` / ${link.last_reason}`}
@@ -316,7 +322,7 @@ function federationText(observation: RelayMonitorObservation | null): ReactNode 
 }
 
 function federationSearchText(observation: RelayMonitorObservation | null): string {
-  return (observation?.federation ?? [])
+  const links = (observation?.federation ?? [])
     .map((link) => [
       link.peer_relay_id ?? "",
       link.peer_endpoint,
@@ -324,6 +330,8 @@ function federationSearchText(observation: RelayMonitorObservation | null): stri
       link.last_reason ?? ""
     ].join(" "))
     .join(" ");
+  const carrier = observation?.federation_carrier;
+  return [links, carrier?.carrier ?? "", carrier?.state ?? "", carrier?.last_reason ?? ""].join(" ");
 }
 
 function federationRank(observation: RelayMonitorObservation | null): number {
@@ -332,6 +340,9 @@ function federationRank(observation: RelayMonitorObservation | null): number {
     return 2;
   }
   if (links.some((link) => link.state === "unreachable")) {
+    return 1;
+  }
+  if (observation?.federation_carrier?.state === "unavailable") {
     return 1;
   }
   return 0;

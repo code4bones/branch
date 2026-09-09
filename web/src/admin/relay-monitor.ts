@@ -23,6 +23,7 @@ export interface RelayMonitorObservation {
   readonly snapshot: RelayMonitorSnapshot;
   readonly bootstrap_beacon?: RelayMonitorBootstrapBeacon;
   readonly federation?: readonly RelayMonitorFederationLink[];
+  readonly federation_carrier?: RelayMonitorFederationCarrier;
 }
 
 export interface RelayMonitorBootstrapBeacon {
@@ -39,6 +40,15 @@ export interface RelayMonitorFederationLink {
   readonly lookup_count: number;
   readonly bridge_count: number;
   readonly fresh_until?: string;
+}
+
+export interface RelayMonitorFederationCarrier {
+  readonly carrier: string;
+  readonly state: "ready" | "unavailable";
+  readonly last_lookup_at: string;
+  readonly last_reason?: string;
+  readonly candidate_count: number;
+  readonly fresh_until: string;
 }
 
 export interface FetchRelayMonitorOptions {
@@ -100,7 +110,8 @@ function isRelayMonitorObservation(value: unknown): value is RelayMonitorObserva
     typeof value["stale"] === "boolean" &&
     isRelayMonitorSnapshot(value["snapshot"]) &&
     (value["bootstrap_beacon"] === undefined || isRelayMonitorBootstrapBeacon(value["bootstrap_beacon"])) &&
-    (value["federation"] === undefined || isRelayMonitorFederationArray(value["federation"]));
+    (value["federation"] === undefined || isRelayMonitorFederationArray(value["federation"])) &&
+    (value["federation_carrier"] === undefined || isRelayMonitorFederationCarrier(value["federation_carrier"]));
 }
 
 function isRelayMonitorBootstrapBeacon(value: unknown): value is RelayMonitorBootstrapBeacon {
@@ -128,6 +139,17 @@ function isRelayMonitorFederationLink(value: unknown): value is RelayMonitorFede
     isSafeCounter(value["lookup_count"]) &&
     isSafeCounter(value["bridge_count"]) &&
     (value["fresh_until"] === undefined || isISOTime(value["fresh_until"]));
+}
+
+function isRelayMonitorFederationCarrier(value: unknown): value is RelayMonitorFederationCarrier {
+  return isRecord(value) &&
+    isSafeText(value["carrier"], 1, 96) &&
+    (value["state"] === "ready" || value["state"] === "unavailable") &&
+    isISOTime(value["last_lookup_at"]) &&
+    (value["last_reason"] === undefined || isSafeText(value["last_reason"], 1, 96)) &&
+    isSafeCounter(value["candidate_count"]) &&
+    Number(value["candidate_count"]) <= 16 &&
+    isISOTime(value["fresh_until"]);
 }
 
 function isFederationState(value: unknown): value is RelayMonitorFederationLink["state"] {

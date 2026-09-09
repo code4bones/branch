@@ -46,25 +46,27 @@ type RelayMonitorConfig struct {
 
 // RelayMonitorReport is the bounded status envelope pushed by one relay node.
 type RelayMonitorReport struct {
-	RelayID         string                       `json:"relay_id"`
-	PublicEndpoint  string                       `json:"public_endpoint"`
-	ReportedAt      time.Time                    `json:"reported_at"`
-	Snapshot        StatusSnapshot               `json:"snapshot"`
-	BootstrapBeacon *RelayMonitorBootstrapBeacon `json:"bootstrap_beacon,omitempty"`
-	Federation      []RelayMonitorFederationLink `json:"federation,omitempty"`
+	RelayID           string                         `json:"relay_id"`
+	PublicEndpoint    string                         `json:"public_endpoint"`
+	ReportedAt        time.Time                      `json:"reported_at"`
+	Snapshot          StatusSnapshot                 `json:"snapshot"`
+	BootstrapBeacon   *RelayMonitorBootstrapBeacon   `json:"bootstrap_beacon,omitempty"`
+	Federation        []RelayMonitorFederationLink   `json:"federation,omitempty"`
+	FederationCarrier *RelayMonitorFederationCarrier `json:"federation_carrier,omitempty"`
 }
 
 // RelayMonitorObservation is the MASTER-side operator view of one relay report.
 type RelayMonitorObservation struct {
-	RelayID         string                       `json:"relay_id"`
-	PublicEndpoint  string                       `json:"public_endpoint"`
-	ReportedAt      time.Time                    `json:"reported_at"`
-	LastSeenAt      time.Time                    `json:"last_seen_at"`
-	ExpiresAt       time.Time                    `json:"expires_at"`
-	Stale           bool                         `json:"stale"`
-	Snapshot        StatusSnapshot               `json:"snapshot"`
-	BootstrapBeacon *RelayMonitorBootstrapBeacon `json:"bootstrap_beacon,omitempty"`
-	Federation      []RelayMonitorFederationLink `json:"federation,omitempty"`
+	RelayID           string                         `json:"relay_id"`
+	PublicEndpoint    string                         `json:"public_endpoint"`
+	ReportedAt        time.Time                      `json:"reported_at"`
+	LastSeenAt        time.Time                      `json:"last_seen_at"`
+	ExpiresAt         time.Time                      `json:"expires_at"`
+	Stale             bool                           `json:"stale"`
+	Snapshot          StatusSnapshot                 `json:"snapshot"`
+	BootstrapBeacon   *RelayMonitorBootstrapBeacon   `json:"bootstrap_beacon,omitempty"`
+	Federation        []RelayMonitorFederationLink   `json:"federation,omitempty"`
+	FederationCarrier *RelayMonitorFederationCarrier `json:"federation_carrier,omitempty"`
 }
 
 // RelayMonitorBootstrapBeacon is a public, relay-owned signed carrier record
@@ -85,6 +87,18 @@ type RelayMonitorFederationLink struct {
 	LookupCount  uint64     `json:"lookup_count"`
 	BridgeCount  int        `json:"bridge_count"`
 	FreshUntil   *time.Time `json:"fresh_until,omitempty"`
+}
+
+// RelayMonitorFederationCarrier is a bounded, process-local summary of the
+// most recent carrier lookup. It intentionally excludes carrier responses,
+// candidate URLs, relay identities, and user data.
+type RelayMonitorFederationCarrier struct {
+	Carrier        string     `json:"carrier"`
+	State          string     `json:"state"`
+	LastLookupAt   *time.Time `json:"last_lookup_at,omitempty"`
+	LastReason     string     `json:"last_reason,omitempty"`
+	CandidateCount int        `json:"candidate_count"`
+	FreshUntil     *time.Time `json:"fresh_until,omitempty"`
 }
 
 // RelayMonitorRegistry stores recent relay observations in memory only. A
@@ -135,15 +149,16 @@ func (registry *RelayMonitorRegistry) Accept(report RelayMonitorReport, now time
 		report.ReportedAt = now.UTC()
 	}
 	registry.entries[report.RelayID] = RelayMonitorObservation{
-		RelayID:         report.RelayID,
-		PublicEndpoint:  report.PublicEndpoint,
-		ReportedAt:      report.ReportedAt.UTC(),
-		LastSeenAt:      now.UTC(),
-		ExpiresAt:       now.Add(registry.ttl).UTC(),
-		Stale:           false,
-		Snapshot:        report.Snapshot,
-		BootstrapBeacon: cloneRelayMonitorBootstrapBeacon(report.BootstrapBeacon),
-		Federation:      cloneRelayMonitorFederationLinks(report.Federation),
+		RelayID:           report.RelayID,
+		PublicEndpoint:    report.PublicEndpoint,
+		ReportedAt:        report.ReportedAt.UTC(),
+		LastSeenAt:        now.UTC(),
+		ExpiresAt:         now.Add(registry.ttl).UTC(),
+		Stale:             false,
+		Snapshot:          report.Snapshot,
+		BootstrapBeacon:   cloneRelayMonitorBootstrapBeacon(report.BootstrapBeacon),
+		Federation:        cloneRelayMonitorFederationLinks(report.Federation),
+		FederationCarrier: cloneRelayMonitorFederationCarrier(report.FederationCarrier),
 	}
 	return nil
 }
@@ -196,6 +211,9 @@ func validateRelayMonitorReport(report RelayMonitorReport) error {
 		return ErrRelayMonitorInvalidReport
 	}
 	if !validRelayMonitorFederationLinks(report.Federation) {
+		return ErrRelayMonitorInvalidReport
+	}
+	if report.FederationCarrier != nil && !validRelayMonitorFederationCarrier(*report.FederationCarrier) {
 		return ErrRelayMonitorInvalidReport
 	}
 	for _, counter := range []int{
@@ -316,6 +334,40 @@ func cloneRelayMonitorFederationLinks(links []RelayMonitorFederationLink) []Rela
 		})
 	}
 	return cloned
+}
+
+func validRelayMonitorFederationCarrier(carrier RelayMonitorFederationCarrier) bool {
+	if !validRelayMonitorText(carrier.Carrier, 1, maxRelayMonitorItemLength) || !validRelayMonitorFederationCarrierState(carrier.State) {
+		return false
+	}
+	if carrier.LastReason != "" && !validRelayMonitorReason(carrier.LastReason) {
+		return false
+	}
+	if carrier.CandidateCount < 0 || carrier.CandidateCount > maxRelayMonitorItems {
+		return false
+	}
+	if carrier.LastLookupAt == nil || carrier.LastLookupAt.IsZero() || carrier.FreshUntil == nil || carrier.FreshUntil.IsZero() {
+		return false
+	}
+	return carrier.FreshUntil.After(*carrier.LastLookupAt)
+}
+
+func validRelayMonitorFederationCarrierState(value string) bool {
+	return value == "ready" || value == "unavailable"
+}
+
+func cloneRelayMonitorFederationCarrier(carrier *RelayMonitorFederationCarrier) *RelayMonitorFederationCarrier {
+	if carrier == nil {
+		return nil
+	}
+	return &RelayMonitorFederationCarrier{
+		Carrier:        carrier.Carrier,
+		State:          carrier.State,
+		LastLookupAt:   cloneTimePtr(carrier.LastLookupAt),
+		LastReason:     carrier.LastReason,
+		CandidateCount: carrier.CandidateCount,
+		FreshUntil:     cloneTimePtr(carrier.FreshUntil),
+	}
 }
 
 func cloneTimePtr(value *time.Time) *time.Time {

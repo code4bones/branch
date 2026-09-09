@@ -91,6 +91,9 @@ func New(config Config) (*App, error) {
 	var federationMonitor interface {
 		FederationSnapshot() []wss.FederationPeerObservation
 	} = peerRouter
+	var federationCarrierMonitor interface {
+		FederationCarrierSnapshot() *wss.FederationCarrierObservation
+	}
 	if config.GitHubFederationDiscovery {
 		githubSource, sourceErr := githubcarrier.NewIdentityContactSource(githubcarrier.IdentityContactSourceConfig{})
 		if sourceErr != nil {
@@ -110,6 +113,7 @@ func New(config Config) (*App, error) {
 		}
 		forwardingPeerRouter = discoveredRouter
 		federationMonitor = discoveredRouter
+		federationCarrierMonitor = discoveredRouter
 		identitySources = []discovery.IdentityContactLookupSource{discoveredRouter}
 	}
 	if config.GitHubIdentityLookup {
@@ -167,7 +171,7 @@ func New(config Config) (*App, error) {
 			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
 		})),
 	)
-	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor})
+	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor, carrierRouter: federationCarrierMonitor})
 	if err != nil {
 		return nil, err
 	}

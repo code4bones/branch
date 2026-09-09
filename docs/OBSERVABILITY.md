@@ -339,7 +339,11 @@ report timestamp, service name and version, readiness, supported protocol
 versions, advertised aggregate capabilities, aggregate counters such as active
 sessions, routes, presence, and queue depth, and an optional public signed
 relay-owned `bootstrap.beacon` wrapper with its expiry for operator publication
-tooling. Reports must not include message bodies, files, private keys, raw key
+tooling. A report may additionally carry one short-lived bounded carrier lookup
+summary: a fixed carrier label, safe reason code, timestamp, freshness, and
+candidate count. This summary is operator-only and must not contain carrier
+response data, repository names, URLs, endpoint URLs, relay keys, or identity
+material. Reports must not include message bodies, files, private keys, raw key
 exports, capability tokens, admin tokens, GitLab or GitHub tokens, cookies,
 mailbox state, repository contents, IP addresses, peer identifiers, session
 identifiers, or durable route state.

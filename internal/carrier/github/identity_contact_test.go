@@ -134,6 +134,25 @@ func TestIdentityContactSourceReturnsBoundedBootstrapBeaconCandidates(t *testing
 	}
 }
 
+func TestIdentityContactSourceClassifiesBootstrapRateLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/search/repositories" {
+			t.Fatalf("unexpected path %q", request.URL.Path)
+		}
+		response.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("new source: %v", err)
+	}
+	_, err = source.LookupBootstrapBeacons(context.Background())
+	reason, ok := discovery.BootstrapBeaconLookupFailureReason(err)
+	if !ok || reason != "github_rate_limited" {
+		t.Fatalf("failure reason = %q, ok=%t, error=%v", reason, ok, err)
+	}
+}
+
 func TestIdentityContactSourceSkipsFailedRecordsReadWhenLaterRepositoryIsValid(t *testing.T) {
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	branchID, wrapper := testIdentityContact(t, now, now.Add(time.Hour))

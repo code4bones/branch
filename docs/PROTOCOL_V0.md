@@ -1975,7 +1975,10 @@ process-local bounded `peer_ref` rather than endpoint URL, relay public key,
 BranchID, route/session identifier, ciphertext, or global trace identifier.
 There are at most eight live observation entries; each is removed at expiry and
 on process restart. The `peer_ref` is not a protocol field, directory key, or
-stable identifier.
+stable identifier. A relay may also expose one short-lived carrier-pass outcome
+with a fixed carrier label, bounded safe reason code, and candidate count. It
+must not contain carrier response data, repository names, endpoint URLs, relay
+identity material, or user data, and cannot influence discovery or forwarding.
 `BRANCH_IDENTITY_GITHUB_ENABLED` is a separate false-by-default operator
 switch for the bounded public GitHub IdentityContact adapter. When enabled, a
 lookup performs at most one anonymous `topic:branchbootstrapv0` repository

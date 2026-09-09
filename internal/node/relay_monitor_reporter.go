@@ -40,6 +40,7 @@ type relayMonitorReporter struct {
 
 type relayMonitorFederationProvider interface {
 	FederationLinks() []admin.RelayMonitorFederationLink
+	FederationCarrier() *admin.RelayMonitorFederationCarrier
 }
 
 func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotProvider, bootstrapProvider admin.BootstrapBeaconProvider, federationProvider relayMonitorFederationProvider) (*relayMonitorReporter, error) {
@@ -97,12 +98,13 @@ func (reporter *relayMonitorReporter) reportOnce(ctx context.Context) {
 	defer cancel()
 
 	report := admin.RelayMonitorReport{
-		RelayID:         reporter.config.RelayID,
-		PublicEndpoint:  reporter.config.PublicEndpoint,
-		ReportedAt:      time.Now().UTC(),
-		Snapshot:        reporter.provider.Snapshot(),
-		BootstrapBeacon: reporter.bootstrapBeacon(),
-		Federation:      reporter.federationLinks(),
+		RelayID:           reporter.config.RelayID,
+		PublicEndpoint:    reporter.config.PublicEndpoint,
+		ReportedAt:        time.Now().UTC(),
+		Snapshot:          reporter.provider.Snapshot(),
+		BootstrapBeacon:   reporter.bootstrapBeacon(),
+		Federation:        reporter.federationLinks(),
+		FederationCarrier: reporter.federationCarrier(),
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
@@ -134,6 +136,13 @@ func (reporter *relayMonitorReporter) federationLinks() []admin.RelayMonitorFede
 		return nil
 	}
 	return reporter.federationProvider.FederationLinks()
+}
+
+func (reporter *relayMonitorReporter) federationCarrier() *admin.RelayMonitorFederationCarrier {
+	if reporter.federationProvider == nil {
+		return nil
+	}
+	return reporter.federationProvider.FederationCarrier()
 }
 
 func (reporter *relayMonitorReporter) bootstrapBeacon() *admin.RelayMonitorBootstrapBeacon {
