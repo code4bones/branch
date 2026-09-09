@@ -117,53 +117,6 @@ body {
   min-width: 88px;
 }
 
-.admin-workspace-tabs {
-  min-width: 0;
-}
-
-.admin-workspace-tabs .ant-tabs-nav {
-  margin-bottom: 16px;
-}
-
-.admin-workspace-tabs .ant-tabs-content-holder,
-.admin-workspace-tabs .ant-tabs-tabpane {
-  min-width: 0;
-}
-
-.admin-tab-mark {
-  color: var(--admin-muted);
-  font-size: 1.25rem;
-}
-
-.admin-tabs,
-.file-tabs,
-.ribbon-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.admin-tabs {
-  margin-bottom: 16px;
-}
-
-.tab,
-.file-tab {
-  min-width: 0;
-  max-width: 100%;
-  color: var(--admin-muted);
-  background: #10151b;
-  border-color: var(--admin-line);
-  overflow-wrap: anywhere;
-}
-
-.tab.is-active,
-.file-tab.is-active {
-  color: #06111d;
-  background: var(--admin-cyan);
-  border-color: #2c9389;
-}
-
 .tool-grid {
   display: none;
   grid-template-columns: minmax(320px, 0.84fr) minmax(360px, 1.16fr);
@@ -179,18 +132,6 @@ body {
   min-width: 0;
   align-content: start;
   gap: 12px;
-}
-
-.ribbon-tabs .tab {
-  flex: 1 1 132px;
-}
-
-.github-tabs {
-  margin-bottom: 12px;
-}
-
-.github-tabs .tab {
-  flex: 1 1 160px;
 }
 
 .workflow-segmented {
@@ -220,7 +161,6 @@ body {
   border: 1px solid var(--admin-line);
   border-radius: 8px;
   background: rgb(18 23 29 / 92%);
-  box-shadow: 0 16px 44px rgb(0 0 0 / 26%);
 }
 
 .control-panel,
@@ -261,26 +201,6 @@ body {
 
 .ant-upload-wrapper .ant-upload-list-item-name {
   color: var(--admin-muted);
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.checkbox-row input {
-  width: auto;
-}
-
-.button-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.button-row button {
-  flex: 0 1 auto;
 }
 
 .decode-controls {
@@ -361,37 +281,8 @@ body {
   background: #0b0f14;
 }
 
-.lab-table-wrap {
-  max-width: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--admin-line);
-  border-radius: 8px;
-}
-
-.lab-results {
-  width: 100%;
-  min-width: 920px;
-  border-collapse: collapse;
-  background: #0b0f14;
-}
-
-.lab-results th,
-.lab-results td {
-  padding: 10px;
-  border-bottom: 1px solid var(--admin-line);
-  text-align: left;
+.lab-results .ant-table-cell {
   vertical-align: top;
-  overflow-wrap: anywhere;
-  font-size: 0.78rem;
-}
-
-.lab-results th {
-  color: var(--admin-muted);
-  font-weight: 700;
-}
-
-.lab-results tr:last-child td {
-  border-bottom: 0;
 }
 
 .github-discovery-panel,
@@ -422,6 +313,10 @@ body {
 
 .github-discovery-controls {
   grid-template-columns: minmax(520px, 1fr) minmax(132px, 0.18fr) minmax(112px, 0.15fr) minmax(160px, 0.22fr) auto;
+}
+
+.gitlab-discovery-controls {
+  grid-template-columns: minmax(520px, 1fr) minmax(132px, 0.18fr) minmax(112px, 0.15fr) auto;
 }
 
 .github-discovery-query-field {
@@ -726,29 +621,22 @@ body {
   overflow-x: auto;
 }
 
-.github-discovery-results table,
-.relay-monitor-results table {
-  width: 100%;
-  min-width: 1120px;
-  border-collapse: collapse;
-  background: #0b0f14;
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
 }
 
-.github-discovery-results th,
-.github-discovery-results td,
-.relay-monitor-results th,
-.relay-monitor-results td {
-  padding: 10px;
-  border-bottom: 1px solid var(--admin-line);
-  text-align: left;
-  vertical-align: top;
-  overflow-wrap: anywhere;
-  font-size: 0.82rem;
+.table-toolbar .ant-input-affix-wrapper,
+.table-toolbar .ant-input-group-wrapper {
+  width: min(100%, 420px);
 }
 
-.github-discovery-results th,
-.relay-monitor-results th {
-  color: var(--admin-muted);
+.table-toolbar > .table-muted {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .github-discovery-results a {
@@ -790,14 +678,6 @@ body {
 .table-muted {
   color: var(--admin-muted);
   font-size: 0.78rem;
-}
-
-.relay-monitor-results table {
-  min-width: 980px;
-}
-
-.relay-monitor-results tr.is-missing td {
-  color: var(--admin-muted);
 }
 
 .record-validation {
@@ -891,6 +771,7 @@ body {
 
 @media (max-width: 1200px) {
   .github-discovery-controls,
+  .gitlab-discovery-controls,
   .client-discovery-controls,
   .relay-monitor-controls {
     grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
@@ -955,6 +836,7 @@ body {
   }
 
   .github-discovery-controls,
+  .gitlab-discovery-controls,
   .client-discovery-controls,
   .client-identity-lookup-controls,
   .client-route-panel,
@@ -977,7 +859,14 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .lab-results {
-    min-width: 760px;
+  .table-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
+
+  .table-toolbar .ant-input-affix-wrapper,
+  .table-toolbar .ant-input-group-wrapper {
+    width: 100%;
+  }
+
 }

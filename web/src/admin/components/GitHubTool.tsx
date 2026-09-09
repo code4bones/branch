@@ -8,7 +8,7 @@ import {
   SyncOutlined
 } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, InputNumber, Segmented, Select, Space, Table, Tag, type TableColumnsType } from "antd";
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
 import { defaultBranchWrapper, githubBundleFilename } from "../defaults.js";
@@ -29,6 +29,7 @@ import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discover
 
 export function GitHubTool(): React.JSX.Element {
   const discoveryAbortRef = useRef<AbortController | null>(null);
+  const [resultSearch, setResultSearch] = useState("");
   const githubTab = useAdminStore((state) => state.githubTab);
   const github = useAdminStore((state) => state.github);
   const setGitHubTab = useAdminStore((state) => state.setGitHubTab);
@@ -52,6 +53,10 @@ export function GitHubTool(): React.JSX.Element {
   const setGitHubDiscoveryStatus = useAdminStore((state) => state.setGitHubDiscoveryStatus);
   const selectedFile = github.files[github.selectedFile] ?? null;
   const githubTopics = githubRepositoryTopics.join(", ");
+  const visibleDiscoveryResults = useMemo(
+    () => filterDiscoveryResults(github.discoveryResults, resultSearch),
+    [github.discoveryResults, resultSearch]
+  );
 
   async function onGenerate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -376,9 +381,19 @@ export function GitHubTool(): React.JSX.Element {
           </form>
 
           <section className="panel output-panel github-discovery-results" aria-label="GitHub discovery results">
+            <div className="table-toolbar">
+              <Input.Search
+                allowClear
+                aria-label="Filter GitHub discovery results"
+                placeholder="Filter repository, endpoint, validation"
+                value={resultSearch}
+                onChange={(event) => { setResultSearch(event.currentTarget.value); }}
+              />
+              <span className="table-muted">{String(visibleDiscoveryResults.length)} of {String(github.discoveryResults.length)}</span>
+            </div>
             <Table
               columns={githubDiscoveryColumns}
-              dataSource={[...github.discoveryResults]}
+              dataSource={[...visibleDiscoveryResults]}
               pagination={{ pageSize: 8, showSizeChanger: true }}
               rowKey="recordsUrl"
               scroll={{ x: 1120 }}
@@ -394,6 +409,29 @@ export function GitHubTool(): React.JSX.Element {
       )}
     </section>
   );
+}
+
+function filterDiscoveryResults(
+  results: readonly GitHubDiscoveryResult[],
+  query: string
+): readonly GitHubDiscoveryResult[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return results;
+  }
+  return results.filter((result) => [
+    result.repository,
+    result.defaultBranch,
+    result.reason ?? "",
+    result.recordsUrl,
+    ...result.records.flatMap((record) => [
+      record.reason,
+      record.validation,
+      record.wrapperPreview,
+      record.relayEndpoint ?? "",
+      record.profileMultihash ?? ""
+    ])
+  ].some((value) => value.toLowerCase().includes(needle)));
 }
 
 const githubDiscoveryColumns: TableColumnsType<GitHubDiscoveryResult> = [

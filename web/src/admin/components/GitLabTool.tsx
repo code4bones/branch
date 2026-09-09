@@ -8,7 +8,7 @@ import {
   SyncOutlined
 } from "@ant-design/icons";
 import { Button, Input, InputNumber, Segmented, Select, Space, Table, Tag, type TableColumnsType } from "antd";
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
 import { defaultBranchWrapper, gitLabBundleFilename } from "../defaults.js";
@@ -28,6 +28,7 @@ import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discover
 
 export function GitLabTool(): React.JSX.Element {
   const discoveryAbortRef = useRef<AbortController | null>(null);
+  const [resultSearch, setResultSearch] = useState("");
   const gitLabTab = useAdminStore((state) => state.gitLabTab);
   const gitlab = useAdminStore((state) => state.gitlab);
   const setGitLabTab = useAdminStore((state) => state.setGitLabTab);
@@ -49,6 +50,10 @@ export function GitLabTool(): React.JSX.Element {
   const setGitLabDiscoveryStatus = useAdminStore((state) => state.setGitLabDiscoveryStatus);
   const selectedFile = gitlab.files[gitlab.selectedFile] ?? null;
   const gitLabTopics = gitLabProjectTopics.join(", ");
+  const visibleDiscoveryResults = useMemo(
+    () => filterDiscoveryResults(gitlab.discoveryResults, resultSearch),
+    [gitlab.discoveryResults, resultSearch]
+  );
 
   async function onGenerate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -312,53 +317,67 @@ export function GitLabTool(): React.JSX.Element {
           </section>
         </div>
       ) : (
-        <div className="tool-grid is-active" id="gitlab-panel-check" role="tabpanel" aria-labelledby="gitlab-tab-check">
-          <form className="panel control-panel github-discovery-panel" id="gitlab-discovery-form" onSubmit={(event) => { void onDiscover(event); }}>
-            <label htmlFor="gitlab-discovery-query">Discovery query</label>
-            <Input.TextArea
-              id="gitlab-discovery-query"
-              name="gitlab-discovery-query"
-              spellCheck={false}
-              rows={3}
-              value={gitlab.discoveryQuery}
-              onChange={(event) => { setGitLabDiscoveryQuery(event.currentTarget.value); }}
-            />
+        <section className="github-discovery-layout" id="gitlab-panel-check" role="tabpanel" aria-labelledby="gitlab-tab-check">
+          <form className="panel control-panel github-discovery-summary" id="gitlab-discovery-form" onSubmit={(event) => { void onDiscover(event); }}>
+            <div className="github-discovery-controls gitlab-discovery-controls">
+              <div className="github-discovery-query-field">
+                <label htmlFor="gitlab-discovery-query">Discovery query</label>
+                <Input.TextArea
+                  id="gitlab-discovery-query"
+                  name="gitlab-discovery-query"
+                  spellCheck={false}
+                  rows={2}
+                  value={gitlab.discoveryQuery}
+                  onChange={(event) => { setGitLabDiscoveryQuery(event.currentTarget.value); }}
+                />
+              </div>
 
-            <div className="control-row">
-              <label htmlFor="gitlab-discovery-per-page">Page size</label>
-              <InputNumber
-                id="gitlab-discovery-per-page"
-                min="1"
-                max="10"
-                stringMode
-                value={gitlab.discoveryPerPage}
-                onChange={(value) => { setGitLabDiscoveryPerPage(value ?? ""); }}
-              />
+              <div className="control-row">
+                <label htmlFor="gitlab-discovery-per-page">Page size</label>
+                <InputNumber
+                  id="gitlab-discovery-per-page"
+                  min="1"
+                  max="10"
+                  stringMode
+                  value={gitlab.discoveryPerPage}
+                  onChange={(value) => { setGitLabDiscoveryPerPage(value ?? ""); }}
+                />
+              </div>
+
+              <div className="control-row">
+                <label htmlFor="gitlab-discovery-page">Page</label>
+                <InputNumber
+                  id="gitlab-discovery-page"
+                  min="1"
+                  max="10"
+                  stringMode
+                  value={gitlab.discoveryPage}
+                  onChange={(value) => { setGitLabDiscoveryPage(value ?? ""); }}
+                />
+              </div>
+
+              <Space className="github-discovery-actions" wrap>
+                <Button htmlType="submit" icon={<SearchOutlined />} type="primary" disabled={gitlab.discoveryRunning}>Discover</Button>
+                <Button icon={<StopOutlined />} disabled={!gitlab.discoveryRunning} onClick={() => { discoveryAbortRef.current?.abort(); }}>Cancel</Button>
+              </Space>
+              <p className={gitlab.discoveryStatusClass}>{gitlab.discoveryStatus}</p>
             </div>
-
-            <div className="control-row">
-              <label htmlFor="gitlab-discovery-page">Page</label>
-              <InputNumber
-                id="gitlab-discovery-page"
-                min="1"
-                max="10"
-                stringMode
-                value={gitlab.discoveryPage}
-                onChange={(value) => { setGitLabDiscoveryPage(value ?? ""); }}
-              />
-            </div>
-
-            <Space wrap>
-              <Button htmlType="submit" icon={<SearchOutlined />} type="primary" disabled={gitlab.discoveryRunning}>Discover</Button>
-              <Button icon={<StopOutlined />} disabled={!gitlab.discoveryRunning} onClick={() => { discoveryAbortRef.current?.abort(); }}>Cancel</Button>
-            </Space>
-            <p className={gitlab.discoveryStatusClass}>{gitlab.discoveryStatus}</p>
           </form>
 
           <section className="panel output-panel github-discovery-results" aria-label="GitLab discovery results">
+            <div className="table-toolbar">
+              <Input.Search
+                allowClear
+                aria-label="Filter GitLab discovery results"
+                placeholder="Filter project, endpoint, validation"
+                value={resultSearch}
+                onChange={(event) => { setResultSearch(event.currentTarget.value); }}
+              />
+              <span className="table-muted">{String(visibleDiscoveryResults.length)} of {String(gitlab.discoveryResults.length)}</span>
+            </div>
             <Table
               columns={gitLabDiscoveryColumns}
-              dataSource={[...gitlab.discoveryResults]}
+              dataSource={[...visibleDiscoveryResults]}
               pagination={{ pageSize: 8, showSizeChanger: true }}
               rowKey="recordsUrl"
               scroll={{ x: 1120 }}
@@ -370,10 +389,33 @@ export function GitLabTool(): React.JSX.Element {
               ))}
             </ul>
           </section>
-        </div>
+        </section>
       )}
     </section>
   );
+}
+
+function filterDiscoveryResults(
+  results: readonly GitLabDiscoveryResult[],
+  query: string
+): readonly GitLabDiscoveryResult[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return results;
+  }
+  return results.filter((result) => [
+    result.repository,
+    result.defaultBranch,
+    result.reason ?? "",
+    result.recordsUrl,
+    ...result.records.flatMap((record) => [
+      record.reason,
+      record.validation,
+      record.wrapperPreview,
+      record.relayEndpoint ?? "",
+      record.profileMultihash ?? ""
+    ])
+  ].some((value) => value.toLowerCase().includes(needle)));
 }
 
 const gitLabDiscoveryColumns: TableColumnsType<GitLabDiscoveryResult> = [

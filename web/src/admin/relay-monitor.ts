@@ -148,7 +148,7 @@ function isRelayMonitorFederationCarrier(value: unknown): value is RelayMonitorF
     isISOTime(value["last_lookup_at"]) &&
     (value["last_reason"] === undefined || isSafeText(value["last_reason"], 1, 96)) &&
     isSafeCounter(value["candidate_count"]) &&
-    Number(value["candidate_count"]) <= 16 &&
+    value["candidate_count"] <= 16 &&
     isISOTime(value["fresh_until"]);
 }
 

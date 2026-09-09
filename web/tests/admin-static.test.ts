@@ -183,6 +183,8 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(githubTool, /acceptedCount/);
   assert.match(githubTool, /relayEndpoint/);
   assert.match(githubTool, /formatUnixSeconds/);
+  assert.match(githubTool, /Filter GitHub discovery results/);
+  assert.match(githubTool, /filterDiscoveryResults/);
   assert.match(githubTool, /className="tool-grid is-active"/);
   assert.match(githubTool, /downloadBytes\(makeGitHubArchive/);
   assert.doesNotMatch(githubTool, /<button|<input|<select|<textarea/);
@@ -203,6 +205,9 @@ void test("admin surface is scaffolded by React TypeScript source", async () => 
   assert.match(gitLabTool, /createGitLabSearchCarrier/);
   assert.match(gitLabTool, /gitLabDiscoveryConstraints/);
   assert.match(gitLabTool, /downloadBytes\(makeGitLabArchive/);
+  assert.match(gitLabTool, /github-discovery-layout/);
+  assert.match(gitLabTool, /Filter GitLab discovery results/);
+  assert.match(gitLabTool, /filterDiscoveryResults/);
   assert.doesNotMatch(gitLabTool, /<button|<input|<select|<textarea/);
   assert.match(relayMonitorTool, /className="relay-monitor-layout"/);
   assert.match(relayMonitorTool, /className="relay-monitor-controls"/);
@@ -428,6 +433,8 @@ void test("admin css remains dark and bounded", async () => {
   assert.match(source, /\.admin-header \{[\s\S]*min-height: 64px;/);
   assert.match(source, /\.admin-page-title \{[\s\S]*font-size: 1\.28rem;/);
   assert.match(source, /\.control-panel > label/);
+  assert.match(source, /\.table-toolbar/);
+  assert.doesNotMatch(source, /box-shadow: 0 16px 44px/);
   assert.match(source, /border-radius: 8px/);
   assert.match(source, /overflow-wrap: anywhere/);
   assert.doesNotMatch(source, /^label \{/m);
