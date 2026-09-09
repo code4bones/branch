@@ -1,5 +1,5 @@
 import { ApiOutlined, BranchesOutlined, PlayCircleOutlined, ReloadOutlined, SearchOutlined, StopOutlined, SyncOutlined } from "@ant-design/icons";
-import { Button, Input, Select, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
+import { Alert, Button, Input, Select, Space, Statistic, Table, Tag, type TableColumnsType } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { discoverClientBootstrapBeacons } from "@code4bones/branch-core/discovery/client.js";
@@ -483,6 +483,7 @@ export function ClientTool(): React.JSX.Element {
             </Button>
           </Space>
           <p className={client.discoveryStatusClass}>{client.discoveryStatus}</p>
+          {client.discoveryStatusClass === "status-bad" ? <Alert showIcon type="error" message="GitHub discovery failed" description={client.discoveryStatus} /> : null}
           <p className={federationSelfTestStatus.startsWith("passed ") ? "status-good" : federationSelfTestStatus === "not run" ? "table-muted" : "status-warn"}>{federationSelfTestStatus}</p>
           {federationSelfTestAttempts.length === 0 ? null : (
             <Space direction="vertical" size={2} className="table-muted">
