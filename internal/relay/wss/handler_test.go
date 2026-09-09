@@ -536,6 +536,7 @@ func TestHandlerRejectsClientRouteHintsBeforeFederationDial(t *testing.T) {
 		"ttl_seconds": 30,
 		"sent_at":     1_789_000_001,
 	})
+	waitForPresence(t, rightHub, 1)
 
 	leftHub, leftHandler := newTestHubAndHandlerWithRouteHintRouter(t)
 	leftServer := httptest.NewServer(leftHandler)
@@ -858,6 +859,24 @@ func waitForDetachedPeer(t *testing.T, hub *relay.Hub) {
 		select {
 		case <-deadline:
 			t.Fatalf("peer still attached: %+v", snapshot)
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitForPresence(t *testing.T, hub *relay.Hub, want int) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		snapshot := hub.Snapshot()
+		if snapshot.PresenceActive == want {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("presence count = %d, want %d; snapshot: %+v", snapshot.PresenceActive, want, snapshot)
 		case <-ticker.C:
 		}
 	}
