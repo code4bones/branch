@@ -691,17 +691,6 @@ func readBootstrapWrapperField(frame map[string]json.RawMessage, key string) err
 	return nil
 }
 
-func readBase64StringField(frame map[string]json.RawMessage, key string) error {
-	value, err := readStringField(frame, key)
-	if err != nil {
-		return err
-	}
-	if !validBase64URLString(value) {
-		return fmt.Errorf("%w: invalid %s", ErrInvalidRelayAttachmentFrame, key)
-	}
-	return nil
-}
-
 func readBase64StringFieldBounded(frame map[string]json.RawMessage, key string, maxBytes int) error {
 	raw, ok := frame[key]
 	if !ok {
