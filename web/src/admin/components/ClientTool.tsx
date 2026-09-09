@@ -464,6 +464,41 @@ export function ClientTool(): React.JSX.Element {
       render: (_, result) => <span className="mono-cell">{firstAcceptedValue(result.records, "profileMultihash") ?? "-"}</span>
     }
   ], []);
+  const federationAttemptColumns = useMemo<TableColumnsType<FederationSelfTestAttempt>>(() => [
+    {
+      title: "Num",
+      key: "number",
+      width: 72,
+      render: (_, __, index) => index + 1
+    },
+    {
+      title: "From",
+      dataIndex: "sourceEndpoint",
+      key: "sourceEndpoint",
+      sorter: (left, right) => left.sourceEndpoint.localeCompare(right.sourceEndpoint),
+      render: (value: string) => <span className="mono-cell">{value}</span>
+    },
+    {
+      title: "To",
+      dataIndex: "targetEndpoint",
+      key: "targetEndpoint",
+      sorter: (left, right) => left.targetEndpoint.localeCompare(right.targetEndpoint),
+      render: (value: string) => <span className="mono-cell">{value}</span>
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      width: 240,
+      sorter: (left, right) => left.status.localeCompare(right.status),
+      render: (value: FederationSelfTestAttempt["status"], attempt) => (
+        <Space direction="vertical" size={2}>
+          <Tag color={value === "ok" ? "green" : "red"}>{value}</Tag>
+          {attempt.reason === null ? null : <span className="table-muted">{attempt.reason}</span>}
+        </Space>
+      )
+    }
+  ], []);
 
   return (
     <section className="client-layout" data-panel="client" aria-label="Client discovery">
@@ -488,16 +523,18 @@ export function ClientTool(): React.JSX.Element {
           {client.discoveryStatusClass === "status-bad" ? <Alert showIcon type="error" message="GitHub discovery failed" description={client.discoveryStatus} /> : null}
           {client.discoveryStatusClass === "status-warn" && client.discoveryStatus.includes("failed") ? <Alert showIcon type="warning" message="GitHub discovery incomplete" description={client.discoveryStatus} /> : null}
           <p className={federationSelfTestStatus.startsWith("passed ") ? "status-good" : federationSelfTestStatus === "not run" ? "table-muted" : "status-warn"}>{federationSelfTestStatus}</p>
-          {federationSelfTestAttempts.length === 0 ? null : (
-            <Space direction="vertical" size={2} className="table-muted">
-              {federationSelfTestAttempts.map((attempt) => (
-                <span key={`${attempt.sourceEndpoint}-${attempt.targetEndpoint}`}>
-                  {attempt.sourceEndpoint} -&gt; {attempt.targetEndpoint}: {attempt.status}{attempt.reason === null ? "" : ` (${attempt.reason})`}
-                </span>
-              ))}
-            </Space>
-          )}
         </div>
+        {federationSelfTestAttempts.length === 0 ? null : (
+          <Table
+            className="federation-self-test-table"
+            columns={federationAttemptColumns}
+            dataSource={[...federationSelfTestAttempts]}
+            pagination={false}
+            rowKey={(attempt) => `${attempt.sourceEndpoint}-${attempt.targetEndpoint}`}
+            scroll={{ x: 960 }}
+            size="small"
+          />
+        )}
         <dl className="diagnostics client-diagnostics">
           <div>
             <Statistic title="Accepted" value={sumResults(client.discoveryResults, "acceptedCount")} />
