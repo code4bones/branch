@@ -454,7 +454,8 @@ export class EchoTestService {
       }),
       expectedCiphertextBytes: responseCiphertextBytes
     });
-    client.lookup(event.senderPeerId);
+    // RENDEZVOUS includes the local liveness lookup. Do not repeat the
+    // carrier pass for the transient reply route.
     client.rendezvous(event.senderPeerId);
     client.sendSealedEnvelope(sealed, { deliveryId: responseDeliveryId, originRouteId: responseOriginRouteId });
     this.emit({ type: "response_sent", recipientPeerId: event.senderPeerId, deliveryId: responseDeliveryId });

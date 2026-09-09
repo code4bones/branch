@@ -156,7 +156,9 @@ class EchoAttemptController {
       client.heartbeat();
       const recipientPeerId = options.contact?.peerId ?? identity.peerId;
       const recipientHpkePublicKey = options.contact?.hpkePublicKey ?? payloadKey.publicKey;
-      client.lookup(recipientPeerId);
+      // RENDEZVOUS performs the required local lookup and only then asks
+      // federation for a live peer on a miss. A separate LOOKUP duplicates
+      // the bounded carrier pass without creating a route.
       client.rendezvous(recipientPeerId);
 
       const deliveryId = randomToken(16);
