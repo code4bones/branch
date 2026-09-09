@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +81,15 @@ func TestNewLeavesGitHubIdentityCarrierDisabledByDefault(t *testing.T) {
 	result := app.identityLookup.Lookup(context.Background(), branchID)
 	if len(result.Trace) != 2 || result.Trace[0].Source != "local_cache" || result.Trace[1].Source != "relay_mesh" {
 		t.Fatalf("default identity lookup trace = %+v", result.Trace)
+	}
+}
+
+func TestRelayCapabilitiesExposeEnabledFederationDiscovery(t *testing.T) {
+	if capabilities := relayCapabilities(false); slices.Contains(capabilities, protocol.RelayFederationLiveRole) {
+		t.Fatalf("disabled federation advertised: %v", capabilities)
+	}
+	if capabilities := relayCapabilities(true); !slices.Contains(capabilities, protocol.RelayFederationLiveRole) {
+		t.Fatalf("enabled federation omitted: %v", capabilities)
 	}
 }
 

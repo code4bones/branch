@@ -6,7 +6,6 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -31,12 +30,14 @@ func TestIdentityContactSourceReturnsBoundedExactCandidates(t *testing.T) {
 				t.Fatalf("per page = %q", got)
 			}
 			_, _ = response.Write([]byte(`{"items":[{"full_name":"owner/repo","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":"repo"},{"full_name":"owner/fork","fork":true,"default_branch":"main","owner":{"login":"owner"},"name":"fork"}]}`))
-		case "/repos/owner/repo/contents/.branch/records.br0":
-			if got := request.URL.Query().Get("ref"); got != "main" {
-				t.Fatalf("record ref = %q", got)
+		case "/owner/repo/main/.branch/records.br0":
+			if request.URL.RawQuery != "" {
+				t.Fatalf("raw record query = %q", request.URL.RawQuery)
 			}
-			content := base64.StdEncoding.EncodeToString([]byte("# carrier comment\n" + wrapper + "\nBRANCH0.bad\n"))
-			_, _ = fmt.Fprintf(response, `{"type":"file","encoding":"base64","content":%q}`, content)
+			if got := request.Header.Get("accept"); got != "text/plain" {
+				t.Fatalf("raw record accept = %q", got)
+			}
+			_, _ = response.Write([]byte("# carrier comment\n" + wrapper + "\nBRANCH0.bad\n"))
 		default:
 			t.Fatalf("unexpected path %q", request.URL.Path)
 		}
@@ -45,6 +46,7 @@ func TestIdentityContactSourceReturnsBoundedExactCandidates(t *testing.T) {
 
 	source, err := NewIdentityContactSource(IdentityContactSourceConfig{
 		APIBaseURL:      server.URL,
+		RawBaseURL:      server.URL,
 		HTTPClient:      server.Client(),
 		MaxRepositories: 2,
 	})
@@ -78,6 +80,7 @@ func TestIdentityContactSourceLookupRejectsTimeout(t *testing.T) {
 	}
 	source, err := NewIdentityContactSource(IdentityContactSourceConfig{
 		APIBaseURL: server.URL,
+		RawBaseURL: server.URL,
 		HTTPClient: server.Client(),
 		Timeout:    10 * time.Millisecond,
 	})
@@ -113,15 +116,14 @@ func TestIdentityContactSourceReturnsBoundedBootstrapBeaconCandidates(t *testing
 		switch request.URL.Path {
 		case "/search/repositories":
 			_, _ = response.Write([]byte(`{"items":[{"full_name":"owner/repo","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":"repo"}]}`))
-		case "/repos/owner/repo/contents/.branch/records.br0":
-			content := base64.StdEncoding.EncodeToString([]byte(wrapper + "\nBRANCH0.poison\n"))
-			_, _ = fmt.Fprintf(response, `{"type":"file","encoding":"base64","content":%q}`, content)
+		case "/owner/repo/main/.branch/records.br0":
+			_, _ = response.Write([]byte(wrapper + "\nBRANCH0.poison\n"))
 		default:
 			t.Fatalf("unexpected path %q", request.URL.Path)
 		}
 	}))
 	defer server.Close()
-	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, HTTPClient: server.Client()})
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, RawBaseURL: server.URL, HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatalf("new source: %v", err)
 	}
@@ -142,7 +144,7 @@ func TestIdentityContactSourceClassifiesBootstrapRateLimit(t *testing.T) {
 		response.WriteHeader(http.StatusForbidden)
 	}))
 	defer server.Close()
-	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, HTTPClient: server.Client()})
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, RawBaseURL: server.URL, HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatalf("new source: %v", err)
 	}
@@ -160,11 +162,10 @@ func TestIdentityContactSourceSkipsFailedRecordsReadWhenLaterRepositoryIsValid(t
 		switch request.URL.Path {
 		case "/search/repositories":
 			_, _ = response.Write([]byte(`{"items":[{"full_name":"owner/bad","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":"bad"},{"full_name":"owner/good","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":"good"}]}`))
-		case "/repos/owner/bad/contents/.branch/records.br0":
-			_, _ = response.Write([]byte(`{"type":"file","encoding":"base64","content":"%%%"}`))
-		case "/repos/owner/good/contents/.branch/records.br0":
-			content := base64.StdEncoding.EncodeToString([]byte(wrapper + "\n"))
-			_, _ = fmt.Fprintf(response, `{"type":"file","encoding":"base64","content":%q}`, content)
+		case "/owner/bad/main/.branch/records.br0":
+			response.WriteHeader(http.StatusInternalServerError)
+		case "/owner/good/main/.branch/records.br0":
+			_, _ = response.Write([]byte(wrapper + "\n"))
 		default:
 			t.Fatalf("unexpected path %q", request.URL.Path)
 		}
@@ -173,6 +174,7 @@ func TestIdentityContactSourceSkipsFailedRecordsReadWhenLaterRepositoryIsValid(t
 
 	source, err := NewIdentityContactSource(IdentityContactSourceConfig{
 		APIBaseURL:      server.URL,
+		RawBaseURL:      server.URL,
 		HTTPClient:      server.Client(),
 		MaxRepositories: 2,
 	})
@@ -201,15 +203,15 @@ func TestIdentityContactSourceReturnsErrorWhenEveryRecordsReadFails(t *testing.T
 		switch request.URL.Path {
 		case "/search/repositories":
 			_, _ = response.Write([]byte(`{"items":[{"full_name":"owner/bad","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":"bad"}]}`))
-		case "/repos/owner/bad/contents/.branch/records.br0":
-			_, _ = response.Write([]byte(`{"type":"file","encoding":"base64","content":"%%%"}`))
+		case "/owner/bad/main/.branch/records.br0":
+			response.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path %q", request.URL.Path)
 		}
 	}))
 	defer server.Close()
 
-	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, HTTPClient: server.Client()})
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, RawBaseURL: server.URL, HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatalf("new source: %v", err)
 	}
@@ -225,15 +227,14 @@ func TestIdentityContactSourcePoisonedAndExpiredCandidatesNeverEnterCache(t *tes
 		switch request.URL.Path {
 		case "/search/repositories":
 			_, _ = response.Write([]byte(`{"items":[{"full_name":"owner/repo","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":"repo"}]}`))
-		case "/repos/owner/repo/contents/.branch/records.br0":
-			content := base64.StdEncoding.EncodeToString([]byte("BRANCH0.!\n" + expired + "\n"))
-			_, _ = fmt.Fprintf(response, `{"type":"file","encoding":"base64","content":%q}`, content)
+		case "/owner/repo/main/.branch/records.br0":
+			_, _ = response.Write([]byte("BRANCH0.!\n" + expired + "\n"))
 		default:
 			t.Fatalf("unexpected path %q", request.URL.Path)
 		}
 	}))
 	defer server.Close()
-	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, HTTPClient: server.Client()})
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, RawBaseURL: server.URL, HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatalf("new source: %v", err)
 	}
@@ -274,7 +275,7 @@ func TestIdentityContactSourceRejectsMalformedSearchResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("branch id: %v", err)
 	}
-	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, HTTPClient: server.Client()})
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, RawBaseURL: server.URL, HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatalf("new source: %v", err)
 	}

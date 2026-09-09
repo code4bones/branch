@@ -152,7 +152,7 @@ func New(config Config) (*App, error) {
 		ServiceVersion:   config.Version,
 		Readiness:        admin.ReadinessReady,
 		ProtocolVersions: []string{protocol.ProtocolID},
-		Capabilities:     []string{"relay.forward.live/0", "route.relay.wss/0"},
+		Capabilities:     relayCapabilities(config.GitHubFederationDiscovery),
 	}
 	statusProvider := admin.NewRelayStatusProvider(baseStatus, hub)
 	relayMonitorRegistry := admin.NewRelayMonitorRegistry(admin.RelayMonitorConfig{})
@@ -192,6 +192,14 @@ func New(config Config) (*App, error) {
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}, nil
+}
+
+func relayCapabilities(githubFederationDiscovery bool) []string {
+	capabilities := []string{"relay.forward.live/0", "route.relay.wss/0"}
+	if githubFederationDiscovery {
+		capabilities = append(capabilities, protocol.RelayFederationLiveRole)
+	}
+	return capabilities
 }
 
 // PublicHandler returns the public client/relay HTTP surface for tests and

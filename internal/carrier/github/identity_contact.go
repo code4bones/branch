@@ -3,7 +3,6 @@ package github
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 
 const (
 	defaultAPIBaseURL      = "https://api.github.com"
+	defaultRawBaseURL      = "https://raw.githubusercontent.com"
 	defaultLocator         = "branchbootstrapv0"
 	defaultTimeout         = 3 * time.Second
 	defaultMaxRepositories = 5
@@ -42,6 +42,7 @@ type HTTPClient interface {
 // It intentionally has no token or publication credential field.
 type IdentityContactSourceConfig struct {
 	APIBaseURL       string
+	RawBaseURL       string
 	HTTPClient       HTTPClient
 	Timeout          time.Duration
 	MaxRepositories  int
@@ -53,6 +54,7 @@ type IdentityContactSourceConfig struct {
 // public repositories carrying the v0 topic. It stores nothing itself.
 type IdentityContactSource struct {
 	apiBaseURL       *url.URL
+	rawBaseURL       *url.URL
 	client           HTTPClient
 	timeout          time.Duration
 	maxRepositories  int
@@ -63,6 +65,10 @@ type IdentityContactSource struct {
 // NewIdentityContactSource constructs one bounded GitHub topic-search adapter.
 func NewIdentityContactSource(config IdentityContactSourceConfig) (*IdentityContactSource, error) {
 	baseURL, err := parseAPIBaseURL(config.APIBaseURL)
+	if err != nil {
+		return nil, err
+	}
+	rawBaseURL, err := parseRawBaseURL(config.RawBaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +111,7 @@ func NewIdentityContactSource(config IdentityContactSourceConfig) (*IdentityCont
 	}
 	return &IdentityContactSource{
 		apiBaseURL:       baseURL,
+		rawBaseURL:       rawBaseURL,
 		client:           client,
 		timeout:          timeout,
 		maxRepositories:  maxRepositories,
@@ -238,12 +245,6 @@ type githubRepository struct {
 	Name string `json:"name"`
 }
 
-type githubContentFile struct {
-	Type     string `json:"type"`
-	Encoding string `json:"encoding"`
-	Content  string `json:"content"`
-}
-
 var errRecordsMissing = errors.New("github records missing")
 
 type githubHTTPStatusError struct {
@@ -288,12 +289,9 @@ func (source *IdentityContactSource) searchRepositories(ctx context.Context) ([]
 }
 
 func (source *IdentityContactSource) readRepositoryRecords(ctx context.Context, repository githubRepository) ([]string, error) {
-	endpoint := source.apiBaseURL.JoinPath("repos", repository.Owner.Login, repository.Name, "contents", ".branch", "records.br0")
-	query := endpoint.Query()
-	query.Set("ref", repository.DefaultBranch)
-	endpoint.RawQuery = query.Encode()
+	endpoint := source.rawBaseURL.JoinPath(repository.Owner.Login, repository.Name, repository.DefaultBranch, ".branch", "records.br0")
 
-	body, status, err := source.get(ctx, endpoint.String())
+	body, status, err := source.getRaw(ctx, endpoint.String())
 	if err != nil {
 		return nil, err
 	}
@@ -303,36 +301,35 @@ func (source *IdentityContactSource) readRepositoryRecords(ctx context.Context, 
 	if status != http.StatusOK {
 		return nil, githubHTTPStatusError{operation: "records_read", status: status}
 	}
-	var response githubContentFile
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("decode github records response: %w", err)
+	if len(body) == 0 {
+		return nil, errors.New("github records response is empty")
 	}
-	if response.Type != "file" || response.Encoding != "base64" || response.Content == "" {
-		return nil, errors.New("invalid github records response")
-	}
-	decoded, err := base64.StdEncoding.DecodeString(response.Content)
-	if err != nil {
-		return nil, fmt.Errorf("decode github records content: %w", err)
-	}
-	if len(decoded) > source.maxRecordBytes {
-		return nil, errors.New("github records content too large")
-	}
-	return extractWrappers(string(decoded), maxWrappersPerRecord), nil
+	return extractWrappers(string(body), maxWrappersPerRecord), nil
 }
 
 func (source *IdentityContactSource) get(ctx context.Context, endpoint string) ([]byte, int, error) {
+	return source.getBounded(ctx, endpoint, source.maxResponseBytes, "application/vnd.github+json", true)
+}
+
+func (source *IdentityContactSource) getRaw(ctx context.Context, endpoint string) ([]byte, int, error) {
+	return source.getBounded(ctx, endpoint, source.maxRecordBytes, "text/plain", false)
+}
+
+func (source *IdentityContactSource) getBounded(ctx context.Context, endpoint string, limit int, accept string, apiVersion bool) ([]byte, int, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("create github request: %w", err)
 	}
-	request.Header.Set("accept", "application/vnd.github+json")
-	request.Header.Set("x-github-api-version", "2022-11-28")
+	request.Header.Set("accept", accept)
+	if apiVersion {
+		request.Header.Set("x-github-api-version", "2022-11-28")
+	}
 	response, err := source.client.Do(request)
 	if err != nil {
 		return nil, 0, fmt.Errorf("request github carrier: %w", err)
 	}
 	defer response.Body.Close()
-	body, err := readBounded(response.Body, source.maxResponseBytes)
+	body, err := readBounded(response.Body, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -348,6 +345,13 @@ func parseAPIBaseURL(value string) (*url.URL, error) {
 		return nil, ErrInvalidConfig
 	}
 	return parsed, nil
+}
+
+func parseRawBaseURL(value string) (*url.URL, error) {
+	if value == "" {
+		value = defaultRawBaseURL
+	}
+	return parseAPIBaseURL(value)
 }
 
 func validRepository(repository githubRepository) bool {
