@@ -60,6 +60,8 @@ export interface SameRelayTransportOptions {
   readonly now?: () => number;
   readonly randomBytes?: (size: number) => Uint8Array;
   readonly maxFrameBytes?: number;
+  /** Local volatile client ceiling; this is never relay storage. */
+  readonly maxPendingEnvelopes?: number;
   readonly handshakeTimeoutMs?: number;
 }
 
@@ -128,6 +130,7 @@ interface DeferredFrame {
 
 const socketOpenState = 1;
 const defaultMaxFrameBytes = 49_152;
+const defaultMaxPendingEnvelopes = 32;
 const defaultHandshakeTimeoutMs = 10_000;
 const defaultPresenceTTLSeconds = 30;
 const maxChallengeClockSkewSeconds = 30;
@@ -142,6 +145,7 @@ export class SameRelayTransportClient {
   private readonly now: () => number;
   private readonly randomBytes: (size: number) => Uint8Array;
   private readonly maxFrameBytes: number;
+  private readonly maxPendingEnvelopes: number;
   private readonly handshakeTimeoutMs: number;
   private readonly listeners = new Set<SameRelayEventListener>();
   private readonly pending = new Map<string, PendingEnvelope>();
@@ -162,8 +166,12 @@ export class SameRelayTransportClient {
       return bytes;
     });
     this.maxFrameBytes = Math.min(options.maxFrameBytes ?? defaultMaxFrameBytes, defaultMaxFrameBytes);
+    this.maxPendingEnvelopes = boundedPendingEnvelopeLimit(options.maxPendingEnvelopes ?? defaultMaxPendingEnvelopes);
     this.handshakeTimeoutMs = Math.min(Math.max(options.handshakeTimeoutMs ?? defaultHandshakeTimeoutMs, 1), 30_000);
     for (const pending of options.pendingEnvelopes ?? []) {
+      if (!this.pending.has(pending.deliveryId) && this.pending.size >= this.maxPendingEnvelopes) {
+        throw new Error("live pending envelope limit exceeded");
+      }
       this.pending.set(pending.deliveryId, { ...pending });
     }
   }
@@ -387,6 +395,9 @@ export class SameRelayTransportClient {
       streamId: defaultStreamID,
       ackRequested: options.ackRequested ?? true
     } satisfies PendingEnvelope;
+    if (!this.pending.has(deliveryId) && this.pending.size >= this.maxPendingEnvelopes) {
+      throw new Error("live pending envelope limit exceeded");
+    }
     this.pending.set(deliveryId, pending);
     this.sendPendingEnvelope(pending);
     return deliveryId;
@@ -489,7 +500,14 @@ export class SameRelayTransportClient {
           this.emit({ type: "peer_receipt", deliveryId, durable: false });
           return;
         }
-        if (ackType === "relay.accepted" || ackType === "relay.forwarded") {
+        if (ackType === "relay.forwarded") {
+          // Forwarded completes the relay's only live opaque-transit duty. It
+          // is not a peer receipt, integrity result, or durable promise.
+          this.pending.delete(deliveryId);
+          this.emit({ type: "relay_ack", deliveryId, ackType, durable: false });
+          return;
+        }
+        if (ackType === "relay.accepted") {
           this.emit({ type: "relay_ack", deliveryId, ackType, durable: false });
         }
         return;
@@ -686,6 +704,13 @@ export function parseRelayEndpointDescriptor(value: string | null): { readonly t
     return null;
   }
   return { transport, uri };
+}
+
+function boundedPendingEnvelopeLimit(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1 || value > defaultMaxPendingEnvelopes) {
+    throw new Error("invalid live pending envelope limit");
+  }
+  return value;
 }
 
 export function validateRouteMaterial(route: RelayRouteMaterial): RelayRouteMaterial {

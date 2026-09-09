@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
+import { SameRelayTransportClient, type SameRelayPendingEnvelope } from "../src/connectivity/same-relay.js";
+
+void test("relay.forwarded releases only its live pending envelope before the ACK event", () => {
+  const first = pending(1);
+  const second = pending(2);
+  const client = clientWithPending([first, second]);
+  const events: string[] = [];
+  let pendingAtForwardedAck = -1;
+  client.addEventListener((event) => {
+    events.push(event.type);
+    if (event.type === "relay_ack" && event.ackType === "relay.forwarded") {
+      pendingAtForwardedAck = client.pendingCount;
+    }
+  });
+  const process = (client as unknown as { processReadyFrame(record: Record<string, unknown>): void }).processReadyFrame.bind(client);
+
+  process({ type: "ACK", ack_type: "relay.accepted", delivery_id: first.deliveryId });
+  assert.equal(client.pendingCount, 2);
+  process({ type: "ACK", ack_type: "relay.forwarded", delivery_id: token(9) });
+  assert.equal(client.pendingCount, 2);
+  process({ type: "ACK", ack_type: "relay.forwarded", delivery_id: first.deliveryId });
+  assert.equal(client.pendingCount, 1);
+  assert.equal(pendingAtForwardedAck, 1);
+  assert.deepEqual(events, ["relay_ack", "relay_ack", "relay_ack"]);
+
+  process({ type: "ACK", ack_type: "peer.received", delivery_id: second.deliveryId });
+  assert.equal(client.pendingCount, 0);
+});
+
+void test("client pending state has the explicit reference-relay live ceiling", () => {
+  const maximum = Array.from({ length: 32 }, (_, index) => pending(index + 1));
+  assert.equal(clientWithPending(maximum).pendingCount, 32);
+  assert.throws(() => clientWithPending([...maximum, pending(33)]), /live pending envelope limit exceeded/);
+  assert.throws(() => clientWithPending([], 0), /invalid live pending envelope limit/);
+});
+
+function clientWithPending(pendingEnvelopes: readonly SameRelayPendingEnvelope[], maxPendingEnvelopes?: number): SameRelayTransportClient {
+  return new SameRelayTransportClient({
+    route: {
+      endpointUri: "wss://relay.example/relay/v0",
+      relayPublicKey: token(41),
+      profileMultihash: developmentProfileMultihash
+    },
+    identity: { peerId: token(42), publicKey: token(42), privateKey: {} as CryptoKey },
+    pendingEnvelopes,
+    ...(maxPendingEnvelopes === undefined ? {} : { maxPendingEnvelopes })
+  });
+}
+
+function pending(value: number): SameRelayPendingEnvelope {
+  return {
+    deliveryId: token(value),
+    ciphertext: "AA",
+    originRouteId: Buffer.alloc(16, value).toString("base64url"),
+    streamId: 0,
+    ackRequested: true
+  };
+}
+
+function token(value: number): string {
+  return Buffer.alloc(32, value).toString("base64url");
+}

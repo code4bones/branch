@@ -13,6 +13,7 @@ import {
   contactIdForDelivery,
   disconnectRelaySession,
   getRelaySessionClient,
+  notifyLiveForwardedAck,
   reserveIncomingDelivery,
   takeTrackedDeliveries
 } from "./relay-session.js";
@@ -227,6 +228,9 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
       state.recordTransportTrace(`outbound frame: ${event.frameType}`);
       return;
     case "relay_ack": {
+      if (event.ackType === "relay.forwarded") {
+        notifyLiveForwardedAck(event.deliveryId);
+      }
       const contactId = contactIdForDelivery(event.deliveryId);
       if (contactId !== undefined) {
         state.setMessageDeliveryState(contactId, event.deliveryId, "relayed");

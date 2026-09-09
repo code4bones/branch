@@ -419,6 +419,15 @@ Ordinary client `LOOKUP` has no positive response. A federation client must
 wait for this ACK; missing, malformed, or error responses fail the candidate
 probe closed.
 
+D-BRANCH-059 defines the live client boundary: for an ordinary `ENVELOPE`,
+`relay.accepted` is intermediate while matching `relay.forwarded` completes the
+relay's only opaque-transit obligation. A client releases that volatile pending
+entry before emitting the forwarding ACK; it does not infer peer presentation,
+file acceptance, whole-file integrity, or durable delivery. Pending state has a
+local bounded ceiling (32 for the reference client) and is never relay queue
+capacity. Attachment senders use a smaller ACK-driven window and abandon it on
+path loss rather than asking a relay to retry or retain chunks.
+
 ### Authenticated session and framing contract
 
 An authenticated session is established only after the selected reviewed session

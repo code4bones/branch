@@ -14,6 +14,7 @@ let client: SameRelayTransportClient | null = null;
 let unsubscribe: (() => void) | null = null;
 const trackedDeliveries = new Map<string, TrackedDelivery>();
 const incomingDeliveryIds = new DeliveryDedupWindow();
+let liveForwardedAckListener: ((deliveryId: string) => void) | null = null;
 
 const maxTrackedDeliveries = 64;
 const relayAcknowledgementTimeoutMs = 12_000;
@@ -33,6 +34,21 @@ export function getRelaySessionClient(): SameRelayTransportClient | null {
 // client, so a non-fatal relay notice cannot turn into a false detach.
 export function hasAttachedRelaySession(): boolean {
   return client !== null && client.routeId !== null;
+}
+
+// One future attachment sender may observe the terminal opaque-forwarding ACK
+// for its small live window. This is volatile adapter state, not a receipt and
+// not a general relay event bus.
+export function setLiveForwardedAckListener(listener: ((deliveryId: string) => void) | null): void {
+  liveForwardedAckListener = listener;
+}
+
+export function notifyLiveForwardedAck(deliveryId: string): void {
+  try {
+    liveForwardedAckListener?.(deliveryId);
+  } catch {
+    // Observer failure must not alter the transport's bounded ACK handling.
+  }
 }
 
 export async function attachRelaySession(
@@ -66,6 +82,7 @@ export function disconnectRelaySession(): void {
   unsubscribe = null;
   client?.disconnect();
   client = null;
+  liveForwardedAckListener = null;
   clearTrackedDeliveries();
   incomingDeliveryIds.reset();
 }

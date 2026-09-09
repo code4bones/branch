@@ -297,6 +297,9 @@ void test("relay attach and message sealing keep canonical protocol state out of
   assert.match(relaySession, /client !== null && client\.routeId !== null/);
   assert.match(relaySession, /maxTrackedDeliveries = 64/);
   assert.match(relaySession, /relayAcknowledgementTimeoutMs = 12_000/);
+  assert.match(relaySession, /setLiveForwardedAckListener/);
+  assert.match(relaySession, /notifyLiveForwardedAck/);
+  assert.match(relaySession, /liveForwardedAckListener = null/);
   assert.match(relaySession, /client = nextClient/);
   assert.match(relaySession, /relay attachment cancelled/);
   assert.match(sealAndSend, /sealBetaPayload/);
@@ -321,6 +324,8 @@ void test("relay attach and message sealing keep canonical protocol state out of
   assert.match(openEnvelope, /expectedCiphertextBytes/);
   assert.match(openEnvelope, /from "\.\/payload-aad-defaults\.js"/);
   assert.match(useRelayTransport, /case "relay_ack"/);
+  assert.match(useRelayTransport, /event\.ackType === "relay\.forwarded"/);
+  assert.match(useRelayTransport, /notifyLiveForwardedAck\(event\.deliveryId\)/);
   assert.match(useRelayTransport, /case "peer_receipt"/);
   assert.match(useRelayTransport, /case "peer_unavailable"/);
   assert.match(useRelayTransport, /case "envelope_received"/);
