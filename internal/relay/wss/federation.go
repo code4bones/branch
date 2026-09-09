@@ -412,7 +412,11 @@ func (forwarder *federatedWSSForwarder) liveClientLocked(ctx context.Context, ro
 	if err != nil {
 		return nil, err
 	}
-	if err := client.writeLookup(ctx, forwarder.peerID); err != nil {
+	lookup := client.writeLookup
+	if client.requestedRole == protocol.RelayFederationLiveRole {
+		lookup = client.lookup
+	}
+	if err := lookup(ctx, forwarder.peerID); err != nil {
 		client.close()
 		return nil, err
 	}
@@ -548,6 +552,9 @@ func (client *federationClient) attach(ctx context.Context) error {
 func (client *federationClient) lookup(ctx context.Context, peerID relay.PeerID) error {
 	if err := client.writeLookup(ctx, peerID); err != nil {
 		return err
+	}
+	if client.requestedRole == protocol.RelayFederationLiveRole {
+		return client.expectFederationLookupAck(ctx)
 	}
 	return client.expectNoErrorFrame(ctx)
 }
@@ -739,6 +746,30 @@ func (client *federationClient) expectNoErrorFrame(ctx context.Context) error {
 		return relayErrorFromFrame(frame)
 	}
 	return ErrInvalidFrame
+}
+
+func (client *federationClient) expectFederationLookupAck(ctx context.Context) error {
+	responseCtx, cancel := context.WithTimeout(ctx, client.writeTimeout)
+	defer cancel()
+	raw, err := readFederationRaw(responseCtx, client.conn)
+	if err != nil {
+		return relay.ErrPeerUnavailable
+	}
+	frame, err := readFederationObject(raw)
+	if err != nil {
+		return err
+	}
+	switch frame["type"] {
+	case "ACK":
+		if frame["ack_type"] == "relay.accepted" && frame["durable"] == false {
+			return nil
+		}
+		return ErrInvalidFrame
+	case "ERROR":
+		return relayErrorFromFrame(frame)
+	default:
+		return ErrInvalidFrame
+	}
 }
 
 func (client *federationClient) close() {

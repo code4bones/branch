@@ -1,13 +1,88 @@
 package wss
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/code4bones/branch/internal/relay"
 	protocol "github.com/code4bones/branch/protocol/v0"
+	"github.com/coder/websocket"
 )
+
+func TestFederationLookupRequiresPositiveAcknowledgement(t *testing.T) {
+	tests := []struct {
+		name     string
+		response map[string]any
+		wantErr  bool
+	}{
+		{
+			name: "accepted acknowledgement",
+			response: map[string]any{
+				"type": "ACK", "session_id": testB64x32, "delivery_id": testB64x16, "ack_type": "relay.accepted", "durable": false,
+			},
+		},
+		{
+			name: "delayed unavailable error",
+			response: map[string]any{
+				"type": "ERROR", "code": "peer_unavailable", "retryable": true, "detail": "transient relay failure",
+			},
+			wantErr: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				conn, err := websocket.Accept(writer, request, nil)
+				if err != nil {
+					return
+				}
+				defer conn.Close(websocket.StatusNormalClosure, "")
+				ctx, cancel := context.WithTimeout(request.Context(), time.Second)
+				defer cancel()
+				if _, _, err := conn.Read(ctx); err != nil {
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+				payload, err := json.Marshal(test.response)
+				if err == nil {
+					_ = conn.Write(ctx, websocket.MessageText, payload)
+				}
+			}))
+			defer server.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			client := &federationClient{
+				conn:          &connection{conn: conn},
+				sessionID:     testB64x32,
+				writeTimeout:  time.Second,
+				requestedRole: protocol.RelayFederationLiveRole,
+			}
+			started := time.Now()
+			err = client.lookup(ctx, relay.PeerID(testPeerID))
+			client.close()
+			if elapsed := time.Since(started); elapsed < 40*time.Millisecond {
+				t.Fatalf("lookup returned before delayed response: %s", elapsed)
+			}
+			if test.wantErr && !errors.Is(err, relay.ErrPeerUnavailable) {
+				t.Fatalf("lookup error = %v, want peer unavailable", err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("lookup error = %v", err)
+			}
+		})
+	}
+}
 
 func TestStaticPeerRouterFederationSnapshotReportsConfiguredAndObservedPeers(t *testing.T) {
 	now := time.Date(2026, 9, 2, 13, 0, 0, 0, time.UTC)

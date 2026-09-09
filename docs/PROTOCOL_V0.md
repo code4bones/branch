@@ -395,7 +395,15 @@ with `peer_unavailable` or another explicit transient code. It does not create a
 `ACK` distinguishes `relay.accepted`, `relay.forwarded`, and `peer.received`.
 The `durable` field is always `false` for relay acknowledgements in this
 profile. Sender-owned pending retry state may keep a stable `delivery_id`, but
-that persistence belongs to the client, not the relay.
+that persistence belongs to the client, not the relay. On an authenticated
+`relay.federate.live/0.draft` attachment only, a successful `LOOKUP` returns
+`ACK relay.accepted` with a relay-generated opaque 16-byte acknowledgement
+token in `delivery_id`. It proves only that the receiving relay observed the
+named peer under current live policy. It is not a delivery identifier, message
+receipt, mailbox entry, presence publication, or durable custody statement.
+Ordinary client `LOOKUP` has no positive response. A federation client must
+wait for this ACK; missing, malformed, or error responses fail the candidate
+probe closed.
 
 ### Authenticated session and framing contract
 

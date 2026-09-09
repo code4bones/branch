@@ -322,6 +322,9 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 		peerID := relay.PeerID(frame["peer_id"].(string))
 		now := handler.now()
 		if _, ok := handler.hub.Lookup(peerID, now); ok {
+			if federationAttachment {
+				return handler.writeFederationLookupAck(ctx, conn, string(sessionID))
+			}
 			return nil
 		}
 		if !federationAttachment {
@@ -657,6 +660,14 @@ func (handler *Handler) writeAck(ctx context.Context, conn *connection, sessionI
 		"durable":     false,
 	}
 	return writeJSON(ctx, conn, handler.writeTimeout, ack)
+}
+
+func (handler *Handler) writeFederationLookupAck(ctx context.Context, conn *connection, sessionID string) error {
+	ackToken, err := randomID(handler.random, 16)
+	if err != nil {
+		return err
+	}
+	return handler.writeAck(ctx, conn, sessionID, ackToken, "relay.accepted")
 }
 
 func (handler *Handler) writeError(ctx context.Context, conn *connection, code string) error {
