@@ -16,7 +16,7 @@ import {
   type GitHubDiscoveryResult,
   type GitHubValidatedRecord
 } from "@code4bones/branch-core/discovery/github.js";
-import { runFederationSelfTest as executeFederationSelfTest } from "@code4bones/branch-core/connectivity/federation-self-test.js";
+import { runFederationSelfTest as executeFederationSelfTest, type FederationSelfTestAttempt } from "@code4bones/branch-core/connectivity/federation-self-test.js";
 import {
   fetchIdentityContactLookup,
   type IdentityContactLookupObservation,
@@ -34,6 +34,7 @@ export function ClientTool(): React.JSX.Element {
   const [identityTraceSearch, setIdentityTraceSearch] = useState("");
   const [federationSelfTestRunning, setFederationSelfTestRunning] = useState(false);
   const [federationSelfTestStatus, setFederationSelfTestStatus] = useState("not run");
+  const [federationSelfTestAttempts, setFederationSelfTestAttempts] = useState<readonly FederationSelfTestAttempt[]>([]);
   const client = useAdminStore((state) => state.client);
   const setClientDiscoveryRunning = useAdminStore((state) => state.setClientDiscoveryRunning);
   const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
@@ -50,8 +51,17 @@ export function ClientTool(): React.JSX.Element {
   const runFederationSelfTest = useCallback(async (): Promise<void> => {
     setFederationSelfTestRunning(true);
     setFederationSelfTestStatus("attaching an ephemeral peer through distinct relay routes");
+    setFederationSelfTestAttempts([]);
     try {
-      const report = await executeFederationSelfTest({ routes: federationRoutes });
+      const report = await executeFederationSelfTest({
+        routes: federationRoutes,
+        onProgress: (progress) => {
+          if (progress.phase === "starting") {
+            setFederationSelfTestStatus(`testing pair ${String(progress.attempt)}: ${progress.sourceEndpoint} -> ${progress.targetEndpoint}`);
+          }
+        }
+      });
+      setFederationSelfTestAttempts(report.attempts);
       if (report.status === "ok") {
         setFederationSelfTestStatus(`passed ${report.sourceRoute.endpointUri} -> ${report.targetRoute.endpointUri} in ${String(report.latencyMs)} ms`);
         return;
@@ -474,6 +484,15 @@ export function ClientTool(): React.JSX.Element {
           </Space>
           <p className={client.discoveryStatusClass}>{client.discoveryStatus}</p>
           <p className={federationSelfTestStatus.startsWith("passed ") ? "status-good" : federationSelfTestStatus === "not run" ? "table-muted" : "status-warn"}>{federationSelfTestStatus}</p>
+          {federationSelfTestAttempts.length === 0 ? null : (
+            <Space direction="vertical" size={2} className="table-muted">
+              {federationSelfTestAttempts.map((attempt) => (
+                <span key={`${attempt.sourceEndpoint}-${attempt.targetEndpoint}`}>
+                  {attempt.sourceEndpoint} -&gt; {attempt.targetEndpoint}: {attempt.status}{attempt.reason === null ? "" : ` (${attempt.reason})`}
+                </span>
+              ))}
+            </Space>
+          )}
         </div>
         <dl className="diagnostics client-diagnostics">
           <div>

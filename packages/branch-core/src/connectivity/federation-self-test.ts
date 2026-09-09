@@ -14,6 +14,15 @@ export interface FederationSelfTestOptions {
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
   readonly perAttemptTimeoutMs?: number;
+  readonly onProgress?: (attempt: FederationSelfTestProgress) => void;
+}
+
+export interface FederationSelfTestProgress {
+  readonly sourceEndpoint: string;
+  readonly targetEndpoint: string;
+  readonly attempt: number;
+  readonly phase: "starting" | "failed";
+  readonly reason?: string;
 }
 
 export type FederationSelfTestReport =
@@ -39,6 +48,7 @@ export interface FederationSelfTestAttempt {
 }
 
 const maxRoutes = 4;
+const maxPairs = 6;
 const defaultTimeoutMs = 8_000;
 const propagationWaitMs = 300;
 
@@ -53,12 +63,18 @@ export async function runFederationSelfTest(options: FederationSelfTestOptions):
   }
   const attempts: FederationSelfTestAttempt[] = [];
   const timeoutMs = boundedTimeout(options.perAttemptTimeoutMs ?? defaultTimeoutMs);
+  let pairCount = 0;
 
   for (const sourceRoute of routes) {
     for (const targetRoute of routes) {
       if (sourceRoute.endpointUri === targetRoute.endpointUri) {
         continue;
       }
+      if (pairCount === maxPairs) {
+        return { status: "failed", reason: "all_pairs_failed", attempts };
+      }
+      pairCount += 1;
+      options.onProgress?.({ sourceEndpoint: sourceRoute.endpointUri, targetEndpoint: targetRoute.endpointUri, attempt: pairCount, phase: "starting" });
       const startedAt = Date.now();
       let service: EchoTestService | null = null;
       try {
@@ -90,19 +106,21 @@ export async function runFederationSelfTest(options: FederationSelfTestOptions):
           ...(options.crypto === undefined ? {} : { crypto: options.crypto })
         });
         if (result.status !== "ok") {
-          throw new Error(result.reason);
+          throw new Error(result.attempts[0]?.reason ?? result.reason);
         }
         const latencyMs = Date.now() - startedAt;
         attempts.push({ sourceEndpoint: sourceRoute.endpointUri, targetEndpoint: targetRoute.endpointUri, status: "ok", latencyMs, reason: null });
         return { status: "ok", sourceRoute, targetRoute, latencyMs, attempts };
       } catch (error) {
+        const reason = errorMessage(error);
         attempts.push({
           sourceEndpoint: sourceRoute.endpointUri,
           targetEndpoint: targetRoute.endpointUri,
           status: "failed",
           latencyMs: Date.now() - startedAt,
-          reason: errorMessage(error)
+          reason
         });
+        options.onProgress?.({ sourceEndpoint: sourceRoute.endpointUri, targetEndpoint: targetRoute.endpointUri, attempt: pairCount, phase: "failed", reason });
       } finally {
         service?.stop();
       }
