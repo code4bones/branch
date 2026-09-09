@@ -448,6 +448,44 @@ the beta suite identifier. It deliberately does not bind a relay hostname or
 carrier repository so the same encrypted delivery can be retried over another
 validated path during migration.
 
+### Application control boundary
+
+Application controls are versioned endpoint semantics carried only inside an
+ordinary opaque `ENVELOPE`; they are not relay frames, relay presence, carrier
+records, or a delivery queue. They cover narrow contact-scoped behaviours such
+as encrypted presence probes, delivery/read receipts, typing, reactions, and
+future message actions. An implementation MUST keep ordinary user messages as
+a separate application-payload family: receiving a control must not append a
+message, create a contact, or expose its bytes to a relay.
+
+The `branch.application-control/0.draft` canonical control envelope contains a
+kind, random 16-byte control id, issued and expiry times, sender/recipient
+32-byte peer ids, bounded opaque body, and optional 64-byte Ed25519 signature.
+The signature input is the domain-separated canonical CBOR representation of
+every field except the signature. A control descriptor is compiled into the
+client, never received from the network, and declares its exact body decoder,
+authentication rule, known-contact admission rule, maximum TTL, replay/rate
+class, local projection lifetime, and closed set of allowed effects.
+
+Before a descriptor runs, the endpoint MUST: canonical-decode and bound the
+envelope; select a locally registered descriptor; bind recipient to its own
+peer id and sender to a known contact; check expiry and bounded clock skew;
+deduplicate the control id in a bounded expiry window; apply local policy; and
+verify a required Ed25519 signature under the control-signature domain. It then
+decodes the descriptor body and accepts only declared effects: an ephemeral
+local projection, user-owned message metadata update, or a bounded outbound
+control request. A descriptor receives neither socket, private key, storage
+handle, global UI store, clock, nor arbitrary callback.
+
+The application adapter owns signing keys, clock, replay-window storage,
+rate-limit bookkeeping, user policy, WebSocket sending, user-owned persistence,
+timers, and rendering. It MUST bound and clean each resource. Missing, expired,
+invalid, replayed, or policy-denied controls produce no user-level negative
+claim. In particular, a relay `peer.received` acknowledgement and unsigned beta
+presence compatibility payloads cannot establish Delivered or Read. Controls
+are best-effort live traffic only: relays never retain, replay, index, or use
+them to create a mailbox or store-and-forward path.
+
 ### Path migration state machine
 
 Path migration is a session state transition, not a relay feature. Either peer

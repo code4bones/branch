@@ -1,3 +1,4 @@
+export * from "./application-control/runtime.js";
 export * from "./connectivity/carrier-hopping-poc.js";
 export * from "./connectivity/echo-client.js";
 export * from "./connectivity/echo-service.js";
