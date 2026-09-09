@@ -16,6 +16,7 @@ import {
   type GitHubDiscoveryResult,
   type GitHubValidatedRecord
 } from "@code4bones/branch-core/discovery/github.js";
+import { runFederationSelfTest as executeFederationSelfTest } from "@code4bones/branch-core/connectivity/federation-self-test.js";
 import {
   fetchIdentityContactLookup,
   type IdentityContactLookupObservation,
@@ -23,7 +24,7 @@ import {
   type IdentityContactRouteHint
 } from "../identity-lookup.js";
 import { useAdminStore } from "../store.js";
-import { useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
+import { routesFromDiscoveryResults, useSameRelayTransportLab } from "../use-same-relay-transport-lab.js";
 
 export function ClientTool(): React.JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
@@ -31,6 +32,8 @@ export function ClientTool(): React.JSX.Element {
   const [resultSearch, setResultSearch] = useState("");
   const [traceSearch, setTraceSearch] = useState("");
   const [identityTraceSearch, setIdentityTraceSearch] = useState("");
+  const [federationSelfTestRunning, setFederationSelfTestRunning] = useState(false);
+  const [federationSelfTestStatus, setFederationSelfTestStatus] = useState("not run");
   const client = useAdminStore((state) => state.client);
   const setClientDiscoveryRunning = useAdminStore((state) => state.setClientDiscoveryRunning);
   const setClientDiscoveryResults = useAdminStore((state) => state.setClientDiscoveryResults);
@@ -42,6 +45,24 @@ export function ClientTool(): React.JSX.Element {
   const setClientManualRouteField = useAdminStore((state) => state.setClientManualRouteField);
   const setClientRouteMode = useAdminStore((state) => state.setClientRouteMode);
   const transport = useSameRelayTransportLab();
+  const federationRoutes = useMemo(() => routesFromDiscoveryResults(client.discoveryResults), [client.discoveryResults]);
+
+  const runFederationSelfTest = useCallback(async (): Promise<void> => {
+    setFederationSelfTestRunning(true);
+    setFederationSelfTestStatus("attaching an ephemeral peer through distinct relay routes");
+    try {
+      const report = await executeFederationSelfTest({ routes: federationRoutes });
+      if (report.status === "ok") {
+        setFederationSelfTestStatus(`passed ${report.sourceRoute.endpointUri} -> ${report.targetRoute.endpointUri} in ${String(report.latencyMs)} ms`);
+        return;
+      }
+      setFederationSelfTestStatus(report.reason === "insufficient_distinct_routes" ? "requires two distinct accepted relay routes" : "all relay pairs failed");
+    } catch (error) {
+      setFederationSelfTestStatus(errorMessage(error));
+    } finally {
+      setFederationSelfTestRunning(false);
+    }
+  }, [federationRoutes]);
 
   const runDiscovery = useCallback(async (): Promise<void> => {
     abortRef.current?.abort();
@@ -447,8 +468,12 @@ export function ClientTool(): React.JSX.Element {
             <Button icon={<StopOutlined />} disabled={!client.discoveryRunning} onClick={() => { abortRef.current?.abort(); }}>
               Cancel
             </Button>
+            <Button icon={<BranchesOutlined />} disabled={federationSelfTestRunning || federationRoutes.length < 2} onClick={() => { void runFederationSelfTest(); }}>
+              Federation self-test
+            </Button>
           </Space>
           <p className={client.discoveryStatusClass}>{client.discoveryStatus}</p>
+          <p className={federationSelfTestStatus.startsWith("passed ") ? "status-good" : federationSelfTestStatus === "not run" ? "table-muted" : "status-warn"}>{federationSelfTestStatus}</p>
         </div>
         <dl className="diagnostics client-diagnostics">
           <div>

@@ -1,6 +1,7 @@
 export * from "./connectivity/carrier-hopping-poc.js";
 export * from "./connectivity/echo-client.js";
 export * from "./connectivity/echo-service.js";
+export * from "./connectivity/federation-self-test.js";
 export * from "./connectivity/payload-crypto.js";
 export * from "./connectivity/same-relay.js";
 export * from "./diagnostics/journal.js";

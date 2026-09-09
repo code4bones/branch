@@ -313,6 +313,10 @@ export function useSameRelayTransportLab(): SameRelayTransportLab {
 }
 
 export function routeFromDiscoveryResults(results: readonly AdminDiscoveryRouteResult[]): RelayRouteMaterial | null {
+  return routesFromDiscoveryResults(results)[0] ?? null;
+}
+
+export function routesFromDiscoveryResults(results: readonly AdminDiscoveryRouteResult[]): readonly RelayRouteMaterial[] {
   const observations: BeaconObservation[] = [];
   results.forEach((result, resultIndex) => {
     result.records.forEach((record, recordIndex) => {
@@ -337,7 +341,7 @@ export function routeFromDiscoveryResults(results: readonly AdminDiscoveryRouteR
       });
     });
   });
-  return routesFromBeaconObservations(observations)[0] ?? null;
+  return routesFromBeaconObservations(observations);
 }
 
 export function routeFromManualFields(
