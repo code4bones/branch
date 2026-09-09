@@ -66,7 +66,9 @@ export function ClientTool(): React.JSX.Element {
         setFederationSelfTestStatus(`passed ${report.sourceRoute.endpointUri} -> ${report.targetRoute.endpointUri} in ${String(report.latencyMs)} ms`);
         return;
       }
-      setFederationSelfTestStatus(report.reason === "insufficient_distinct_routes" ? "requires two distinct accepted relay routes" : "all relay pairs failed");
+      setFederationSelfTestStatus(report.reason === "insufficient_distinct_routes"
+        ? "requires two distinct accepted relay routes"
+        : federationFailureStatus(report.attempts.length, report.totalPairCount, report.attemptLimitReached));
     } catch (error) {
       setFederationSelfTestStatus(errorMessage(error));
     } finally {
@@ -949,6 +951,12 @@ function routeSourceLabel(routeMode: "discovery" | "manual", endpointUri: string
 function identityLookupStatusText(accepted: boolean, traceCount: number, directCount: number): string {
   const suffix = directCount === 0 ? "" : `; direct carrier observations ${String(directCount)}`;
   return accepted ? `accepted signed observation across ${String(traceCount)} trace steps${suffix}` : `no signed observation across ${String(traceCount)} trace steps${suffix}`;
+}
+
+function federationFailureStatus(attemptedCount: number, totalPairCount: number, attemptLimitReached: boolean): string {
+  const remaining = Math.max(0, totalPairCount - attemptedCount);
+  const limit = attemptLimitReached && remaining > 0 ? `; ${String(remaining)} not run by safety cap` : "";
+  return `${String(attemptedCount)} scheduled relay-route pairs failed out of ${String(totalPairCount)} possible${limit}`;
 }
 
 function errorMessage(error: unknown): string {
