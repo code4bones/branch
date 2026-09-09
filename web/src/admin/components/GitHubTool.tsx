@@ -7,7 +7,7 @@ import {
   StopOutlined,
   SyncOutlined
 } from "@ant-design/icons";
-import { Button, Checkbox, Input, InputNumber, Segmented, Select, Space, Table, Tag, type TableColumnsType } from "antd";
+import { Alert, Button, Checkbox, Input, InputNumber, Segmented, Select, Space, Table, Tag, type TableColumnsType } from "antd";
 import { useRef } from "react";
 
 import { copyTextFromFallback, downloadBytes, downloadText } from "../browser-files.js";
@@ -97,12 +97,12 @@ export function GitHubTool(): React.JSX.Element {
       const incomplete = report.incompleteResults ? ", incomplete" : "";
       const fallback = discovery.carrierReports.length > 1 ? ", fallback searched" : "";
       setGitHubDiscoveryStatus(
-        `${discovery.message}${fallback}${incomplete}; rate ${report.rateLimitRemaining ?? "unknown"}`,
-        discovery.status === "ok" || discovery.status === "partial"
-          ? "status-good"
-          : discovery.status === "failed" || discovery.status === "rate_limited"
-            ? "status-bad"
-            : "status-warn"
+        `${discovery.message}; ${report.message}${fallback}${incomplete}; rate ${report.rateLimitRemaining ?? "unknown"}`,
+          discovery.status === "ok"
+            ? "status-good"
+            : discovery.status === "failed" || discovery.status === "rate_limited"
+              ? "status-bad"
+              : "status-warn"
       );
     } catch (error) {
       setGitHubDiscoveryStatus(controller.signal.aborted ? "cancelled" : errorMessage(error), controller.signal.aborted ? "status-warn" : "status-bad");
@@ -370,6 +370,8 @@ export function GitHubTool(): React.JSX.Element {
               </Space>
 
               <p className={github.discoveryStatusClass}>{github.discoveryStatus}</p>
+              {github.discoveryStatusClass === "status-bad" ? <Alert showIcon type="error" message="GitHub discovery failed" description={github.discoveryStatus} /> : null}
+              {github.discoveryStatusClass === "status-warn" && github.discoveryStatus.includes("failed") ? <Alert showIcon type="warning" message="GitHub discovery incomplete" description={github.discoveryStatus} /> : null}
             </div>
           </form>
 

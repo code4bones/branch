@@ -360,7 +360,7 @@ void test("GitHub bootstrap discovery isolates an oversized records response", a
         items: [repositoryItem("alice/poisoned"), repositoryItem("bob/valid")]
       }));
     }
-    if (input.includes("/repos/alice/poisoned/")) {
+    if (input.includes("raw.githubusercontent.com/alice/poisoned/")) {
       return Promise.resolve(oversizedStreamingResponse(() => { poisonedStreamCancelled = true; }));
     }
     return Promise.resolve(recordsResponse(wrapper));
@@ -372,12 +372,38 @@ void test("GitHub bootstrap discovery isolates an oversized records response", a
     includeFallback: false
   });
 
-  assert.equal(discovery.status, "ok");
+  assert.equal(discovery.status, "partial");
   assert.equal(discovery.acceptedCount, 1);
   const report = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
   assert.equal(report.results[0]?.status, "error");
   assert.equal(report.results[1]?.acceptedCount, 1);
   assert.equal(poisonedStreamCancelled, true);
+});
+
+void test("GitHub bootstrap discovery exposes failed raw records reads", async () => {
+  const fetcher = (input: string): Promise<Response> => {
+    if (input.startsWith("https://api.github.com/search/repositories")) {
+      return Promise.resolve(jsonResponse({
+        total_count: 1,
+        incomplete_results: false,
+        items: [repositoryItem("alice/unavailable")]
+      }));
+    }
+    return Promise.resolve(new Response("rate limited", { status: 403 }));
+  };
+
+  const discovery = await discoverClientBootstrapBeacons({
+    carrier: createGitHubSearchCarrier(fetcher),
+    primaryQuery: githubDiscoveryDefaultQuery,
+    includeFallback: false
+  });
+  const report = mergeGitHubDiscoveryReports(gitHubReportsFromCarrierReports(discovery.carrierReports));
+
+  assert.equal(discovery.status, "failed");
+  assert.equal(discovery.acceptedCount, 0);
+  assert.equal(report.status, "failed");
+  assert.match(report.message, /1 records read failed/);
+  assert.match(report.results[0]?.reason ?? "", /rate limited/);
 });
 
 void test("GitHub carrier rejects declared oversized bodies before consuming the stream", async () => {
@@ -415,7 +441,7 @@ void test("GitHub identity discovery isolates an oversized records response", as
         items: [repositoryItem("alice/poisoned-contact"), repositoryItem("bob/valid-contact")]
       }));
     }
-    if (input.includes("/repos/alice/poisoned-contact/")) {
+    if (input.includes("raw.githubusercontent.com/alice/poisoned-contact/")) {
       return Promise.resolve(new Response("x".repeat(64 * 1024 + 1), { status: 200 }));
     }
     return Promise.resolve(recordsResponse(wrapper));
@@ -428,7 +454,7 @@ void test("GitHub identity discovery isolates an oversized records response", as
     includeFallback: false
   });
 
-  assert.equal(discovery.status, "ok");
+  assert.equal(discovery.status, "partial");
   assert.equal(discovery.acceptedCount, 1);
   assert.equal(discovery.observations[0]?.evidence.source, "bob/valid-contact");
 });
@@ -460,7 +486,7 @@ void test("GitHub carrier enforces includeForks before reading candidate records
     includeForks: false
   });
   assert.equal(bootstrapWithoutForks.acceptedCount, 1);
-  assert(!requests.some((request) => request.includes("/repos/alice/fork/")));
+  assert(!requests.some((request) => request.includes("alice/fork/")));
 
   requests.length = 0;
   const bootstrapWithForks = await discoverClientBootstrapBeacons({
@@ -470,7 +496,7 @@ void test("GitHub carrier enforces includeForks before reading candidate records
     includeForks: true
   });
   assert.equal(bootstrapWithForks.acceptedCount, 1);
-  assert(requests.some((request) => request.includes("/repos/alice/fork/")));
+  assert(requests.some((request) => request.includes("alice/fork/")));
 
   requests.length = 0;
   records = identity;
@@ -482,7 +508,7 @@ void test("GitHub carrier enforces includeForks before reading candidate records
     includeForks: false
   });
   assert.equal(identityWithoutForks.acceptedCount, 1);
-  assert(!requests.some((request) => request.includes("/repos/alice/fork/")));
+  assert(!requests.some((request) => request.includes("alice/fork/")));
 });
 
 void test("GitHub carrier requests are anonymous redirect-free GETs", async () => {
@@ -520,15 +546,14 @@ void test("GitHub carrier requests are anonymous redirect-free GETs", async () =
   });
 
   assert.equal(requestInits.length, 4);
-  for (const init of requestInits) {
+  for (const [index, init] of requestInits.entries()) {
     assert.equal(init.method, "GET");
     assert.equal(init.credentials, "omit");
     assert.equal(init.redirect, "error");
     assert(init.signal instanceof AbortSignal);
-    assert.deepEqual(init.headers, {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    });
+    assert.deepEqual(init.headers, index % 2 === 0
+      ? { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }
+      : { Accept: "text/plain" });
   }
 });
 
@@ -569,11 +594,7 @@ function repositoryItem(fullName: string, fork = false): unknown {
 }
 
 function recordsResponse(content: string): Response {
-  return jsonResponse({
-    type: "file",
-    encoding: "base64",
-    content: Buffer.from(content, "utf8").toString("base64")
-  });
+  return new Response(content, { status: 200, headers: { "content-type": "text/plain" } });
 }
 
 function oversizedStreamingResponse(onCancel: () => void): Response {

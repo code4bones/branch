@@ -386,7 +386,8 @@ void test("admin github discovery uses bounded public GitHub API reads", async (
   assert.match(source, /default branch/);
   assert.match(source, /extractBranchTextWrappers/);
   assert.match(identityContact, /discoverClientIdentityContacts/);
-  assert.doesNotMatch(`${source}\n${client}`, /GITHUB_TOKEN|Authorization|raw\.githubusercontent\.com|contents: write|localStorage|indexedDB|WebSocket/);
+  assert.match(source, /raw\.githubusercontent\.com/);
+  assert.doesNotMatch(`${source}\n${client}`, /GITHUB_TOKEN|Authorization|contents: write|localStorage|indexedDB|WebSocket/);
 });
 
 void test("admin gitlab discovery uses bounded public GitLab project reads", async () => {

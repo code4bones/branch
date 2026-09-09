@@ -895,7 +895,7 @@ The initial independent SearchCarrier profiles are:
 
 | Profile | Baseline use | Notes |
 | --- | --- | --- |
-| GitHub public repository/search surfaces | Search repository metadata, topics, README text, and committed `.branch` payloads where the chosen surface exposes them. | Unauthenticated public search may be limited by surface and rate limit; credentialed code/API search is optional and uses the operator's own account. |
+| GitHub public repository/search surfaces | Search repository metadata and topics through the public Search API, then read committed `.branch` payloads through `raw.githubusercontent.com` at the returned default branch. | Unauthenticated repository search may be limited by surface and rate limit; record reads must not consume one Contents API request per candidate. Credentialed code/API search is optional and uses the operator's own account. |
 | GitLab public project metadata surfaces | Search public project metadata using `branchbootstrapv0`, then read committed `.branch` payloads from candidate public projects. | The GitLab `/search` API is not the unauthenticated baseline; global code search and credentials are optional experiments only. |
 | npm package registry search | Search package metadata for marker terms and package pages that carry beacon wrappers. | Publication requires a package owner account; bootstrap reading must not require a B.R.A.N.C.H. credential. |
 | crates.io package search | Search crate metadata using unauthenticated registry search and package pages carrying beacon wrappers. | Publication requires a crate owner account; the adapter treats package ownership as carrier metadata. |

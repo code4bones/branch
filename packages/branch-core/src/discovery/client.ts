@@ -168,7 +168,11 @@ function hasAcceptedObservation(report: SearchCarrierSearchReport): boolean {
 
 function selectStatus(reports: readonly SearchCarrierSearchReport[], acceptedCount: number): ClientDiscoveryStatus {
   if (acceptedCount > 0) {
-    return reports.some((report) => report.status === "failed") ? "partial" : "ok";
+    return reports.some((report) =>
+      report.status === "failed" || report.status === "partial" || report.status === "rate_limited"
+    )
+      ? "partial"
+      : "ok";
   }
   if (reports.some((report) => report.status === "rate_limited")) {
     return "rate_limited";

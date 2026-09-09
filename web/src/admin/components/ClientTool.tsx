@@ -98,8 +98,8 @@ export function ClientTool(): React.JSX.Element {
       }
       setClientDiscoveryResults(report.results, report.rateLimitRemaining, report.incompleteResults);
       setClientDiscoveryStatus(
-        `${discovery.message}; rate ${report.rateLimitRemaining ?? "unknown"}`,
-        discovery.status === "ok" || discovery.status === "partial"
+        `${discovery.message}; ${report.message}; rate ${report.rateLimitRemaining ?? "unknown"}`,
+        discovery.status === "ok"
           ? "status-good"
           : discovery.status === "failed" || discovery.status === "rate_limited"
             ? "status-bad"
@@ -484,6 +484,7 @@ export function ClientTool(): React.JSX.Element {
           </Space>
           <p className={client.discoveryStatusClass}>{client.discoveryStatus}</p>
           {client.discoveryStatusClass === "status-bad" ? <Alert showIcon type="error" message="GitHub discovery failed" description={client.discoveryStatus} /> : null}
+          {client.discoveryStatusClass === "status-warn" && client.discoveryStatus.includes("failed") ? <Alert showIcon type="warning" message="GitHub discovery incomplete" description={client.discoveryStatus} /> : null}
           <p className={federationSelfTestStatus.startsWith("passed ") ? "status-good" : federationSelfTestStatus === "not run" ? "table-muted" : "status-warn"}>{federationSelfTestStatus}</p>
           {federationSelfTestAttempts.length === 0 ? null : (
             <Space direction="vertical" size={2} className="table-muted">

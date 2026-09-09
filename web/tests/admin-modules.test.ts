@@ -600,11 +600,7 @@ void test("github discovery searches repositories and reads default-branch drop-
         }]
       }, { "x-ratelimit-remaining": "9", "x-ratelimit-reset": "1780000000" }));
     }
-    return Promise.resolve(jsonResponse({
-      type: "file",
-      encoding: "base64",
-      content: base64Text(`${wrapper}\n`)
-    }));
+    return Promise.resolve(new Response(`${wrapper}\n`, { status: 200 }));
   };
   const report = await discoverGitHubDropIns({
     query: githubDiscoveryDefaultQuery,
@@ -624,7 +620,7 @@ void test("github discovery searches repositories and reads default-branch drop-
   assert.equal(firstResult.records[0].relayEndpoint, "wss wss://branch.undoo.ru:443/relay/v0");
   assert.equal(firstResult.records[0].expiresAt, now + 3600);
   assert.match(fetched[0] ?? "", /search\/repositories/);
-  assert.match(fetched[1] ?? "", /repos\/alice\/carrier\/contents\/.branch\/records.br0\?ref=main/);
+  assert.match(fetched[1] ?? "", /raw\.githubusercontent\.com\/alice\/carrier\/main\/.branch\/records\.br0/);
   assert(githubDiscoveryConstraints.some((constraint) => constraint.includes("403/429")));
 });
 
@@ -669,11 +665,7 @@ void test("github discovery keeps rejected bootstrap records visible", async () 
         }]
       }));
     }
-    return Promise.resolve(jsonResponse({
-      type: "file",
-      encoding: "base64",
-      content: base64Text(`${stale}\n`)
-    }));
+    return Promise.resolve(new Response(`${stale}\n`, { status: 200 }));
   };
   const report = await discoverGitHubDropIns({
     query: githubDiscoveryDefaultQuery,
@@ -873,10 +865,6 @@ function jsonResponse(value: unknown, headers: Record<string, string> = {}, stat
       ...headers
     }
   });
-}
-
-function base64Text(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64");
 }
 
 function makeNoCarrierImage(width: number, height: number): RibbonImageData {

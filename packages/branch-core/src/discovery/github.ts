@@ -14,6 +14,7 @@ import { githubLegacyMarkerQuery, githubPrimaryLocatorQuery } from "./publicatio
 export const githubDiscoveryDefaultQuery = githubPrimaryLocatorQuery;
 export const githubDiscoveryFallbackQuery = githubLegacyMarkerQuery;
 export const githubRepositorySearchEndpoint = "https://api.github.com/search/repositories";
+export const githubRawContentBaseUrl = "https://raw.githubusercontent.com";
 export const githubApiVersion = "2022-11-28";
 export const maxGitHubDiscoveryQueryBytes = 256;
 export const maxGitHubDiscoveryPerPage = 10;
@@ -25,7 +26,7 @@ export const defaultGitHubSearchTimeoutMs = 3_000;
 export const minGitHubSearchTimeoutMs = 100;
 export const maxGitHubSearchTimeoutMs = 10_000;
 
-export type GitHubDiscoveryStatus = "ok" | "empty" | "rate_limited" | "failed";
+export type GitHubDiscoveryStatus = "ok" | "empty" | "partial" | "rate_limited" | "failed";
 
 export interface GitHubDiscoveryRequest {
   readonly query: string;
@@ -221,8 +222,9 @@ async function discoverGitHubDropInsWithinDeadline(
     }
   }
 
+  const status = statusFromRepositoryResults(results);
   return {
-    status: results.some((result) => result.acceptedCount > 0) ? "ok" : "empty",
+    status,
     query: normalized.query,
     searchUrl,
     totalCount: searchPayload.total_count,
@@ -230,7 +232,7 @@ async function discoverGitHubDropInsWithinDeadline(
     rateLimitRemaining,
     rateLimitReset,
     results,
-    message: `${String(results.reduce((total, result) => total + result.acceptedCount, 0))} accepted records from ${String(results.filter((result) => result.status === "candidate").length)} candidate repositories`
+    message: repositoryResultsMessage(results, "records")
   };
 }
 
@@ -327,7 +329,9 @@ export function mergeGitHubDiscoveryReports(reports: readonly GitHubDiscoveryRep
   const results = dedupeGitHubResults(reports.flatMap((report) => report.results));
   const accepted = results.reduce((total, result) => total + result.acceptedCount, 0);
   const status = accepted > 0
-    ? "ok"
+    ? reports.some((report) => report.status === "failed" || report.status === "partial" || report.status === "rate_limited")
+      ? "partial"
+      : "ok"
     : reports.some((report) => report.status === "rate_limited")
       ? "rate_limited"
       : reports.some((report) => report.status === "failed")
@@ -342,7 +346,7 @@ export function mergeGitHubDiscoveryReports(reports: readonly GitHubDiscoveryRep
     rateLimitRemaining: reports.find((report) => report.rateLimitRemaining !== null)?.rateLimitRemaining ?? null,
     rateLimitReset: reports.find((report) => report.rateLimitReset !== null)?.rateLimitReset ?? null,
     results,
-    message: `${String(accepted)} accepted records from ${String(results.filter((result) => result.status === "candidate").length)} candidate repositories`
+    message: repositoryResultsMessage(results, "records")
   };
 }
 
@@ -445,8 +449,9 @@ async function discoverGitHubIdentityContactsWithinDeadline(
     }
   }
 
+  const status = statusFromRepositoryResults(results);
   return {
-    status: results.some((result) => result.acceptedCount > 0) ? "ok" : "empty",
+    status,
     query: normalized.query,
     branchID,
     searchUrl,
@@ -455,13 +460,13 @@ async function discoverGitHubIdentityContactsWithinDeadline(
     rateLimitRemaining,
     rateLimitReset,
     results,
-    message: `${String(results.reduce((total, result) => total + result.acceptedCount, 0))} accepted identity records from ${String(results.filter((result) => result.status === "candidate").length)} candidate repositories`
+    message: repositoryResultsMessage(results, "identity records")
   };
 }
 
 export const githubDiscoveryConstraints = [
   "Uses topic:branchbootstrapv0 as the primary GitHub metadata locator; legacy README marker queries are bounded transition fallbacks.",
-  "Reads .branch/records.br0 from the repository default branch through the GitHub contents API.",
+  "Uses one GitHub repository search, then reads public .branch/records.br0 bytes from raw.githubusercontent.com to avoid per-repository Contents API quota consumption.",
   "Unauthenticated requests are IP rate limited; 403/429 and x-ratelimit headers are surfaced to the operator.",
   "Search may be incomplete, delayed, paginated, fork-filtered, or missing recently pushed records.",
   "One adapter-owned deadline bounds a complete repository search pass and preserves caller cancellation.",
@@ -489,9 +494,9 @@ async function readRepositoryRecords(
   signal: AbortSignal | undefined,
   fetcher: Fetcher
 ): Promise<GitHubDiscoveryResult> {
-  const recordsUrl = makeGitHubContentsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch);
+  const recordsUrl = makeGitHubRawRecordsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch);
   const base = repositoryResultBase(repository, recordsUrl);
-  const response = await fetcher(recordsUrl, makeGitHubRequestInit(signal));
+  const response = await fetcher(recordsUrl, makeGitHubRawRequestInit(signal));
 
   if (response.status === 404) {
     return emptyResult(base, "no_records", "no .branch/records.br0 on default branch");
@@ -502,15 +507,7 @@ async function readRepositoryRecords(
   if (!response.ok) {
     return emptyResult(base, "error", `GitHub content failed (${String(response.status)})`);
   }
-
-  const payload = await readJson(response);
-  const content = readContentFile(payload);
-  if (content === null) {
-    return emptyResult(base, "error", "records.br0 response rejected");
-  }
-  if (new TextEncoder().encode(content).byteLength > maxGitHubRecordBytes) {
-    return emptyResult(base, "error", "records.br0 too large");
-  }
+  const content = await readBoundedText(response, maxGitHubRecordBytes);
   const wrappers = extractBranchTextWrappers(content, maxGitHubWrappersPerRecord);
   const firstWrapper = wrappers[0]?.wrapper ?? null;
   const records = await validateWrappers(wrappers.map((wrapper) => wrapper.wrapper));
@@ -537,9 +534,9 @@ async function readRepositoryIdentityContactRecords(
   signal: AbortSignal | undefined,
   fetcher: Fetcher
 ): Promise<GitHubIdentityContactDiscoveryResult> {
-  const recordsUrl = makeGitHubContentsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch);
+  const recordsUrl = makeGitHubRawRecordsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch);
   const base = repositoryResultBase(repository, recordsUrl);
-  const response = await fetcher(recordsUrl, makeGitHubRequestInit(signal));
+  const response = await fetcher(recordsUrl, makeGitHubRawRequestInit(signal));
 
   if (response.status === 404) {
     return emptyIdentityContactResult(base, "no_records", "no .branch/records.br0 on default branch");
@@ -550,15 +547,7 @@ async function readRepositoryIdentityContactRecords(
   if (!response.ok) {
     return emptyIdentityContactResult(base, "error", `GitHub content failed (${String(response.status)})`);
   }
-
-  const payload = await readJson(response);
-  const content = readContentFile(payload);
-  if (content === null) {
-    return emptyIdentityContactResult(base, "error", "records.br0 response rejected");
-  }
-  if (new TextEncoder().encode(content).byteLength > maxGitHubRecordBytes) {
-    return emptyIdentityContactResult(base, "error", "records.br0 too large");
-  }
+  const content = await readBoundedText(response, maxGitHubRecordBytes);
   const wrappers = extractBranchTextWrappers(content, maxGitHubWrappersPerRecord);
   const firstWrapper = wrappers[0]?.wrapper ?? null;
   const records = await validateIdentityContactWrappers(wrappers.map((wrapper) => wrapper.wrapper), branchID);
@@ -742,10 +731,9 @@ function gitHubIdentityContactResultToObservations(
   }));
 }
 
-function makeGitHubContentsUrl(owner: string, repo: string, path: string, ref: string): string {
-  const url = new URL(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`);
-  url.searchParams.set("ref", ref);
-  return url.toString();
+function makeGitHubRawRecordsUrl(owner: string, repo: string, path: string, ref: string): string {
+  const segments = [owner, repo, ref, ...path.split("/")].map((segment) => encodeURIComponent(segment));
+  return `${githubRawContentBaseUrl}/${segments.join("/")}`;
 }
 
 function makeGitHubHeaders(): HeadersInit {
@@ -761,6 +749,16 @@ function makeGitHubRequestInit(signal: AbortSignal | undefined): RequestInit {
     credentials: "omit",
     redirect: "error",
     headers: makeGitHubHeaders(),
+    ...(signal === undefined ? {} : { signal })
+  };
+}
+
+function makeGitHubRawRequestInit(signal: AbortSignal | undefined): RequestInit {
+  return {
+    method: "GET",
+    credentials: "omit",
+    redirect: "error",
+    headers: { Accept: "text/plain" },
     ...(signal === undefined ? {} : { signal })
   };
 }
@@ -823,6 +821,15 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+async function readBoundedText(response: Response, limit: number): Promise<string> {
+  const bytes = await readBoundedResponseBytes(response, limit);
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("GitHub response is not UTF-8 text");
+  }
+}
+
 async function readBoundedResponseBytes(response: Response, limit: number): Promise<Uint8Array> {
   const contentLength = response.headers.get("content-length");
   if (contentLength !== null && isDeclaredResponseTooLarge(contentLength, limit)) {
@@ -871,22 +878,9 @@ function isDeclaredResponseTooLarge(value: string, limit: number): boolean {
   return Number.isSafeInteger(length) && length > limit;
 }
 
-function readContentFile(value: unknown): string | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  if (value["type"] !== "file" || typeof value["content"] !== "string" || typeof value["encoding"] !== "string") {
-    return null;
-  }
-  if (value["encoding"] !== "base64") {
-    return null;
-  }
-  return decodeBase64(value["content"]);
-}
-
 function isGitHubDiscoveryReport(value: unknown): value is GitHubDiscoveryReport {
   return isRecord(value) &&
-    (value["status"] === "ok" || value["status"] === "empty" || value["status"] === "rate_limited" || value["status"] === "failed") &&
+    (value["status"] === "ok" || value["status"] === "empty" || value["status"] === "partial" || value["status"] === "rate_limited" || value["status"] === "failed") &&
     typeof value["query"] === "string" &&
     typeof value["searchUrl"] === "string" &&
     Array.isArray(value["results"]);
@@ -894,24 +888,11 @@ function isGitHubDiscoveryReport(value: unknown): value is GitHubDiscoveryReport
 
 function isGitHubIdentityContactDiscoveryReport(value: unknown): value is GitHubIdentityContactDiscoveryReport {
   return isRecord(value) &&
-    (value["status"] === "ok" || value["status"] === "empty" || value["status"] === "rate_limited" || value["status"] === "failed") &&
+    (value["status"] === "ok" || value["status"] === "empty" || value["status"] === "partial" || value["status"] === "rate_limited" || value["status"] === "failed") &&
     typeof value["query"] === "string" &&
     typeof value["branchID"] === "string" &&
     typeof value["searchUrl"] === "string" &&
     Array.isArray(value["results"]);
-}
-
-function decodeBase64(value: string): string | null {
-  const compact = value.replace(/\s+/g, "");
-  try {
-    if (typeof globalThis.atob === "function") {
-      return globalThis.atob(compact);
-    }
-    const candidate = globalThis as { readonly Buffer?: { from(input: string, encoding: "base64"): { toString(encoding: "utf8"): string } } };
-    return candidate.Buffer?.from(compact, "base64").toString("utf8") ?? null;
-  } catch {
-    return null;
-  }
 }
 
 function isRepositorySearchResponse(value: unknown): value is GitHubRepositorySearchResponse {
@@ -959,7 +940,7 @@ function isGitHubSearchTimeoutError(error: unknown): error is GitHubSearchTimeou
 
 function repositoryResultBase(
   repository: GitHubRepositorySearchItem,
-  recordsUrl = makeGitHubContentsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch)
+  recordsUrl = makeGitHubRawRecordsUrl(repository.owner.login, repository.name, ".branch/records.br0", repository.default_branch)
 ): Pick<GitHubDiscoveryResult, "repository" | "defaultBranch" | "fork" | "htmlUrl" | "recordsUrl"> {
   return {
     repository: repository.full_name,
@@ -968,6 +949,26 @@ function repositoryResultBase(
     htmlUrl: repository.html_url,
     recordsUrl
   };
+}
+
+function statusFromRepositoryResults(results: readonly { readonly acceptedCount: number; readonly status: "candidate" | "no_records" | "error" }[]): GitHubDiscoveryStatus {
+  const accepted = results.some((result) => result.acceptedCount > 0);
+  const failed = results.some((result) => result.status === "error");
+  if (accepted) {
+    return failed ? "partial" : "ok";
+  }
+  return failed ? "failed" : "empty";
+}
+
+function repositoryResultsMessage(
+  results: readonly { readonly acceptedCount: number; readonly status: "candidate" | "no_records" | "error" }[],
+  recordKind: string
+): string {
+  const accepted = results.reduce((total, result) => total + result.acceptedCount, 0);
+  const candidates = results.filter((result) => result.status === "candidate").length;
+  const failed = results.filter((result) => result.status === "error").length;
+  const failureSuffix = failed === 0 ? "" : `; ${String(failed)} ${recordKind} read${failed === 1 ? "" : "s"} failed`;
+  return `${String(accepted)} accepted records from ${String(candidates)} candidate repositories${failureSuffix}`;
 }
 
 function dedupeGitHubResults(results: readonly GitHubDiscoveryResult[]): readonly GitHubDiscoveryResult[] {
