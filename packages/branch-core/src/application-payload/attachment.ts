@@ -56,6 +56,21 @@ export function decodeAttachmentManifest(bytes: Uint8Array): AttachmentManifest 
   validateManifest(result); return result;
 }
 
+export function decodeAttachmentDecision(bytes: Uint8Array): AttachmentDecision {
+  const map = strictMap(bytes, ["version", "kind", "transfer_id", "manifest_id", "issued_at", "expires_at", "signature"]);
+  const kind = readText(getRequiredEntry(map, "kind"), "kind");
+  const result: AttachmentDecision = {
+    version: readVersion(map),
+    kind: kind === "accept" || kind === "reject" || kind === "cancel" ? kind : invalidDecisionKind(),
+    transferId: token(map, "transfer_id", 16),
+    manifestId: token(map, "manifest_id", 32),
+    issuedAt: number(map, "issued_at"),
+    expiresAt: number(map, "expires_at"),
+    signature: readBytes(getRequiredEntry(map, "signature"), "signature", 64)
+  };
+  validateDecision(result); return result;
+}
+
 export function encodeAttachmentChunk(chunk: AttachmentChunk): Uint8Array { validateChunk(chunk); return encodeDeterministicCbor(chunkMap(chunk)); }
 export function decodeAttachmentChunk(bytes: Uint8Array): AttachmentChunk {
   const map = strictMap(bytes, ["version", "transfer_id", "manifest_id", "index", "bytes"]);
@@ -83,6 +98,7 @@ function chunkMap(value: AttachmentChunk): CborMap { return cborMap([{ key: "ver
 function signed(map: CborMap): Uint8Array { const prefix = new TextEncoder().encode(`${attachmentSignatureDomain}\0`); const body = encodeDeterministicCbor(map); const result = new Uint8Array(prefix.byteLength + body.byteLength); result.set(prefix); result.set(body, prefix.byteLength); return result; }
 function strictMap(bytes: Uint8Array, names: readonly string[]): CborMap { if (bytes.byteLength === 0 || bytes.byteLength > 4_096) throw new Error("invalid attachment size"); const map = readCborMap(decodeDeterministicCbor(bytes, 4_096), "attachment"); rejectUnknownEntries(map, names); return map; }
 function readVersion(map: CborMap): typeof attachmentVersion { if (readText(getRequiredEntry(map, "version"), "version") !== attachmentVersion) throw new Error("unsupported attachment version"); return attachmentVersion; }
+function invalidDecisionKind(): never { throw new Error("invalid attachment decision kind"); }
 function token(map: CborMap, name: string, size: number): string { return encodeBase64URL(readBytes(getRequiredEntry(map, name), name, size)); }
 function number(map: CborMap, name: string): number { return readUint(getRequiredEntry(map, name), name); }
 function boundedText(map: CborMap, name: string, max: number): string { const value = readText(getRequiredEntry(map, name), name); if (new TextEncoder().encode(value).byteLength > max) throw new Error(`invalid ${name}`); return value; }

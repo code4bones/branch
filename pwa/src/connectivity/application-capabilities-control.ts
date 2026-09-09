@@ -54,10 +54,15 @@ const lastSentAtByPeerId = new Map<string, number>();
 export function localApplicationCapabilities(): ApplicationCapabilities {
   return {
     applicationVersions: ["branch.application-payload/0.draft"],
-    kinds: ["branch.chat.text/0.draft"],
+    kinds: [
+      "branch.attachment.chunk/0.draft",
+      "branch.attachment.decision/0.draft",
+      "branch.attachment.manifest/0.draft",
+      "branch.chat.text/0.draft"
+    ],
     maxInlineBytes: 3_000,
-    attachmentMode: "none",
-    maxRelayAttachmentBytes: 0,
+    attachmentMode: "receiver-accept",
+    maxRelayAttachmentBytes: 4 * 1024 * 1024,
     maxDirectAttachmentBytes: 0
   };
 }
@@ -68,6 +73,24 @@ export function peerSupportsChatText(peerId: string, now: number = Date.now()): 
   return cached !== undefined && cached.expiresAt > now &&
     cached.value.applicationVersions.includes("branch.application-payload/0.draft") &&
     cached.value.kinds.includes("branch.chat.text/0.draft");
+}
+
+// A controller reads only this volatile, signature-verified peer advertisement.
+// Callers receive no mutable cache reference and must still apply their own
+// kind- and route-specific admission policy.
+export function peerApplicationCapabilities(peerId: string, now: number = Date.now()): ApplicationCapabilities | null {
+  pruneCapabilityState(now);
+  const cached = receivedCapabilities.get(peerId);
+  return cached === undefined || cached.expiresAt <= now
+    ? null
+    : {
+      applicationVersions: [...cached.value.applicationVersions],
+      kinds: [...cached.value.kinds],
+      maxInlineBytes: cached.value.maxInlineBytes,
+      attachmentMode: cached.value.attachmentMode,
+      maxRelayAttachmentBytes: cached.value.maxRelayAttachmentBytes,
+      maxDirectAttachmentBytes: cached.value.maxDirectAttachmentBytes
+    };
 }
 
 export async function sendApplicationCapabilities(options: {

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { attachmentManifestSigningBytes, classifyApplicationPayload, createApplicationPayloadRegistry, decodeAttachmentChunk, decodeAttachmentManifest, decodeApplicationPayload, encodeAttachmentChunk, encodeAttachmentManifest, encodeApplicationPayload, inlineBinaryKind, maxInlineBinaryBytes, type AttachmentManifest } from "../src/index.js";
+import { attachmentManifestSigningBytes, classifyApplicationPayload, createApplicationPayloadRegistry, decodeAttachmentChunk, decodeAttachmentDecision, decodeAttachmentManifest, decodeApplicationPayload, encodeAttachmentChunk, encodeAttachmentDecision, encodeAttachmentManifest, encodeApplicationPayload, inlineBinaryKind, maxInlineBinaryBytes, type AttachmentManifest } from "../src/index.js";
 import { decodeBase64URL, encodeBase64URL } from "../src/protocol/v0/base64url.js";
 
 const fixtureURL = new URL("../../../../testdata/vectors/protocol-v0/application-payload-vectors.json", import.meta.url);
@@ -35,6 +35,21 @@ test("shared attachment vectors bind chunks to one signed bounded manifest", asy
   validateChunkForManifest(last, manifest);
   assert.throws(() => validateChunkForManifest({ ...first, manifestId: encodeBase64URL(new Uint8Array(32).fill(10)) }, manifest));
   assert.throws(() => decodeAttachmentManifest(encodeAttachmentManifest({ ...manifest, expiresAt: manifest.issuedAt + 900_001 })));
+});
+
+test("attachment decisions canonical-decode through the shared core", () => {
+  const decision = {
+    version: "branch.attachment/0.draft" as const,
+    kind: "accept" as const,
+    transferId: Buffer.alloc(16, 1).toString("base64url"),
+    manifestId: Buffer.alloc(32, 2).toString("base64url"),
+    issuedAt: 1,
+    expiresAt: 2,
+    signature: new Uint8Array(64)
+  };
+  const bytes = encodeAttachmentDecision(decision);
+  assert.deepEqual(encodeAttachmentDecision(decodeAttachmentDecision(bytes)), bytes);
+  assert.throws(() => decodeAttachmentDecision(bytes.subarray(0, bytes.byteLength - 1)));
 });
 
 type FixturePayload = { readonly kind: string; readonly message_id: string; readonly body: string };

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 
 import { openIncomingEnvelope } from "./open-envelope.js";
 import { receiveApplicationCapabilities } from "./application-capabilities-control.js";
+import { attachmentTransferController, clearAttachmentTransferController } from "./attachment-runtime.js";
 import { classifyIncomingMessage } from "./incoming-message.js";
 import { orderedAttachmentRoutes } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
@@ -69,6 +70,7 @@ export function useRelayTransport(): void {
       lifecycle.stopped = true;
       clearReconnectTimer(lifecycle);
       stopHeartbeat();
+      clearAttachmentTransferController();
       disconnectRelaySession();
       lifecycle.currentKey = null;
       lifecycle.connectingKey = null;
@@ -94,6 +96,7 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
     return;
   }
   if (lifecycle.currentKey !== null) {
+    clearAttachmentTransferController();
     for (const delivery of takeTrackedDeliveries()) {
       storeApi.getState().setMessageDeliveryState(delivery.contactId, delivery.deliveryId, "unavailable");
     }
@@ -274,6 +277,7 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
     }
     case "disconnected":
       stopHeartbeat();
+      clearAttachmentTransferController();
       state.recordTransportTrace(disconnectTraceDetail(event));
       state.clearAllContactTyping();
       lifecycle.currentKey = null;
@@ -351,6 +355,11 @@ async function handleIncomingEnvelope(
     });
     if (applicationCapabilities.handled) {
       state.recordTransportTrace(`application capabilities: ${applicationCapabilities.outcome ?? "rejected"}`);
+      return;
+    }
+    const attachment = await attachmentTransferController(storeApi).receive(senderPeerId, plaintext);
+    if (attachment.status === "handled") {
+      state.recordTransportTrace(`attachment: inbound ${attachment.kind}`);
       return;
     }
     const disposition = classifyIncomingMessage({ plaintext, senderPeerId, knownContactId });

@@ -107,6 +107,18 @@ export async function sendApplicationControl(options: {
   });
 }
 
+// Framework-free endpoint adapter for a registered binary application kind.
+// It has no message-log tracking, relay queue, retry, or durable delivery claim.
+export async function sendApplicationPayload(options: {
+  readonly senderPeerId: string;
+  readonly recipientPeerId: string;
+  readonly recipientHpkePublicKey: string;
+  readonly deliveryId: string;
+  readonly plaintext: Uint8Array;
+}): Promise<void> {
+  await sealAndSendPayload(options);
+}
+
 interface SealPayloadOptions {
   readonly senderPeerId: string;
   readonly recipientPeerId: string;

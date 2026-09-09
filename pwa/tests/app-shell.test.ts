@@ -815,6 +815,19 @@ void test("PWA dispatches registered generic text bytes before explicit beta JSO
   assert.equal(classifyIncomingMessage({ plaintext: legacy, senderPeerId, knownContactId: "contact-alice" }).kind, "known_contact_message");
 });
 
+void test("PWA advertises only its bounded receiver-accept relay attachment capability", () => {
+  const capabilities = localApplicationCapabilities();
+  assert.deepEqual(capabilities.kinds, [
+    "branch.attachment.chunk/0.draft",
+    "branch.attachment.decision/0.draft",
+    "branch.attachment.manifest/0.draft",
+    "branch.chat.text/0.draft"
+  ]);
+  assert.equal(capabilities.attachmentMode, "receiver-accept");
+  assert.equal(capabilities.maxRelayAttachmentBytes, 4 * 1024 * 1024);
+  assert.equal(capabilities.maxDirectAttachmentBytes, 0);
+});
+
 void test("PWA accepts a signed raw application-capabilities control only for a known contact", async () => {
   const [sender, recipient] = await Promise.all([
     SameRelayTransportClient.createIdentity(),

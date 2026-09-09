@@ -86,6 +86,10 @@ their reasoning rather than silently replacing earlier assumptions.
   frame-level `delivery_id` deduplication contract?
 - What default first-contact expiry, retry, and accepted clock-skew values
   should v0 publish in conformance fixtures?
+- Should signed attachment manifests and decisions reject future `issued_at`
+  values under an explicit shared clock-skew policy? The attachment draft
+  currently bounds TTL and rejects expiry, but does not yet assign a separate
+  future-issue rule or vector; implementations must not invent one locally.
 
 ## Mobile
 

@@ -476,6 +476,54 @@ body {
   position: relative;
 }
 
+.pwa-inbound-attachment-offer {
+  margin: 8px 16px 0;
+  padding: 12px;
+  border: 1px solid var(--pwa-line);
+  border-radius: 8px;
+  background: var(--pwa-panel);
+}
+
+.pwa-inbound-attachment-offer-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pwa-inbound-attachment-offer-metadata {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 6px;
+  color: var(--pwa-muted);
+  font-size: 0.82rem;
+}
+
+.pwa-inbound-attachment-offer-metadata div {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pwa-inbound-attachment-offer-metadata dt,
+.pwa-inbound-attachment-offer-metadata dd {
+  margin: 0;
+}
+
+.pwa-inbound-attachment-offer-metadata dd {
+  overflow-wrap: anywhere;
+  color: var(--pwa-ink);
+}
+
+.pwa-inbound-attachment-offer-note,
+.pwa-inbound-attachment-offer-error {
+  display: block;
+  font-size: 0.78rem;
+}
+
+.pwa-inbound-attachment-offer-actions {
+  margin-top: 10px;
+}
+
 .pwa-chat-log {
   height: 100%;
   padding: 16px;

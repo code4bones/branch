@@ -9,6 +9,7 @@ import type { ContactPresence } from "./slices/contact-presence-slice.js";
 import type { MessageDeliveryState, MessageSummary } from "./slices/conversations-slice.js";
 import type { IncomingMessageRequest } from "./slices/message-requests-slice.js";
 import type { IdentityStatus, LocalIdentitySummary } from "./slices/identity-slice.js";
+import type { InboundAttachmentOffer, InboundAttachmentOfferDecision, InboundAttachmentOfferResponse } from "./slices/inbound-attachment-offers-slice.js";
 import type { AttachStatus } from "./slices/transport-slice.js";
 import type { TransportTraceEntry } from "./slices/transport-slice.js";
 import type { ThemeMode } from "./slices/ui-slice.js";
@@ -105,6 +106,22 @@ export function useConversation(contactId: string | null): ConversationControls 
   const appendMessage = useAppStore((state) => state.appendMessage);
   const setMessageDeliveryState = useAppStore((state) => state.setMessageDeliveryState);
   return { messages, appendMessage, setMessageDeliveryState };
+}
+
+export interface InboundAttachmentOfferControls {
+  readonly offer: InboundAttachmentOffer | null;
+  readonly respond: (decision: InboundAttachmentOfferDecision) => Promise<InboundAttachmentOfferResponse>;
+}
+
+// This view is empty until the connectivity adapter stages an already verified
+// manifest. It contains no storage or transport dependency of its own.
+export function useInboundAttachmentOffer(peerId: string | null): InboundAttachmentOfferControls {
+  const offer = useAppStore((state) => (peerId === null ? null : state.inboundAttachmentOffersByPeerId[peerId] ?? null));
+  const respondToInboundAttachmentOffer = useAppStore((state) => state.respondToInboundAttachmentOffer);
+  return {
+    offer,
+    respond: async (decision) => peerId === null ? "not_found" : respondToInboundAttachmentOffer(peerId, decision)
+  };
 }
 
 export interface IncomingMessageRequestControls {

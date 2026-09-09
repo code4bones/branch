@@ -7,6 +7,7 @@ import { ChatAvatar } from "../app/ChatAvatar.js";
 import { ContactPresence } from "../app/ContactPresence.js";
 import { ContactRouteLookup } from "../app/ContactRouteLookup.js";
 import { DetailHeader } from "../app/DetailHeader.js";
+import { InboundAttachmentOffer } from "../app/InboundAttachmentOffer.js";
 import { MessageComposer } from "../app/MessageComposer.js";
 import { MessageLog } from "../app/MessageLog.js";
 import { peerSupportsChatText, sendApplicationCapabilities } from "../connectivity/application-capabilities-control.js";
@@ -14,7 +15,7 @@ import { getRelaySessionClient, hasAttachedRelaySession } from "../connectivity/
 import { createDeliveryID, sealAndSendApplicationTextMessage, sealAndSendMessage } from "../connectivity/seal-and-send.js";
 import { sendTypingControl } from "../connectivity/typing-control.js";
 import { CHATS_PATH } from "../app/paths.js";
-import { useContacts, useConversation, useIdentity, useMarkContactRead, useTransportStatus } from "../state/hooks.js";
+import { useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useTransportStatus } from "../state/hooks.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 
 export function ChatPage(): React.JSX.Element {
@@ -34,6 +35,7 @@ export function ChatPage(): React.JSX.Element {
   useMarkContactRead(resolvedContactId);
 
   const contact = contacts.contacts.find((candidate) => candidate.contactId === resolvedContactId) ?? null;
+  const inboundAttachmentOffer = useInboundAttachmentOffer(contact?.peerId ?? null);
 
   useEffect(() => {
     if (contact === null || contact.peerId === null || contact.hpkePublicKey === null || transport.attachStatus !== "attached") {
@@ -194,6 +196,7 @@ export function ChatPage(): React.JSX.Element {
         title={contact.displayName}
       />
       {isReachable && <ContactRouteLookup peerId={peerId} />}
+      <InboundAttachmentOffer offer={inboundAttachmentOffer.offer} onDecision={(decision) => { void inboundAttachmentOffer.respond(decision); }} />
       <MessageLog contactId={contact.contactId} emptyDescription="No messages yet." messages={conversation.messages} />
       {sendError !== null && <div className="pwa-chat-error">{sendError}</div>}
       <MessageComposer
