@@ -363,6 +363,13 @@ async function handleIncomingEnvelope(
     state.recordTransportTrace("incoming envelope: opened");
     const knownContact = state.contacts.find((candidate) => candidate.peerId === senderPeerId) ?? null;
     const knownContactId = knownContact?.contactId ?? null;
+    // The relay-authenticated sender peer is bound into the HPKE AAD. Once
+    // such an envelope opens for an existing contact, it is fresh encrypted
+    // live endpoint traffic — unlike a relay ACK, it can truthfully refresh
+    // this contact's local availability projection.
+    if (knownContactId !== null) {
+      state.confirmContactPresenceFromLiveTraffic(knownContactId);
+    }
     const card = await receiveContactCard({ plaintext, localPeerId: state.identity.peerId, senderPeerId });
     if (card !== null) {
       if (consumePendingContactDiscovery(card.requestId, card.branchId)) {

@@ -5,9 +5,13 @@ import type { AppStore } from "../store.js";
 const maxContactPresenceEntries = 64;
 
 export type ContactPresenceStatus = "unknown" | "checking" | "available";
+export type ContactPresenceEvidence = "encrypted_pong" | "encrypted_live_traffic" | null;
 
 export interface ContactPresence {
   readonly status: ContactPresenceStatus;
+  // `available` requires one of these endpoint-authenticated local proofs.
+  // A relay ACK is deliberately never evidence of peer presence.
+  readonly evidence: ContactPresenceEvidence;
   readonly updatedAt: number;
   // This is only a local scheduling timestamp. It is never a presence claim,
   // stored contact field, relay input, or message metadata.
@@ -19,6 +23,7 @@ export interface ContactPresenceSlice {
   readonly contactPresenceById: Readonly<Record<string, ContactPresence>>;
   readonly beginContactPresencePing: (contactId: string, pingId: string, now?: number) => void;
   readonly acceptContactPresencePong: (contactId: string, pingId: string, now?: number) => void;
+  readonly confirmContactPresenceFromLiveTraffic: (contactId: string, now?: number) => void;
   readonly expireContactPresencePing: (contactId: string, pingId: string) => void;
   readonly expireContactPresence: (contactId: string, updatedAt: number) => void;
 }
@@ -40,6 +45,7 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
           // refreshes it, while a missed pong simply clears this probe.
           [contactId]: {
             status: isStillAvailable ? "available" : "checking",
+            evidence: isStillAvailable ? current.evidence : null,
             updatedAt: isStillAvailable ? current.updatedAt : now,
             lastProbeAt: now,
             pendingPingId: pingId
@@ -57,8 +63,25 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
       return {
         contactPresenceById: {
           ...state.contactPresenceById,
-          [contactId]: { ...current, status: "available", updatedAt: now, pendingPingId: null }
+          [contactId]: { ...current, status: "available", evidence: "encrypted_pong", updatedAt: now, pendingPingId: null }
         }
+      };
+    });
+  },
+  confirmContactPresenceFromLiveTraffic: (contactId, now = Date.now()) => {
+    set((state) => {
+      const current = state.contactPresenceById[contactId];
+      return {
+        contactPresenceById: boundedPresenceMap({
+          ...state.contactPresenceById,
+          [contactId]: {
+            status: "available",
+            evidence: "encrypted_live_traffic",
+            updatedAt: now,
+            lastProbeAt: current?.lastProbeAt ?? null,
+            pendingPingId: null
+          }
+        })
       };
     });
   },
@@ -72,7 +95,7 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
         contactPresenceById: {
           ...state.contactPresenceById,
           [contactId]: current.status === "checking"
-            ? { ...current, status: "unknown", updatedAt: Date.now(), pendingPingId: null }
+            ? { ...current, status: "unknown", evidence: null, updatedAt: Date.now(), pendingPingId: null }
             : { ...current, pendingPingId: null }
         }
       };
@@ -87,7 +110,7 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
       return {
         contactPresenceById: {
           ...state.contactPresenceById,
-          [contactId]: { ...current, status: "unknown", updatedAt: Date.now(), pendingPingId: null }
+          [contactId]: { ...current, status: "unknown", evidence: null, updatedAt: Date.now(), pendingPingId: null }
         }
       };
     });

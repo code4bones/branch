@@ -490,6 +490,9 @@ void test("PWA accepts only a matching pong into bounded in-memory contact prese
     throw new Error("matching pong did not create contact presence");
   }
   assert.equal(available.status, "available");
+  assert.equal(available.evidence, "encrypted_pong");
+  store.getState().confirmContactPresenceFromLiveTraffic("contact-1");
+  assert.equal(store.getState().contactPresenceById["contact-1"]?.evidence, "encrypted_live_traffic");
   const renewalPingId = Buffer.alloc(16, 23).toString("base64url");
   store.getState().beginContactPresencePing("contact-1", renewalPingId);
   assert.equal(store.getState().contactPresenceById["contact-1"]?.status, "available");
@@ -696,6 +699,7 @@ void test("PWA transport keeps relay forwarding distinct from unknown-sender pre
   assert.match(transport, /sendPresencePong/);
   assert.match(transport, /known_contact_presence_ping/);
   assert.match(transport, /acceptContactPresencePong/);
+  assert.match(transport, /confirmContactPresenceFromLiveTraffic\(knownContactId\)/);
   assert.match(transport, /case "frame_sent"/);
   assert.match(transport, /outbound frame: \$\{event\.frameType\}/);
   assert.doesNotMatch(transport, /setMessageDeliveryState\(contactId, event\.deliveryId, "received"\)/);
@@ -749,12 +753,15 @@ void test("PWA contact presence is a bounded background encrypted ping-pong runt
   assert.match(component, /Ping contact/);
   assert.match(slice, /maxContactPresenceEntries = 64/);
   assert.match(slice, /acceptContactPresencePong/);
+  assert.match(slice, /confirmContactPresenceFromLiveTraffic/);
+  assert.match(slice, /encrypted_live_traffic/);
   assert.match(slice, /expireContactPresencePing/);
   assert.match(slice, /lastProbeAt/);
   assert.doesNotMatch(slice, /storage|IndexedDB|saveStored|fetch\(|WebSocket/);
   assert.match(sealAndSend, /sendPresencePing/);
   assert.match(sealAndSend, /sendPresencePong/);
   assert.doesNotMatch(sealAndSend, /saveStored|appendMessage/);
+  assert.match(transport, /unlike a relay ACK/);
   assert.match(chatListSidebar, /ContactOnlineBadge/);
   assert.match(chatListSidebar, /useContactPresence/);
   assert.match(chatListSidebar, /presence\.status !== "available"/);

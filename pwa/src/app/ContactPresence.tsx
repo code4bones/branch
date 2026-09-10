@@ -31,7 +31,11 @@ export function ContactPresence({ contact }: { readonly contact: ContactSummary 
     : status === "checking"
       ? "Checking contact"
       : "Presence unknown";
-  const title = status === "available" ? "Contact online (encrypted pong)" : label;
+  const title = status === "available"
+    ? presenceState.evidence === "encrypted_live_traffic"
+      ? "Contact online (encrypted live traffic)"
+      : "Contact online (encrypted pong)"
+    : label;
   const badgeStatus = status === "available" ? "success" : status === "checking" ? "processing" : "default";
 
   return (

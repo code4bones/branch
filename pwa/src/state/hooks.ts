@@ -104,7 +104,7 @@ export function useContactDiscoveries(): ContactDiscoveryControls {
   };
 }
 
-const unknownContactPresence: ContactPresence = { status: "unknown", updatedAt: 0, lastProbeAt: null, pendingPingId: null };
+const unknownContactPresence: ContactPresence = { status: "unknown", evidence: null, updatedAt: 0, lastProbeAt: null, pendingPingId: null };
 
 export interface ContactPresenceControls {
   readonly presence: ContactPresence;

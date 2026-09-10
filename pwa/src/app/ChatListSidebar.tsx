@@ -122,8 +122,11 @@ function ContactOnlineBadge({ contactId }: { readonly contactId: string }): Reac
   if (presence.status !== "available") {
     return null;
   }
+  const title = presence.evidence === "encrypted_live_traffic"
+    ? "Contact online (encrypted live traffic)"
+    : "Contact online (encrypted pong)";
   return (
-    <Tooltip title="Contact online (encrypted pong)">
+    <Tooltip title={title}>
       <span aria-label="online" className="pwa-contact-online-badge" role="img">
         <Badge status="success" />
       </span>
