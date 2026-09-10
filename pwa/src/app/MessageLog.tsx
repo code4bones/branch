@@ -95,10 +95,10 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
             className="pwa-chat-latest-button"
             icon={<DownOutlined />}
             onClick={scrollToLatest}
+            shape="circle"
+            size="middle"
             type="primary"
-          >
-            Scroll to bottom
-          </Button>
+          />
         </Tooltip>
       )}
     </div>
