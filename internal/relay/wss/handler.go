@@ -83,6 +83,7 @@ type Handler struct {
 	handshakeTimeout   time.Duration
 	writeTimeout       time.Duration
 	federationRequests federationRequestWindow
+	contactDiscovery   contactDiscovery
 }
 
 // NewHandler creates a WSS relay adapter with explicit bounds.
@@ -121,6 +122,7 @@ func NewHandler(config Config) (*Handler, error) {
 		handshakeTimeout:   config.HandshakeTimeout,
 		writeTimeout:       config.WriteTimeout,
 		federationRequests: federationRequestWindow{entries: make(map[federationRequestKey]time.Time, maxFederationRequestEntries)},
+		contactDiscovery:   newContactDiscovery(),
 	}, nil
 }
 
@@ -230,6 +232,7 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 		return fmt.Errorf("%w: %s", ErrInvalidFrame, mapRelayError(err))
 	}
 	defer session.Close()
+	defer handler.contactDiscovery.remove(relay.SessionID(sessionID))
 
 	ready := map[string]any{
 		"type":                       "READY",
@@ -252,13 +255,13 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	defer stop()
 	errs := make(chan error, 2)
 	go handler.writeLoop(runCtx, conn, session, errs)
-	go handler.readLoop(runCtx, conn, session, relay.SessionID(sessionID), authenticatedPeerID, len(hello.FederationPublicKey) > 0, errs)
+	go handler.readLoop(runCtx, conn, session, relay.SessionID(sessionID), authenticatedPeerID, len(hello.FederationPublicKey) > 0, offerHasExtension(hello.SelectedOffer, protocol.ContactDiscoveryLiveExtension), errs)
 	err = <-errs
 	stop()
 	return err
 }
 
-func (handler *Handler) readLoop(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, federationAttachment bool, errs chan<- error) {
+func (handler *Handler) readLoop(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, federationAttachment bool, contactDiscoveryEnabled bool, errs chan<- error) {
 	sequences := sequenceTracker{}
 	for {
 		raw, err := readFrame(ctx, conn)
@@ -266,7 +269,7 @@ func (handler *Handler) readLoop(ctx context.Context, conn *connection, session 
 			errs <- err
 			return
 		}
-		if err := handler.handleFrame(ctx, conn, session, sessionID, authenticatedPeerID, federationAttachment, &sequences, raw); err != nil {
+		if err := handler.handleFrame(ctx, conn, session, sessionID, authenticatedPeerID, federationAttachment, contactDiscoveryEnabled, &sequences, raw); err != nil {
 			if writeErr := handler.writeError(ctx, conn, mapRelayError(err)); writeErr != nil {
 				errs <- writeErr
 				return
@@ -298,7 +301,7 @@ func (handler *Handler) writeLoop(ctx context.Context, conn *connection, session
 	}
 }
 
-func (handler *Handler) handleFrame(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, federationAttachment bool, sequences *sequenceTracker, raw []byte) error {
+func (handler *Handler) handleFrame(ctx context.Context, conn *connection, session *relay.Session, sessionID relay.SessionID, authenticatedPeerID relay.PeerID, federationAttachment bool, contactDiscoveryEnabled bool, sequences *sequenceTracker, raw []byte) error {
 	frame, err := decodeTypedFrame(raw)
 	if err != nil {
 		return err
@@ -311,6 +314,52 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	}
 
 	switch frame["type"] {
+	case "CONTACT_ANNOUNCE":
+		if federationAttachment || !contactDiscoveryEnabled {
+			return ErrInvalidFrame
+		}
+		key, err := decodeBase64(string(authenticatedPeerID), 32)
+		if err != nil {
+			return ErrAuthenticationFailed
+		}
+		branchID, err := protocol.BranchIDFromPublicKey(key)
+		if err != nil {
+			return ErrAuthenticationFailed
+		}
+		discoverable, ok := frame["discoverable"].(bool)
+		if !ok {
+			return ErrInvalidFrame
+		}
+		handler.contactDiscovery.announce(sessionID, branchID, authenticatedPeerID, conn, discoverable)
+		return nil
+	case "CONTACT_LOOKUP":
+		if federationAttachment || !contactDiscoveryEnabled {
+			return ErrInvalidFrame
+		}
+		issued, ok := numericField(frame["issued_at"])
+		if !ok {
+			return ErrInvalidFrame
+		}
+		expires, ok := numericField(frame["expires_at"])
+		if !ok {
+			return ErrInvalidFrame
+		}
+		now := handler.now()
+		issuedAt, expiresAt := time.UnixMilli(issued), time.UnixMilli(expires)
+		if !expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > contactDiscoveryWindow || !expiresAt.After(now) || issuedAt.After(now.Add(contactDiscoveryWindow)) {
+			return ErrFrameReplayed
+		}
+		target, ok := handler.contactDiscovery.reserve(sessionID, frame["request_id"].(string), frame["branch_id"].(string), now, expiresAt)
+		if !ok {
+			return nil
+		}
+		probe := map[string]any{"type": "CONTACT_PROBE", "session_id": string(target.sessionID), "request_id": frame["request_id"], "branch_id": frame["branch_id"], "requester_peer_id": string(authenticatedPeerID), "requester_hpke_public_key": frame["requester_hpke_public_key"], "issued_at": issued, "expires_at": expires}
+		if err := writeJSON(ctx, target.conn, handler.writeTimeout, probe); err != nil {
+			handler.contactDiscovery.remove(target.sessionID)
+		}
+		return nil
+	case "CONTACT_PROBE":
+		return ErrInvalidFrame
 	case "PRESENCE":
 		if relay.PeerID(frame["peer_id"].(string)) != authenticatedPeerID {
 			return ErrAuthenticationFailed
@@ -376,6 +425,19 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	default:
 		return nil
 	}
+}
+
+func offerHasExtension(offer map[string]any, extension string) bool {
+	values, ok := offer["extensions"].([]any)
+	if !ok {
+		return false
+	}
+	for _, value := range values {
+		if value == extension {
+			return true
+		}
+	}
+	return false
 }
 
 type sequenceTracker struct {
