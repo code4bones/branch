@@ -18,7 +18,7 @@ func TestHubForwardsOpaqueFramesAcrossLiveRoute(t *testing.T) {
 	})
 	alice := attach(t, hub, "alice")
 	bob := attach(t, hub, "bob")
-	if err := alice.AnnouncePresence("alice-peer", time.Unix(1_789_000_000, 0)); err != nil {
+	if err := alice.AnnouncePresence("alice-peer", time.Now().UTC()); err != nil {
 		t.Fatalf("announce alice presence: %v", err)
 	}
 	if err := hub.Pair("route-1", alice.ID(), bob.ID()); err != nil {
@@ -140,7 +140,7 @@ func TestHubPresenceHeartbeatLookupAndRendezvousAreEphemeral(t *testing.T) {
 		MaxBytesPerSession:  64,
 		PresenceTTL:         10 * time.Second,
 	})
-	now := time.Unix(1_789_000_000, 0)
+	now := time.Now().UTC()
 	alice := attach(t, hub, "alice-session")
 	bob := attach(t, hub, "bob-session")
 
@@ -194,7 +194,7 @@ func TestHubRendezvousCanLoopBackToSameLivePeer(t *testing.T) {
 		MaxBytesPerSession:  64,
 		PresenceTTL:         10 * time.Second,
 	})
-	now := time.Unix(1_789_000_000, 0)
+	now := time.Now().UTC()
 	alice := attach(t, hub, "alice-session")
 
 	if err := alice.AnnouncePresence("alice-peer", now); err != nil {
@@ -233,7 +233,7 @@ func TestHubRendezvousIsIdempotentOnlyForSameLiveBinding(t *testing.T) {
 		MaxBytesPerSession:  64,
 		PresenceTTL:         10 * time.Second,
 	})
-	now := time.Unix(1_789_000_000, 0)
+	now := time.Now().UTC()
 	alice := attach(t, hub, "alice-session")
 	bob := attach(t, hub, "bob-session")
 	charlie := attach(t, hub, "charlie-session")
@@ -267,7 +267,7 @@ func TestHubRendezvousIsIdempotentOnlyForSameLiveBinding(t *testing.T) {
 }
 
 func TestHubFederatedPresenceForwardsAcrossLiveRelays(t *testing.T) {
-	now := time.Unix(1_789_000_000, 0)
+	now := time.Now().UTC()
 	leftHub := newTestHub(t, Config{
 		MaxSessions:         2,
 		MaxQueueDepth:       2,
@@ -337,7 +337,7 @@ func TestHubFederatedPresenceForwardsAcrossLiveRelays(t *testing.T) {
 }
 
 func TestHubFederatedPresenceReturnsUnavailableWithoutMailbox(t *testing.T) {
-	now := time.Unix(1_789_000_000, 0)
+	now := time.Now().UTC()
 	leftHub := newTestHub(t, Config{
 		MaxSessions:         1,
 		MaxQueueDepth:       1,
@@ -386,7 +386,7 @@ func TestHubFederatedPresenceReturnsUnavailableWithoutMailbox(t *testing.T) {
 }
 
 func TestHubFederatedPresenceExpiresWithoutRouteState(t *testing.T) {
-	now := time.Unix(1_789_000_000, 0)
+	now := time.Now().UTC()
 	hub := newTestHub(t, Config{
 		MaxSessions:         1,
 		MaxQueueDepth:       1,

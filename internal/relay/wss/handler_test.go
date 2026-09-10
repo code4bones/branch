@@ -3,6 +3,7 @@ package wss
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -1290,5 +1291,11 @@ func (forwarder testFederationForwarder) Forward(ctx context.Context, routeID re
 	if err != nil && !errors.Is(err, relay.ErrRouteExists) {
 		return err
 	}
-	return forwarder.target.Send(ctx, routeID, payload)
+	// This fixture deliberately operates on its handler's injected clock. The
+	// live delivery path has the same explicit time parameter, so don't let the
+	// host wall clock make a static test presence expire years later.
+	return forwarder.target.SendDelivery(ctx, routeID, payload, relay.Delivery{
+		ID:     string(routeID),
+		Digest: sha256.Sum256(payload),
+	}, forwarder.now)
 }
