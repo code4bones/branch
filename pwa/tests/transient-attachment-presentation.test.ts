@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { attachmentSendAdmission, installAttachmentSendBridge, offerSelectedAttachment } from "../src/app/attachment-send-bridge.js";
+import { attachmentSendAdmission, installAttachmentSendBridge, notifyAttachmentSendProgress, offerSelectedAttachment, subscribeAttachmentSendProgress } from "../src/app/attachment-send-bridge.js";
 import {
   clearTransientCompletedAttachment,
   downloadVerifiedCompletedAttachment,
@@ -135,4 +135,15 @@ void test("sender bridge requires current admission and passes the selected File
   assert.equal(offered, selected);
   cleanup();
   assert.deepEqual(attachmentSendAdmission(store, "peer-a"), { status: "unavailable" });
+});
+
+void test("sender progress bridge is volatile and removes an unsubscribed observer", () => {
+  const store = createAppStore();
+  const observed: string[] = [];
+  const unsubscribe = subscribeAttachmentSendProgress(store, (event) => { observed.push(`${event.event}:${event.reason}`); });
+  notifyAttachmentSendProgress(store, { event: "attachment.transfer.accepted", peerId: "peer-a", direction: "outbound", reason: "accepted" });
+  unsubscribe();
+  notifyAttachmentSendProgress(store, { event: "attachment.transfer.ended", peerId: "peer-a", direction: "outbound", reason: "accepted" });
+
+  assert.deepEqual(observed, ["attachment.transfer.accepted:accepted"]);
 });

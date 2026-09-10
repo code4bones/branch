@@ -1,6 +1,6 @@
 import { decodeBase64URL, type AttachmentManifest } from "@code4bones/branch-core";
 
-import { installAttachmentSendBridge } from "../app/attachment-send-bridge.js";
+import { installAttachmentSendBridge, notifyAttachmentSendProgress } from "../app/attachment-send-bridge.js";
 import { getLocalIdentityKeys } from "../identity/identity-keys.js";
 import type { AppStoreApi } from "../state/store.js";
 import { peerApplicationCapabilities } from "./application-capabilities-control.js";
@@ -90,6 +90,7 @@ export function attachmentTransferController(storeApi: AppStoreApi): AttachmentT
       // Stable lifecycle labels only: never record names, manifests, IDs,
       // capability values, chunk bytes, or cryptographic material.
       storeApi.getState().recordTransportTrace(`attachment: ${event.event} ${event.direction} ${event.reason}`);
+      notifyAttachmentSendProgress(storeApi, event);
       if (event.event === "attachment.transfer.ended" && event.direction === "inbound") {
         storeApi.getState().dismissInboundAttachmentOffer(event.peerId);
         // A successful completion was just staged for the UI. Every other

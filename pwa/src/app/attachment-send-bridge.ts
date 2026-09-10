@@ -1,4 +1,5 @@
 import type { AppStoreApi } from "../state/store.js";
+import type { AttachmentControllerEvent } from "../connectivity/attachment-transfer.js";
 
 /** Local presentation gate; the controller repeats all admission checks. */
 export type AttachmentSendAdmission =
@@ -18,6 +19,7 @@ export interface AttachmentSendBridge {
 
 // The bridge is tab-local and never enters React state, Zustand or storage.
 const bridgesByStore = new WeakMap<AppStoreApi, AttachmentSendBridge>();
+const progressListenersByStore = new WeakMap<AppStoreApi, Set<(event: AttachmentControllerEvent) => void>>();
 
 /** Called by the connectivity composition root after it builds the controller. */
 export function installAttachmentSendBridge(storeApi: AppStoreApi, bridge: AttachmentSendBridge): () => void {
@@ -39,4 +41,25 @@ export async function offerSelectedAttachment(storeApi: AppStoreApi, peerId: str
     return { status: "rejected", reason: "unavailable" };
   }
   return await bridge.offer(peerId, file);
+}
+
+// Progress is an in-tab UI observation of an already-running live transfer.
+// It is never persisted, replayed, or used to affect controller state.
+export function subscribeAttachmentSendProgress(storeApi: AppStoreApi, listener: (event: AttachmentControllerEvent) => void): () => void {
+  let listeners = progressListenersByStore.get(storeApi);
+  if (listeners === undefined) {
+    listeners = new Set();
+    progressListenersByStore.set(storeApi, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) progressListenersByStore.delete(storeApi);
+  };
+}
+
+export function notifyAttachmentSendProgress(storeApi: AppStoreApi, event: AttachmentControllerEvent): void {
+  for (const listener of progressListenersByStore.get(storeApi) ?? []) {
+    try { listener(event); } catch { /* Presentation observers never affect transit. */ }
+  }
 }

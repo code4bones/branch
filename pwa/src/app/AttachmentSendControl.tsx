@@ -1,8 +1,8 @@
 import { PaperClipOutlined } from "@ant-design/icons";
 import { Button, Typography } from "antd";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { attachmentSendAdmission, offerSelectedAttachment } from "./attachment-send-bridge.js";
+import { attachmentSendAdmission, offerSelectedAttachment, subscribeAttachmentSendProgress } from "./attachment-send-bridge.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 
 /** Explicit one-file picker. It never keeps the selected File in React state. */
@@ -11,6 +11,12 @@ export function AttachmentSendControl({ peerId }: { readonly peerId: string }): 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [offering, setOffering] = useState(false);
+
+  useEffect(() => subscribeAttachmentSendProgress(storeApi, (event) => {
+    if (event.peerId !== peerId || event.direction !== "outbound") return;
+    const next = transferNotice(event);
+    if (next !== null) setNotice(next);
+  }), [peerId, storeApi]);
 
   const selectFile = (): void => {
     const admission = attachmentSendAdmission(storeApi, peerId);
@@ -78,5 +84,20 @@ function rejectionNotice(reason: "unknown_peer" | "unsupported" | "busy" | "unav
     case "busy": return "A live file transfer is already active for this contact.";
     case "unavailable": return "The contact or live relay is no longer available.";
     case "send_failed": return "The live file offer could not be sent.";
+  }
+}
+
+function transferNotice(event: { readonly event: string; readonly reason: string }): string | null {
+  if (event.event === "attachment.offer.sent") return "File offer sent. Waiting for the recipient to accept.";
+  if (event.event === "attachment.transfer.accepted") return "Recipient accepted. Sending file chunks…";
+  if (event.event !== "attachment.transfer.ended") return null;
+  switch (event.reason) {
+    case "accepted": return "Recipient accepted; all file chunks were forwarded.";
+    case "rejected": return "Recipient declined the file offer.";
+    case "expired": return "File offer expired before transfer completed.";
+    case "ack_timeout": return "File transfer ended: relay forwarding timed out.";
+    case "disconnected": return "File transfer ended: relay disconnected.";
+    case "unavailable": return "File transfer ended: contact or relay unavailable.";
+    default: return "File transfer ended before completion.";
   }
 }
