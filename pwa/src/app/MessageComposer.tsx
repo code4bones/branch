@@ -9,7 +9,7 @@ export function MessageComposer({ value, onChange, onSend, onTyping, placeholder
   readonly placeholder: string;
 }): React.JSX.Element {
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+    if (event.key !== "Enter" || event.shiftKey) {
       return;
     }
     event.preventDefault();

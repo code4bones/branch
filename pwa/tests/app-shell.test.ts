@@ -758,7 +758,7 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(messageComposer, /aria-label="Send message"/);
   assert.match(messageComposer, /Input\.TextArea/);
   assert.match(messageComposer, /maxRows: 5/);
-  assert.match(messageComposer, /event\.ctrlKey && !event\.metaKey/);
+  assert.match(messageComposer, /event\.shiftKey/);
   assert.match(messageComposer, /event\.preventDefault\(\)/);
 });
 
