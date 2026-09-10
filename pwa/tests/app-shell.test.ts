@@ -553,6 +553,15 @@ void test("outgoing delivery state advances monotonically while a valid receipt 
   store.getState().setMessageDeliveryState("contact-1", "outgoing-2", "unavailable");
   store.getState().setMessageDeliveryState("contact-1", "outgoing-2", "delivered");
   assert.equal(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "outgoing-2")?.deliveryState, "delivered");
+
+  const retryable = { ...outgoing, messageId: "outgoing-3" };
+  const replacement = { ...retryable, messageId: "outgoing-3-retry", deliveryState: "pending" as const };
+  store.getState().appendMessage(retryable);
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-3", "unavailable");
+  assert.equal(store.getState().retryUnavailableMessage("contact-1", "outgoing-3", replacement), true);
+  assert.equal(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "outgoing-3"), undefined);
+  assert.deepEqual(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "outgoing-3-retry"), replacement);
+  assert.equal(store.getState().retryUnavailableMessage("contact-1", "outgoing-3", replacement), false);
 });
 
 void test("a completed file service bubble includes only local terminal metadata", async () => {
@@ -751,6 +760,9 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(messageLog, /CheckOutlined/);
   assert.match(messageLog, /DoubleCheckIcon/);
   assert.match(messageLog, /ExclamationCircleOutlined/);
+  assert.match(messageLog, /RedoOutlined/);
+  assert.match(messageLog, /Retry sending message/);
+  assert.match(messageLog, /onRetryUnavailableMessage/);
   assert.match(messageLog, /aria-label=\{presentation\.label\}/);
   assert.match(messageLog, /hour12: false/);
   assert.match(formatTime, /hour12: false/);

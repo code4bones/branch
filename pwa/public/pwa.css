@@ -718,6 +718,19 @@ body {
   color: #eb7770;
 }
 
+.pwa-chat-retry-message {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
+  color: #eb7770;
+  line-height: 18px;
+}
+
+.pwa-chat-retry-message:hover {
+  color: var(--pwa-cyan) !important;
+}
+
 .pwa-chat-delivery-double-check {
   display: inline-flex;
   align-items: center;

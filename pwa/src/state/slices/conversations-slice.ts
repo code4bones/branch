@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 
 import type { AppStore } from "../store.js";
 import { demoMessages } from "../demo-seed.js";
-import { saveStoredMessage } from "../../storage/messages-store.js";
+import { replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
 
 // `received` remains an inbound/local compatibility value. Remote user-facing
 // outcomes for an outgoing message are explicit: a relay may say Relayed, but
@@ -24,6 +24,8 @@ export interface MessageSummary {
 export interface ConversationsSlice {
   readonly messagesByContactId: Readonly<Record<string, readonly MessageSummary[]>>;
   readonly appendMessage: (message: MessageSummary) => void;
+  // A retry is a new E2EE/live delivery attempt, never a replay of the old ID.
+  readonly retryUnavailableMessage: (contactId: string, previousMessageId: string, replacement: MessageSummary) => boolean;
   readonly setMessageDeliveryState: (contactId: string, messageId: string, deliveryState: MessageDeliveryState) => void;
 }
 
@@ -40,6 +42,37 @@ export const createConversationsSlice: StateCreator<AppStore, [], [], Conversati
       }
     }));
     persistMessageInOrder(message);
+  },
+  retryUnavailableMessage: (contactId, previousMessageId, replacement) => {
+    if (
+      replacement.messageId === previousMessageId ||
+      replacement.contactId !== contactId ||
+      replacement.direction !== "outgoing" ||
+      replacement.deliveryState !== "pending"
+    ) {
+      return false;
+    }
+    const outcome = { replaced: false };
+    set((state) => {
+      const existing = state.messagesByContactId[contactId];
+      if (existing === undefined) {
+        return state;
+      }
+      const next = existing.map((message) => {
+        if (message.messageId !== previousMessageId || message.direction !== "outgoing" || message.deliveryState !== "unavailable") {
+          return message;
+        }
+        outcome.replaced = true;
+        return replacement;
+      });
+      return outcome.replaced
+        ? { messagesByContactId: { ...state.messagesByContactId, [contactId]: orderConversationMessages(next) } }
+        : state;
+    });
+    if (outcome.replaced) {
+      persistRetriedMessageInOrder(previousMessageId, replacement);
+    }
+    return outcome.replaced;
   },
   setMessageDeliveryState: (contactId, messageId, deliveryState) => {
     const transition: { message: MessageSummary | null } = { message: null };
@@ -113,6 +146,35 @@ function persistMessageInOrder(message: MessageSummary): void {
   }).finally(() => {
     if (messagePersistenceChains.get(message.messageId) === next) {
       messagePersistenceChains.delete(message.messageId);
+    }
+  });
+}
+
+function persistRetriedMessageInOrder(previousMessageId: string, replacement: MessageSummary): void {
+  const previous = messagePersistenceChains.get(previousMessageId) ?? Promise.resolve();
+  const replacementPrevious = messagePersistenceChains.get(replacement.messageId) ?? Promise.resolve();
+  if (
+    messagePersistenceChains.get(previousMessageId) === undefined &&
+    messagePersistenceChains.get(replacement.messageId) === undefined &&
+    messagePersistenceChains.size + 2 > maxPendingMessagePersists
+  ) {
+    return;
+  }
+  const next = Promise.all([previous, replacementPrevious])
+    .catch(() => {
+      // A failed earlier write must not resurrect the superseded message.
+    })
+    .then(async () => { await replaceStoredMessageForRetry(previousMessageId, replacement); });
+  messagePersistenceChains.set(previousMessageId, next);
+  messagePersistenceChains.set(replacement.messageId, next);
+  void next.catch(() => {
+    // Best-effort local persistence; a retry never becomes a transport queue.
+  }).finally(() => {
+    if (messagePersistenceChains.get(previousMessageId) === next) {
+      messagePersistenceChains.delete(previousMessageId);
+    }
+    if (messagePersistenceChains.get(replacement.messageId) === next) {
+      messagePersistenceChains.delete(replacement.messageId);
     }
   });
 }

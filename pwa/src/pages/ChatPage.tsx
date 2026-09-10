@@ -131,22 +131,25 @@ export function ChatPage(): React.JSX.Element {
     }
   };
 
-  const handleSend = (): void => {
-    const body = draft.trim();
+  const sendBody = (body: string, previousUnavailableMessage?: MessageSummary): void => {
     if (body === "" || identity.identity === null) {
       return;
     }
     setSendError(null);
     const deliveryId = createDeliveryID();
-    conversation.appendMessage({
+    const pendingMessage: MessageSummary = {
       messageId: deliveryId,
       contactId: contact.contactId,
       direction: "outgoing",
       body,
-      sentAt: Date.now(),
+      sentAt: previousUnavailableMessage?.sentAt ?? Date.now(),
       deliveryState: "pending"
-    });
-    setDraft("");
+    };
+    if (previousUnavailableMessage === undefined) {
+      conversation.appendMessage(pendingMessage);
+    } else if (!conversation.retryUnavailableMessage(contact.contactId, previousUnavailableMessage.messageId, pendingMessage)) {
+      return;
+    }
 
     if (peerId !== null && hpkePublicKey !== null && hasAttachedRelaySession()) {
       const supportsGenericText = peerSupportsChatText(peerId);
@@ -201,6 +204,22 @@ export function ChatPage(): React.JSX.Element {
       setSendError("relay is not attached");
     }
     // Demo contacts deliberately remain local-only UI samples.
+  };
+
+  const handleSend = (): void => {
+    const body = draft.trim();
+    if (body === "" || identity.identity === null) {
+      return;
+    }
+    setDraft("");
+    sendBody(body);
+  };
+
+  const retryUnavailableMessage = (message: MessageSummary): void => {
+    if (message.direction !== "outgoing" || message.deliveryState !== "unavailable") {
+      return;
+    }
+    sendBody(message.body, message);
   };
 
   const handleTyping = (): void => {
@@ -266,7 +285,7 @@ export function ChatPage(): React.JSX.Element {
           setSendError("That verified file is no longer available in this live tab.");
         }
       }} />
-      <MessageLog contactId={contact.contactId} emptyDescription="No messages yet." messages={conversation.messages} onIncomingMessageAutoPresented={handleIncomingMessageAutoPresented} />
+      <MessageLog contactId={contact.contactId} emptyDescription="No messages yet." messages={conversation.messages} onIncomingMessageAutoPresented={handleIncomingMessageAutoPresented} onRetryUnavailableMessage={retryUnavailableMessage} />
       {sendError !== null && <div className="pwa-chat-error">{sendError}</div>}
       <div className="pwa-chat-compose-row">
         {peerId !== null && hpkePublicKey !== null && <AttachmentSendControl peerId={peerId} />}

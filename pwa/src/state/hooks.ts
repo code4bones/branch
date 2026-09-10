@@ -136,14 +136,16 @@ export function useContactTyping(contactId: string): ContactTypingControls {
 export interface ConversationControls {
   readonly messages: readonly MessageSummary[];
   readonly appendMessage: (message: MessageSummary) => void;
+  readonly retryUnavailableMessage: (contactId: string, previousMessageId: string, replacement: MessageSummary) => boolean;
   readonly setMessageDeliveryState: (contactId: string, messageId: string, deliveryState: MessageDeliveryState) => void;
 }
 
 export function useConversation(contactId: string | null): ConversationControls {
   const messages = useAppStore((state) => (contactId === null ? emptyMessages : state.messagesByContactId[contactId] ?? emptyMessages));
   const appendMessage = useAppStore((state) => state.appendMessage);
+  const retryUnavailableMessage = useAppStore((state) => state.retryUnavailableMessage);
   const setMessageDeliveryState = useAppStore((state) => state.setMessageDeliveryState);
-  return { messages, appendMessage, setMessageDeliveryState };
+  return { messages, appendMessage, retryUnavailableMessage, setMessageDeliveryState };
 }
 
 export interface ReceiptPolicyControls {

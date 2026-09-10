@@ -1,4 +1,4 @@
-import { CheckOutlined, ExclamationCircleOutlined, LoadingOutlined, DownOutlined } from "@ant-design/icons";
+import { CheckOutlined, DownOutlined, ExclamationCircleOutlined, LoadingOutlined, RedoOutlined } from "@ant-design/icons";
 import { Button, Empty, Tooltip } from "antd";
 import { Fragment, useCallback, useLayoutEffect, useRef, useState } from "react";
 
@@ -6,7 +6,7 @@ import type { MessageDeliveryState, MessageSummary } from "../state/slices/conve
 
 const bottomThresholdPx = 48;
 
-export function MessageLog({ contactId, messages, emptyDescription, onIncomingMessageAutoPresented }: {
+export function MessageLog({ contactId, messages, emptyDescription, onIncomingMessageAutoPresented, onRetryUnavailableMessage }: {
   readonly contactId: string;
   readonly messages: readonly MessageSummary[];
   readonly emptyDescription: string;
@@ -14,6 +14,7 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
   // auto-scrolled into the active view. It intentionally does not fire for an
   // unread message while the reader has scrolled away from the bottom.
   readonly onIncomingMessageAutoPresented?: (message: MessageSummary) => void;
+  readonly onRetryUnavailableMessage?: (message: MessageSummary) => void;
 }): React.JSX.Element {
   const logRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -81,7 +82,10 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
           messages.map((message, index) => (
             <Fragment key={message.messageId}>
               {startsNewDay(messages[index - 1] ?? null, message) && <ChatDayDivider timestamp={message.sentAt} />}
-              <ChatBubble message={message} />
+              <ChatBubble
+                message={message}
+                {...(onRetryUnavailableMessage === undefined ? {} : { onRetryUnavailableMessage })}
+              />
             </Fragment>
           ))
         )}
@@ -117,13 +121,21 @@ export function autoPresentedIncomingMessage(options: {
   return options.openedDifferentConversation || options.wasAtBottom ? options.newest : null;
 }
 
-function ChatBubble({ message }: { readonly message: MessageSummary }): React.JSX.Element {
+function ChatBubble({ message, onRetryUnavailableMessage }: {
+  readonly message: MessageSummary;
+  readonly onRetryUnavailableMessage?: (message: MessageSummary) => void;
+}): React.JSX.Element {
   return (
     <article className={`pwa-chat-message is-${message.direction}`}>
       <span className="pwa-chat-message-body">{message.body}</span>
       <footer className="pwa-chat-message-meta">
         <time dateTime={new Date(message.sentAt).toISOString()}>{formatMessageTime(message.sentAt)}</time>
         {message.direction === "outgoing" && <DeliveryStateIcon state={message.deliveryState} />}
+        {message.direction === "outgoing" && message.deliveryState === "unavailable" && onRetryUnavailableMessage !== undefined && (
+          <Tooltip title="Retry sending message">
+            <Button aria-label="Retry sending message" className="pwa-chat-retry-message" icon={<RedoOutlined />} onClick={() => { onRetryUnavailableMessage(message); }} size="small" type="text" />
+          </Tooltip>
+        )}
       </footer>
     </article>
   );
