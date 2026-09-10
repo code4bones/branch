@@ -594,7 +594,7 @@ void test("read-receipt policy defaults off and has a dedicated user-owned persi
   const settings = await readFile(settingsPagePath, "utf8");
   const hooks = await readFile(hooksPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 4/);
+  assert.match(database, /const DATABASE_VERSION = 5/);
   assert.match(database, /RECEIPT_POLICY_STORE/);
   assert.match(policyStore, /loadStoredReadReceiptPolicy/);
   assert.match(policyStore, /saveStoredReadReceiptPolicy/);
@@ -997,15 +997,16 @@ void test("PWA accepts a signed raw application-capabilities control only for a 
   assert.equal(unknownContact.outcome, "unknown_contact");
 });
 
-void test("real contacts carry peerId/hpkePublicKey and settings expose a JSON invite to add them", async () => {
+void test("real contacts carry peerId/hpkePublicKey and BranchID discovery replaces JSON invites", async () => {
   const settingsPage = await readFile(settingsPagePath, "utf8");
   const chatListSidebar = await readFile(chatListSidebarForContactPath, "utf8");
 
-  assert.match(settingsPage, /JSON\.stringify\(\{/);
-  assert.match(settingsPage, /peerId: identity\.identity\.peerId/);
-  assert.match(settingsPage, /hpkePublicKey: identity\.identity\.hpkePublicKey/);
+  assert.match(settingsPage, /BranchID/);
   assert.match(chatListSidebar, /upsertContact/);
-  assert.match(chatListSidebar, /JSON\.parse\(value\)/);
+  assert.match(chatListSidebar, /parseBranchID\(value\)/);
+  assert.match(chatListSidebar, /Not found yet/);
+  assert.match(chatListSidebar, /Retry/);
+  assert.match(chatListSidebar, /Add/);
 });
 
 void test("contact route lookup remains a published-announcement diagnostic", async () => {
@@ -1045,13 +1046,14 @@ void test("contacts, messages, read state, and inbound requests persist through 
   const hydrationSlice = await readFile(hydrationSlicePath, "utf8");
   const requireIdentity = await readFile(requireIdentityPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 4/);
+  assert.match(database, /const DATABASE_VERSION = 5/);
   assert.match(database, /IDENTITY_STORE/);
   assert.match(database, /CONTACTS_STORE/);
   assert.match(database, /MESSAGES_STORE/);
   assert.match(database, /READ_STATE_STORE/);
   assert.match(database, /MESSAGE_REQUESTS_STORE/);
   assert.match(database, /RECEIPT_POLICY_STORE/);
+  assert.match(database, /CONTACT_DISCOVERY_STORE/);
   assert.match(contactsStore, /openDatabase/);
   assert.match(messagesStore, /openDatabase/);
   assert.match(readStateStore, /openDatabase/);

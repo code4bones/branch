@@ -4,7 +4,7 @@
 // from different modules is a real way to deadlock IndexedDB upgrades.
 
 const DATABASE_NAME = "branch-pwa";
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 export const IDENTITY_STORE = "identity";
 export const CONTACTS_STORE = "contacts";
@@ -12,6 +12,7 @@ export const MESSAGES_STORE = "messages";
 export const READ_STATE_STORE = "readState";
 export const MESSAGE_REQUESTS_STORE = "messageRequests";
 export const RECEIPT_POLICY_STORE = "receiptPolicy";
+export const CONTACT_DISCOVERY_STORE = "contactDiscovery";
 
 export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -36,6 +37,9 @@ export function openDatabase(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(RECEIPT_POLICY_STORE)) {
         db.createObjectStore(RECEIPT_POLICY_STORE);
+      }
+      if (!db.objectStoreNames.contains(CONTACT_DISCOVERY_STORE)) {
+        db.createObjectStore(CONTACT_DISCOVERY_STORE, { keyPath: "branchId" });
       }
     };
     request.onsuccess = () => { resolve(request.result); };

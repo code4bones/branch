@@ -7,6 +7,7 @@ import { downloadVerifiedCompletedAttachment, type CompletedAttachmentDownloadRe
 import { ECHO_CONTACT_ID } from "../app/paths.js";
 import type { RouteStatus } from "./slices/connection-slice.js";
 import type { ContactSummary } from "./slices/contacts-slice.js";
+import type { ContactDiscoveryRow } from "./slices/contact-discovery-slice.js";
 import type { ContactPresence } from "./slices/contact-presence-slice.js";
 import type { MessageDeliveryState, MessageSummary } from "./slices/conversations-slice.js";
 import type { IncomingMessageRequest } from "./slices/message-requests-slice.js";
@@ -68,6 +69,26 @@ export function useContacts(): ContactsControls {
   const forgetContact = useAppStore((state) => state.forgetContact);
   const selectContact = useAppStore((state) => state.selectContact);
   return { contacts, selectedContactId, upsertContact, forgetContact, selectContact };
+}
+
+export interface ContactDiscoveryControls {
+  readonly rows: readonly ContactDiscoveryRow[];
+  readonly search: (branchId: string, now?: number) => boolean;
+  readonly retry: (branchId: string, now?: number) => void;
+  readonly remove: (branchId: string) => void;
+}
+
+export function useContactDiscoveries(): ContactDiscoveryControls {
+  const rows = useAppStore((state) => state.contactDiscoveries);
+  const upsert = useAppStore((state) => state.upsertContactDiscovery);
+  const retryContactDiscovery = useAppStore((state) => state.retryContactDiscovery);
+  const remove = useAppStore((state) => state.deleteContactDiscovery);
+  return {
+    rows,
+    search: (branchId, now = Date.now()) => upsert(branchId, now),
+    retry: (branchId, now = Date.now()) => retryContactDiscovery(branchId, now),
+    remove
+  };
 }
 
 const unknownContactPresence: ContactPresence = { status: "unknown", updatedAt: 0, pendingPingId: null };

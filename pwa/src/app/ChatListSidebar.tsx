@@ -1,5 +1,5 @@
 import { InboxOutlined, RadarChartOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
-import { Badge, Button, Empty, Input, List, Modal, Space, Tooltip, Typography } from "antd";
+import { Badge, Button, Empty, Input, List, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
@@ -8,7 +8,8 @@ import { ContactTyping } from "./ContactTyping.js";
 import { formatChatListTimestamp } from "./format-time.js";
 import { chatPath, ECHO_PATH, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
-import { useChatList, useContactPresence, useContactTyping, useContacts, useEchoPreview, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
+import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useEchoPreview, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
+import { parseBranchID } from "@code4bones/branch-core";
 
 export function ChatListSidebar(): React.JSX.Element {
   const navigate = useNavigate();
@@ -138,80 +139,53 @@ function ContactOnlineBadge({ contactId }: { readonly contactId: string }): Reac
 
 function AddContactModal({ open, onClose }: { readonly open: boolean; readonly onClose: () => void }): React.JSX.Element {
   const contacts = useContacts();
-  const [displayName, setDisplayName] = useState("");
-  const [peerId, setPeerId] = useState("");
-  const [hpkePublicKey, setHpkePublicKey] = useState("");
+  const discovery = useContactDiscoveries();
+  const [branchId, setBranchId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const reset = (): void => {
-    setDisplayName("");
-    setPeerId("");
-    setHpkePublicKey("");
+    setBranchId("");
     setError(null);
   };
 
-  const handlePasteInvite = (value: string): void => {
-    try {
-      const parsed = JSON.parse(value) as { readonly peerId?: unknown; readonly hpkePublicKey?: unknown; readonly displayName?: unknown };
-      if (typeof parsed.peerId === "string") {
-        setPeerId(parsed.peerId);
-      }
-      if (typeof parsed.hpkePublicKey === "string") {
-        setHpkePublicKey(parsed.hpkePublicKey);
-      }
-      if (displayName.trim() === "" && typeof parsed.displayName === "string") {
-        setDisplayName(parsed.displayName);
-      }
-    } catch {
-      // Not an invite JSON blob — leave the peer id / key fields as typed.
-    }
+  const search = (): void => {
+    const value = branchId.trim();
+    try { parseBranchID(value); } catch { setError("Enter one complete valid BranchID."); return; }
+    if (!discovery.search(value)) { setError("The local search list is full."); return; }
+    setBranchId(""); setError(null);
   };
 
-  const handleSubmit = (): void => {
-    const name = displayName.trim();
-    const trimmedPeerId = peerId.trim();
-    const trimmedHpkeKey = hpkePublicKey.trim();
-    if (name === "" || trimmedPeerId === "" || trimmedHpkeKey === "") {
-      setError("Display name, peer ID, and payload key are all required.");
-      return;
-    }
-    if (contacts.contacts.some((existing) => existing.peerId === trimmedPeerId)) {
-      setError("A contact with this peer ID already exists.");
-      return;
-    }
-    contacts.upsertContact({
-      contactId: crypto.randomUUID(),
-      displayName: name,
-      peerId: trimmedPeerId,
-      hpkePublicKey: trimmedHpkeKey,
-      lastRouteHint: null
-    });
-    reset();
-    onClose();
+  const add = (row: typeof discovery.rows[number]): void => {
+    if (row.displayName === null || row.peerId === null || row.hpkePublicKey === null) return;
+    if (!contacts.contacts.some((contact) => contact.peerId === row.peerId)) contacts.upsertContact({ contactId: crypto.randomUUID(), displayName: row.displayName, peerId: row.peerId, hpkePublicKey: row.hpkePublicKey, lastRouteHint: null });
+    discovery.remove(row.branchId);
   };
 
   return (
     <Modal
-      okText="Add contact"
       onCancel={() => { reset(); onClose(); }}
-      onOk={handleSubmit}
+      footer={null}
       open={open}
       title="Add contact"
     >
       <Space direction="vertical" style={{ width: "100%" }}>
         <Typography.Text type="secondary">
-          Paste the connection info your contact copied from their Settings page, or fill in the
-          fields manually.
+          Search one exact BranchID. This list stays only on this device and retries only while this PWA is open and attached.
         </Typography.Text>
         {error !== null && <Typography.Text type="danger">{error}</Typography.Text>}
-        <Input onChange={(event) => { setDisplayName(event.currentTarget.value); }} placeholder="Display name" value={displayName} />
-        <Input.TextArea
-          onChange={(event) => { handlePasteInvite(event.currentTarget.value); }}
-          placeholder='Paste connection info, e.g. {"peerId":"...","hpkePublicKey":"..."}'
-          rows={2}
+        <Space.Compact style={{ width: "100%" }}><Input onChange={(event) => { setBranchId(event.currentTarget.value); }} onPressEnter={search} placeholder="BranchID" value={branchId} /><Button onClick={search} type="primary">Search</Button></Space.Compact>
+        <Table
+          columns={[
+            { title: "ID", dataIndex: "branchId", key: "branchId", ellipsis: true },
+            { title: "Display name", key: "displayName", render: (_, row) => row.displayName ?? "Not found yet" },
+            { title: "Checked", key: "checked", render: (_, row) => row.lastCheckedAt === null ? "Never" : new Date(row.lastCheckedAt).toLocaleString() },
+            { title: "Controls", key: "controls", render: (_, row) => <Space size={0}>{row.displayName === null ? <Button onClick={() => { discovery.retry(row.branchId); }} size="small" type="link">Retry</Button> : <Button onClick={() => { add(row); }} size="small" type="link">Add</Button>}<Button danger onClick={() => { discovery.remove(row.branchId); }} size="small" type="link">Delete</Button></Space> }
+          ]}
+          dataSource={[...discovery.rows]}
+          pagination={false}
+          rowKey="branchId"
+          size="small"
         />
-        <Input onChange={(event) => { setPeerId(event.currentTarget.value); }} placeholder="Peer ID" value={peerId} />
-        <Input onChange={(event) => { setHpkePublicKey(event.currentTarget.value); }} placeholder="Payload key (HPKE)" value={hpkePublicKey} />
       </Space>
     </Modal>
   );
