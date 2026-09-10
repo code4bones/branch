@@ -6,8 +6,8 @@
   --pwa-line: #353d48;
   --pwa-ink: #f4f7fb;
   --pwa-muted: #a4afbd;
-  --pwa-cyan: #63d5c8;
-  --pwa-outgoing: #326e6b;
+  --pwa-cyan: #1a272b;
+  --pwa-outgoing: #1a272b;
   --pwa-sidebar: #1b2028;
   --pwa-chat-surface: #141b22;
 }
@@ -39,7 +39,7 @@ body {
   background-color: var(--pwa-chat-surface);
   background-image:
     radial-gradient(circle at 1px 1px, rgb(132 157 176 / 15%) 1px, transparent 0),
-    radial-gradient(circle at 13px 13px, rgb(99 213 200 / 7%) 1px, transparent 0);
+    radial-gradient(circle at 13px 13px, rgb(26 39 43 / 7%) 1px, transparent 0);
   background-size: 24px 24px;
   overflow: hidden;
 }
