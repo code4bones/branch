@@ -133,8 +133,8 @@ function ContactOnlineBadge({ contactId }: { readonly contactId: string }): Reac
     return null;
   }
   return (
-    <Tooltip title="Online (encrypted pong)">
-      <span aria-label="Online (encrypted pong)" className="pwa-contact-online-badge" role="img">
+    <Tooltip title="Contact online (encrypted pong)">
+      <span aria-label="online" className="pwa-contact-online-badge" role="img">
         <Badge status="success" />
       </span>
     </Tooltip>

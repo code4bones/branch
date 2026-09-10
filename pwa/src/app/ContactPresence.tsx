@@ -86,15 +86,16 @@ export function ContactPresence({ contact }: { readonly contact: ContactSummary 
   // cannot revoke a pong that remains valid inside its explicit TTL.
   const status = presenceState.status;
   const label = status === "available"
-    ? "Contact online (encrypted pong)"
+    ? "online"
     : status === "checking"
       ? "Checking contact"
       : "Presence unknown";
+  const title = status === "available" ? "Contact online (encrypted pong)" : label;
   const badgeStatus = status === "available" ? "success" : status === "checking" ? "processing" : "default";
 
   return (
     <span className="pwa-contact-presence">
-      <Badge status={badgeStatus} text={label} />
+      <Tooltip title={title}><Badge status={badgeStatus} text={label} /></Tooltip>
       <Tooltip title="Ping contact">
         <Button
           aria-label="Ping contact"
