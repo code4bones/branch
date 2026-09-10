@@ -7,7 +7,7 @@
   --pwa-ink: #f4f7fb;
   --pwa-muted: #a4afbd;
   --pwa-cyan: #1a272b;
-  --pwa-outgoing: #1a272b;
+  --pwa-outgoing: #0a4354;
   --pwa-sidebar: #1b2028;
   --pwa-chat-surface: #141b22;
 }
@@ -220,7 +220,7 @@ body {
 
 .pwa-chat-list .ant-list-item:hover,
 .pwa-chat-list .ant-list-item.is-active {
-  background: #2b6060;
+  background: #1a272b;
   box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
 }
 
@@ -269,7 +269,7 @@ body {
 }
 
 .pwa-incoming-attachment-badge {
-  color: #57d2c6;
+  color: #1a272b;
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 12px;
@@ -599,7 +599,7 @@ body {
 .pwa-verified-completed-attachment {
   margin: 8px 16px 0;
   padding: 12px;
-  border: 1px solid #2d6d68;
+  border: 1px solid #1a272b;
   border-radius: 8px;
   background: var(--pwa-panel);
 }

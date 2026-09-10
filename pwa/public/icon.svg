@@ -3,9 +3,9 @@
   <path
     d="M32 10 L46 20 L38 26 L46 44 L32 54 L18 44 L26 26 L18 20 Z"
     fill="none"
-    stroke="#57d2c6"
+    stroke="#1a272b"
     stroke-width="3.5"
     stroke-linejoin="round"
   />
-  <circle cx="32" cy="26" r="4" fill="#57d2c6"/>
+  <circle cx="32" cy="26" r="4" fill="#1a272b"/>
 </svg>

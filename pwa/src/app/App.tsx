@@ -50,7 +50,7 @@ function ThemedApp(): React.JSX.Element {
       theme={{
         algorithm: themeControls.mode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: "#57d2c6",
+          colorPrimary: "#1a272b",
           colorBgBase: "#0a0d11",
           colorBgContainer: "#12171d",
           colorBorder: "#2d3845",
@@ -66,7 +66,7 @@ function ThemedApp(): React.JSX.Element {
           Menu: {
             darkItemBg: "#0f141a",
             darkSubMenuItemBg: "#0f141a",
-            darkItemSelectedBg: "#164b48",
+            darkItemSelectedBg: "#1a272b",
             darkItemSelectedColor: "#f4f7fb"
           }
         }
