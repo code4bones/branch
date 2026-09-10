@@ -55,7 +55,7 @@ export function SettingsPage(): React.JSX.Element {
             {transport.attachMessage}
           </dd>
         </div>
-        <div>
+        <div className="pwa-settings-trace-row">
           <dt>Relay trace</dt>
           <dd>
             {transport.transportTrace.length === 0 ? "No live-session events yet" : (

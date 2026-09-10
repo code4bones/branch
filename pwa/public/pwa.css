@@ -287,7 +287,8 @@ body {
 .pwa-transport-trace {
   display: grid;
   gap: 4px;
-  max-height: 180px;
+  max-height: 300px;
+  width: 100%;
   margin: 0;
   padding-left: 20px;
   overflow-y: auto;
@@ -895,6 +896,15 @@ body {
   border: 1px solid var(--pwa-line);
   border-radius: 8px;
   background: var(--pwa-panel);
+}
+
+.pwa-settings-list > div.pwa-settings-trace-row {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.pwa-settings-trace-row dd {
+  width: 100%;
 }
 
 .pwa-settings-list dt {
