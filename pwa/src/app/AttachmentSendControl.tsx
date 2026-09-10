@@ -33,12 +33,15 @@ export function AttachmentSendControl({ peerId }: { readonly peerId: string }): 
   };
 
   const offerFile = (event: React.ChangeEvent<HTMLInputElement>): void => {
-    const files = event.currentTarget.files;
+    // React may clear currentTarget after this synchronous handler returns;
+    // retain the real input before hashing/signing the selected File.
+    const input = event.currentTarget;
+    const files = input.files;
     const file = files?.item(0) ?? null;
     // `multiple` is absent by design. Keep the defensive branch in case a
     // browser extension or synthetic event supplies more than one file.
     if (file === null || files === null || files.length !== 1) {
-      event.currentTarget.value = "";
+      input.value = "";
       setNotice("Choose one file for this live transfer.");
       return;
     }
@@ -51,7 +54,7 @@ export function AttachmentSendControl({ peerId }: { readonly peerId: string }): 
     }).finally(() => {
       // The controller owns the File reference after this call. Clearing the
       // input permits intentionally choosing the same file again later.
-      event.currentTarget.value = "";
+      input.value = "";
       setOffering(false);
     });
   };

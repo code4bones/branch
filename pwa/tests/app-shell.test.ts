@@ -573,6 +573,13 @@ void test("a completed file service bubble includes only local terminal metadata
   assert.match(attachmentRuntime, /formatAttachmentByteCount/);
 });
 
+void test("file picker retains its DOM input across asynchronous offer completion", async () => {
+  const control = await readFile(resolve(process.cwd(), "src/app/AttachmentSendControl.tsx"), "utf8");
+  assert.match(control, /const input = event\.currentTarget/);
+  assert.match(control, /input\.value = ""/);
+  assert.doesNotMatch(control, /finally\(\(\) => \{[\s\S]{0,260}event\.currentTarget/u);
+});
+
 void test("only a new incoming message auto-presented at the bottom is reported to read-receipt UI", () => {
   const incoming = {
     messageId: "incoming-1",
