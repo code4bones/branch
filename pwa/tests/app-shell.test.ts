@@ -1005,6 +1005,14 @@ void test("PWA advertises only its bounded receiver-accept relay attachment capa
   assert.equal(capabilities.maxDirectAttachmentBytes, 0);
 });
 
+void test("opening a live known-contact chat refreshes volatile attachment capabilities", async () => {
+  const chatPage = await readFile(chatPagePath, "utf8");
+  const transport = await readFile(resolve(process.cwd(), "src/connectivity/use-relay-transport.ts"), "utf8");
+  assert.match(chatPage, /Opening a\n\s+\/\/ live known-contact chat re-advertises/);
+  assert.match(chatPage, /application capabilities: chat_\$\{result\}/);
+  assert.match(transport, /application capabilities: reply_\$\{result\}/);
+});
+
 void test("PWA accepts a signed raw application-capabilities control only for a known contact", async () => {
   const [sender, recipient] = await Promise.all([
     SameRelayTransportClient.createIdentity(),

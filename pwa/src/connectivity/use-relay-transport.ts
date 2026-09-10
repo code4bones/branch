@@ -2,7 +2,7 @@ import type { SameRelayTransportClient, SameRelayTransportEvent } from "@code4bo
 import { useEffect, useRef } from "react";
 
 import { openIncomingEnvelope } from "./open-envelope.js";
-import { receiveApplicationCapabilities } from "./application-capabilities-control.js";
+import { receiveApplicationCapabilities, sendApplicationCapabilities } from "./application-capabilities-control.js";
 import { attachmentTransferController, clearAttachmentTransferController } from "./attachment-runtime.js";
 import { receiveDeliveryReceipt, sendDeliveryReceipt } from "./delivery-receipt-control.js";
 import { classifyIncomingMessage } from "./incoming-message.js";
@@ -388,6 +388,21 @@ async function handleIncomingEnvelope(
     });
     if (applicationCapabilities.handled) {
       state.recordTransportTrace(`application capabilities: ${applicationCapabilities.outcome ?? "rejected"}`);
+      if (applicationCapabilities.outcome === "accepted" && knownContact !== null && knownContact.hpkePublicKey !== null) {
+        // A capability is live, not cached identity metadata. Reply once under
+        // the existing per-peer rate limit so an attach/reload race cannot
+        // leave the announcing peer unable to learn our current policy.
+        void sendApplicationCapabilities({
+          senderPeerId: state.identity.peerId,
+          recipientPeerId: senderPeerId,
+          recipientHpkePublicKey: knownContact.hpkePublicKey,
+          attached: hasAttachedRelaySession()
+        }).then((result) => {
+          state.recordTransportTrace(`application capabilities: reply_${result}`);
+        }).catch(() => {
+          state.recordTransportTrace("application capabilities: reply_failed");
+        });
+      }
       return;
     }
     const receipt = await receiveDeliveryReceipt({

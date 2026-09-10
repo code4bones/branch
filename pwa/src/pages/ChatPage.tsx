@@ -59,6 +59,26 @@ export function ChatPage(): React.JSX.Element {
     getRelaySessionClient()?.rendezvous(contact.peerId);
   }, [contact, transport.attachStatus]);
 
+  // Capabilities are volatile and deliberately forgotten on reload. Opening a
+  // live known-contact chat re-advertises this endpoint's bounded attachment
+  // policy; the recipient answers a valid advertisement once (rate-limited)
+  // so either peer can safely offer without a text-message warm-up.
+  useEffect(() => {
+    if (contact === null || contact.peerId === null || contact.hpkePublicKey === null || identity.identity === null || transport.attachStatus !== "attached") {
+      return;
+    }
+    void sendApplicationCapabilities({
+      senderPeerId: identity.identity.peerId,
+      recipientPeerId: contact.peerId,
+      recipientHpkePublicKey: contact.hpkePublicKey,
+      attached: true
+    }).then((result) => {
+      storeApi.getState().recordTransportTrace(`application capabilities: chat_${result}`);
+    }).catch(() => {
+      storeApi.getState().recordTransportTrace("application capabilities: chat_failed");
+    });
+  }, [contact, identity.identity, storeApi, transport.attachStatus]);
+
   if (contact === null) {
     return (
       <section className="pwa-chat" aria-label="Chat">
