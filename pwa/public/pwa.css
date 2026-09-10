@@ -36,7 +36,11 @@ body {
   display: flex;
   align-items: stretch;
   height: 100svh;
-  background: var(--pwa-bg);
+  background-color: var(--pwa-chat-surface);
+  background-image:
+    radial-gradient(circle at 1px 1px, rgb(132 157 176 / 15%) 1px, transparent 0),
+    radial-gradient(circle at 13px 13px, rgb(99 213 200 / 7%) 1px, transparent 0);
+  background-size: 24px 24px;
   overflow: hidden;
 }
 
@@ -46,10 +50,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-right: 1px solid var(--pwa-line);
   padding: 12px 8px 8px;
   overflow: hidden;
-  background: var(--pwa-sidebar);
+  background: transparent;
 }
 
 .pwa-sidebar-header {
@@ -58,6 +61,10 @@ body {
   justify-content: space-between;
   min-height: 48px;
   padding: 0 8px;
+  border-radius: 16px;
+  background: rgb(27 32 40 / 88%);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(12px);
 }
 
 .pwa-sidebar-header h4.ant-typography {
@@ -119,6 +126,7 @@ body {
   padding-block: 8px;
   background: #292f37;
   border-color: transparent;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 15%);
 }
 
 .pwa-message-request-link {
@@ -129,13 +137,15 @@ body {
   margin: 2px 8px 8px;
   padding: 8px 10px;
   color: var(--pwa-cyan);
-  border: 1px solid var(--pwa-line);
   border-radius: 10px;
+  background: rgb(27 32 40 / 88%);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 15%);
+  backdrop-filter: blur(12px);
   cursor: pointer;
 }
 
 .pwa-message-request-link:hover {
-  background: var(--pwa-panel-strong);
+  background: #2b333d;
 }
 
 .pwa-message-request-link .ant-badge {
@@ -167,6 +177,7 @@ body {
 .pwa-chat-list .ant-list-item:hover,
 .pwa-chat-list .ant-list-item.is-active {
   background: #2b6060;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
 }
 
 .pwa-chat-list-text {
@@ -234,6 +245,7 @@ body {
 .pwa-echo-pinned:hover,
 .pwa-echo-pinned.is-active {
   background: #2b6060;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
 }
 
 .pwa-echo-avatar {
@@ -308,11 +320,7 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background-color: var(--pwa-chat-surface);
-  background-image:
-    radial-gradient(circle at 1px 1px, rgb(132 157 176 / 15%) 1px, transparent 0),
-    radial-gradient(circle at 13px 13px, rgb(99 213 200 / 7%) 1px, transparent 0);
-  background-size: 24px 24px;
+  background: transparent;
 }
 
 .pwa-detail-header {
@@ -321,9 +329,11 @@ body {
   align-items: center;
   gap: 12px;
   min-height: 68px;
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--pwa-line);
-  background: rgb(27 32 40 / 94%);
+  margin: 12px 16px 0;
+  padding: 10px 16px;
+  border-radius: 16px;
+  background: rgb(27 32 40 / 88%);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 18%);
   backdrop-filter: blur(12px);
 }
 
@@ -755,10 +765,12 @@ body {
 .pwa-chat-compose-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px max(16px, calc((100% - 952px) / 2));
-  border-top: 1px solid rgb(53 61 72 / 65%);
-  background: rgb(27 32 40 / 94%);
+  gap: 4px;
+  margin: 0 max(16px, calc((100% - 952px) / 2)) 12px;
+  padding: 2px 4px 2px 6px;
+  border-radius: 24px;
+  background: rgb(41 47 55 / 92%);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 22%);
   backdrop-filter: blur(12px);
 }
 
@@ -799,9 +811,9 @@ body {
 .pwa-chat-composer {
   min-height: 44px;
   overflow: hidden;
-  border: 1px solid var(--pwa-line);
-  border-radius: 24px;
-  background: #292f37;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
 }
 
 .pwa-chat-composer .ant-input {
@@ -825,7 +837,7 @@ body {
   width: 42px;
   height: 42px;
   color: var(--pwa-muted);
-  background: #292f37;
+  background: transparent;
 }
 
 .pwa-attachment-send-control .ant-btn:hover {
@@ -882,6 +894,7 @@ body {
   }
 
   .pwa-detail-header {
+    margin: 8px 10px 0;
     padding-inline: 12px;
   }
 
@@ -890,7 +903,7 @@ body {
   }
 
   .pwa-chat-compose-row {
-    padding-inline: 10px;
+    margin: 0 10px 10px;
   }
 
   .pwa-chat-message {
