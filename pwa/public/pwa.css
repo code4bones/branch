@@ -766,8 +766,20 @@ body {
   position: absolute;
   right: 24px;
   bottom: 20px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
+  color: var(--pwa-ink) !important;
+  background: #0a4354 !important;
+  border-color: #0a4354 !important;
+  font-size: 20px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 28%);
+}
+
+.pwa-chat-latest-button:hover,
+.pwa-chat-latest-button:focus-visible {
+  background: #125b70 !important;
+  border-color: #125b70 !important;
 }
 
 .pwa-chat-error {

@@ -785,6 +785,7 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(messageLog, /newest\?\.direction === "outgoing"/);
   assert.match(messageLog, /setShowScrollToBottom\(!atBottom\)/);
   assert.match(messageLog, /Scroll to bottom/);
+  assert.match(messageLog, /VerticalAlignBottomOutlined/);
   assert.match(messageLog, /ChatDayDivider/);
   assert.match(messageLog, /DeliveryStateIcon/);
   assert.match(messageLog, /LoadingOutlined spin/);

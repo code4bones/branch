@@ -1,4 +1,4 @@
-import { CheckOutlined, DownOutlined, ExclamationCircleOutlined, LoadingOutlined, RedoOutlined } from "@ant-design/icons";
+import { CheckOutlined, ExclamationCircleOutlined, LoadingOutlined, RedoOutlined, VerticalAlignBottomOutlined } from "@ant-design/icons";
 import { Button, Empty, Tooltip } from "antd";
 import { Fragment, useCallback, useLayoutEffect, useRef, useState } from "react";
 
@@ -93,7 +93,7 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
           <Button
             aria-label="Scroll to bottom"
             className="pwa-chat-latest-button"
-            icon={<DownOutlined />}
+            icon={<VerticalAlignBottomOutlined />}
             onClick={scrollToLatest}
             shape="circle"
             size="middle"
