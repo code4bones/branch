@@ -95,6 +95,7 @@ const contactsStorePath = resolve(process.cwd(), "src/storage/contacts-store.ts"
 const messagesStorePath = resolve(process.cwd(), "src/storage/messages-store.ts");
 const readStateStorePath = resolve(process.cwd(), "src/storage/read-state-store.ts");
 const receiptPolicyStorePath = resolve(process.cwd(), "src/storage/receipt-policy-store.ts");
+const lastOpenedChatStorePath = resolve(process.cwd(), "src/storage/last-opened-chat-store.ts");
 const receiptPolicySlicePath = resolve(process.cwd(), "src/state/slices/receipt-policy-slice.ts");
 const conversationsBootstrapPath = resolve(process.cwd(), "src/storage/use-conversations-bootstrap.ts");
 const contactsSlicePath = resolve(process.cwd(), "src/state/slices/contacts-slice.ts");
@@ -786,6 +787,9 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(messageLog, /setShowScrollToBottom\(!atBottom\)/);
   assert.match(messageLog, /Scroll to bottom/);
   assert.match(messageLog, /VerticalAlignBottomOutlined/);
+  assert.match(messageLog, /is-visible/);
+  assert.match(messageLog, /aria-hidden=\{!showScrollToBottom\}/);
+  assert.match(messageLog, /tabIndex=\{showScrollToBottom \? 0 : -1\}/);
   assert.match(messageLog, /ChatDayDivider/);
   assert.match(messageLog, /DeliveryStateIcon/);
   assert.match(messageLog, /LoadingOutlined spin/);
@@ -1210,6 +1214,8 @@ void test("contacts, messages, read state, and inbound requests persist through 
   const readStateSlice = await readFile(readStateSlicePath, "utf8");
   const hydrationSlice = await readFile(hydrationSlicePath, "utf8");
   const requireIdentity = await readFile(requireIdentityPath, "utf8");
+  const lastOpenedChatStore = await readFile(lastOpenedChatStorePath, "utf8");
+  const app = await readFile(appPath, "utf8");
 
   assert.match(database, /const DATABASE_VERSION = 5/);
   assert.match(database, /IDENTITY_STORE/);
@@ -1228,12 +1234,23 @@ void test("contacts, messages, read state, and inbound requests persist through 
   assert.match(bootstrap, /loadStoredReadState/);
   assert.match(bootstrap, /await removeLegacyDemoState\(\)/);
   assert.match(bootstrap, /loadStoredMessageRequests/);
+  assert.match(bootstrap, /loadStoredLastOpenedChat/);
+  assert.match(bootstrap, /contacts\.some\(\(contact\) => contact\.contactId === lastOpenedChatId\)/);
+  assert.match(bootstrap, /clearStoredLastOpenedChat/);
   assert.match(bootstrap, /setConversationsLoaded/);
+  assert.match(lastOpenedChatStore, /RECEIPT_POLICY_STORE/);
+  assert.match(lastOpenedChatStore, /loadStoredLastOpenedChat/);
+  assert.match(lastOpenedChatStore, /saveStoredLastOpenedChat/);
+  assert.match(lastOpenedChatStore, /clearStoredLastOpenedChat/);
+  assert.match(app, /LastOpenedChatOrEmptyPane/);
+  assert.match(app, /chatPath\(selectedContact\.contactId\)/);
   assert.match(contactsSlice, /saveStoredContact/);
   assert.match(contactsSlice, /deleteStoredContact/);
   assert.match(contactsSlice, /forgetContact/);
   assert.match(contactsSlice, /deleteStoredMessagesForContact/);
   assert.match(contactsSlice, /deleteStoredReadState/);
+  assert.match(contactsSlice, /saveStoredLastOpenedChat/);
+  assert.match(contactsSlice, /clearStoredLastOpenedChat/);
   assert.match(messagesStore, /index\("byContactId"\)\.openCursor\(IDBKeyRange\.only\(contactId\)\)/);
   assert.match(readStateStore, /deleteStoredReadState/);
   assert.match(await readFile(receiptPolicyStorePath, "utf8"), /openDatabase/);

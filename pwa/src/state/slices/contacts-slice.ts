@@ -4,6 +4,7 @@ import type { AppStore } from "../store.js";
 import { deleteStoredContact, saveStoredContact } from "../../storage/contacts-store.js";
 import { deleteStoredMessagesForContact } from "../../storage/messages-store.js";
 import { deleteStoredReadState } from "../../storage/read-state-store.js";
+import { clearStoredLastOpenedChat, saveStoredLastOpenedChat } from "../../storage/last-opened-chat-store.js";
 
 export interface ContactSummary {
   readonly contactId: string;
@@ -43,6 +44,7 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
     if (peerId !== null) {
       get().clearCompletedAttachmentProjection(peerId);
     }
+    const wasSelected = get().selectedContactId === contactId;
     set((state) => {
       const { [contactId]: removedMessages, ...messagesByContactId } = state.messagesByContactId;
       const { [contactId]: removedReadState, ...lastReadAtByContactId } = state.lastReadAtByContactId;
@@ -66,6 +68,18 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
       // Best-effort persistence; the contact and local conversation are
       // already absent from this session even when IndexedDB is unavailable.
     });
+    if (wasSelected) {
+      void clearStoredLastOpenedChat().catch(() => {
+        // Best-effort local preference cleanup follows the local removal.
+      });
+    }
   },
-  selectContact: (selectedContactId) => { set({ selectedContactId }); }
+  selectContact: (selectedContactId) => {
+    set({ selectedContactId });
+    if (selectedContactId !== null) {
+      void saveStoredLastOpenedChat(selectedContactId).catch(() => {
+        // The current local selection remains usable when IndexedDB is unavailable.
+      });
+    }
+  }
 });

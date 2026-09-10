@@ -46,6 +46,12 @@ export function ChatPage(): React.JSX.Element {
   const completedAttachment = useCompletedAttachment(contact?.peerId ?? null);
 
   useEffect(() => {
+    if (contact !== null) {
+      contacts.selectContact(contact.contactId);
+    }
+  }, [contact?.contactId, contacts.selectContact]);
+
+  useEffect(() => {
     const peerId = contact?.peerId ?? null;
     if (peerId === null) {
       return;

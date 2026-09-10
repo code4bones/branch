@@ -783,12 +783,28 @@ body {
   border-color: #0a4354 !important;
   font-size: 20px;
   box-shadow: 0 4px 12px rgb(0 0 0 / 28%);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.72);
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+
+.pwa-chat-latest-button.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
 }
 
 .pwa-chat-latest-button:hover,
 .pwa-chat-latest-button:focus-visible {
   background: #125b70 !important;
   border-color: #125b70 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pwa-chat-latest-button {
+    transition: none;
+  }
 }
 
 .pwa-chat-error {

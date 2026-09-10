@@ -8,6 +8,7 @@ import { loadStoredReadState } from "./read-state-store.js";
 import { loadStoredReadReceiptPolicy } from "./receipt-policy-store.js";
 import { loadStoredContactDiscoveries } from "./contact-discovery-store.js";
 import { loadStoredContactDiscoveryPolicy } from "./contact-discovery-policy-store.js";
+import { clearStoredLastOpenedChat, loadStoredLastOpenedChat } from "./last-opened-chat-store.js";
 import { groupMessagesByContactId } from "../state/slices/conversations-slice.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 
@@ -21,18 +22,26 @@ export function useConversationsBootstrap(): void {
   useEffect(() => {
     void (async () => {
       await removeLegacyDemoState();
-      const [contacts, messages, readState, messageRequests, sendReadReceipts, contactDiscoveries, allowContactDiscovery] = await Promise.all([
+      const [contacts, messages, readState, messageRequests, sendReadReceipts, contactDiscoveries, allowContactDiscovery, lastOpenedChatId] = await Promise.all([
         loadStoredContacts(),
         loadStoredMessages(),
         loadStoredReadState(),
         loadStoredMessageRequests(),
         loadStoredReadReceiptPolicy(),
         loadStoredContactDiscoveries(),
-        loadStoredContactDiscoveryPolicy()
+        loadStoredContactDiscoveryPolicy(),
+        loadStoredLastOpenedChat()
       ]);
+      const selectedContactId = lastOpenedChatId !== null && contacts.some((contact) => contact.contactId === lastOpenedChatId)
+        ? lastOpenedChatId
+        : null;
+      if (lastOpenedChatId !== null && selectedContactId === null) {
+        void clearStoredLastOpenedChat();
+      }
 
       storeApi.setState({
         contacts,
+        selectedContactId,
         messagesByContactId: groupMessagesByContactId(messages),
         lastReadAtByContactId: readState,
         incomingMessageRequests: messageRequests,

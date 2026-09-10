@@ -15,9 +15,10 @@ import { DiscoveryPage } from "../pages/DiscoveryPage.js";
 import { OnboardingPage } from "../pages/OnboardingPage.js";
 import { MessageRequestsPage } from "../pages/MessageRequestsPage.js";
 import { SettingsPage } from "../pages/SettingsPage.js";
-import { useThemeControls } from "../state/hooks.js";
+import { useContacts, useThemeControls } from "../state/hooks.js";
 import { AppStoreProvider, useAppStoreApi } from "../state/StoreProvider.js";
 import { useConversationsBootstrap } from "../storage/use-conversations-bootstrap.js";
+import { chatPath } from "./paths.js";
 
 export function PwaApp(): React.JSX.Element {
   return (
@@ -93,7 +94,7 @@ function ThemedApp(): React.JSX.Element {
             )}
           >
             <Route index element={<Navigate replace to="chats" />} />
-            <Route path="chats" element={<EmptyChatPane />} />
+            <Route path="chats" element={<LastOpenedChatOrEmptyPane />} />
             <Route path="chats/:contactId" element={<ChatPage />} />
             <Route path="requests" element={<MessageRequestsPage />} />
             <Route path="settings" element={<SettingsPage />} />
@@ -103,4 +104,14 @@ function ThemedApp(): React.JSX.Element {
       </BrowserRouter>
     </ConfigProvider>
   );
+}
+
+function LastOpenedChatOrEmptyPane(): React.JSX.Element {
+  const { contacts, selectedContactId } = useContacts();
+  const selectedContact = selectedContactId === null
+    ? null
+    : contacts.find((contact) => contact.contactId === selectedContactId) ?? null;
+  return selectedContact === null
+    ? <EmptyChatPane />
+    : <Navigate replace to={chatPath(selectedContact.contactId)} />;
 }

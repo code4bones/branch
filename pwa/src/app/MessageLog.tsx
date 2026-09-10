@@ -88,19 +88,19 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
           ))
         )}
       </div>
-      {showScrollToBottom && (
-        <Tooltip title="Scroll to bottom">
-          <Button
-            aria-label="Scroll to bottom"
-            className="pwa-chat-latest-button"
-            icon={<VerticalAlignBottomOutlined />}
-            onClick={scrollToLatest}
-            shape="circle"
-            size="middle"
-            type="primary"
-          />
-        </Tooltip>
-      )}
+      <Tooltip title="Scroll to bottom">
+        <Button
+          aria-hidden={!showScrollToBottom}
+          aria-label="Scroll to bottom"
+          className={`pwa-chat-latest-button${showScrollToBottom ? " is-visible" : ""}`}
+          icon={<VerticalAlignBottomOutlined />}
+          onClick={scrollToLatest}
+          shape="circle"
+          size="middle"
+          tabIndex={showScrollToBottom ? 0 : -1}
+          type="primary"
+        />
+      </Tooltip>
     </div>
   );
 }
