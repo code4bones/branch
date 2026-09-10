@@ -14,6 +14,15 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+/* Keep overflow scrollable by wheel, touch, and keyboard without reserving a
+   visible browser scrollbar in the floating PWA layout. */
+*::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
 }
 
 html,

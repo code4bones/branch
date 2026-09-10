@@ -1305,7 +1305,7 @@ void test("BranchID lookup (T-BRANCH-107) reuses branch-core's identity-contact 
   assert.match(contactRouteLookup, /lookupIdentityContactViaGitHub/);
   assert.match(contactRouteLookup, /useBranchID/);
   assert.match(settingsPage, /useBranchID/);
-  assert.match(chatPage, /ContactRouteLookup/);
+  assert.doesNotMatch(chatPage, /ContactRouteLookup/);
 });
 
 void test("nginx serves /pwa/ from its own dist directory without touching other locations", async () => {

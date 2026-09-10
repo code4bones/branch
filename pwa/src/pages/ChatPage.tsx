@@ -6,7 +6,6 @@ import type { MenuProps } from "antd";
 
 import { ChatAvatar } from "../app/ChatAvatar.js";
 import { ContactPresence } from "../app/ContactPresence.js";
-import { ContactRouteLookup } from "../app/ContactRouteLookup.js";
 import { DetailHeader } from "../app/DetailHeader.js";
 import { AttachmentSendControl } from "../app/AttachmentSendControl.js";
 import { InboundAttachmentOffer } from "../app/InboundAttachmentOffer.js";
@@ -279,7 +278,6 @@ export function ChatPage(): React.JSX.Element {
         subtitle={isReachable ? <ContactPresence contact={contact} /> : "Contact unavailable"}
         title={contact.displayName}
       />
-      {isReachable && <ContactRouteLookup peerId={peerId} />}
       <InboundAttachmentOffer offer={inboundAttachmentOffer.offer} onDecision={(decision) => { void inboundAttachmentOffer.respond(decision); }} />
       <VerifiedCompletedAttachment attachment={completedAttachment.attachment} onDownload={() => {
         if (completedAttachment.download() !== "downloaded") {
