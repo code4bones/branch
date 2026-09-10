@@ -90,6 +90,46 @@ func TestHandlerAcceptsConfiguredBrowserOrigin(t *testing.T) {
 	conn.Close(websocket.StatusNormalClosure, "")
 }
 
+func TestHandlerDeliversContactProbeForNegotiatedLiveDiscovery(t *testing.T) {
+	_, handler := newTestHubAndHandler(t)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	target := dialAndReadyAsWithExtensions(t, server.URL, testPeerPrivateKey, []string{protocol.ContactDiscoveryLiveExtension})
+	requester := dialAndReadyAsWithExtensions(t, server.URL, testAlicePrivateKey, []string{protocol.ContactDiscoveryLiveExtension})
+	defer target.Conn.Close(websocket.StatusNormalClosure, "")
+	defer requester.Conn.Close(websocket.StatusNormalClosure, "")
+
+	branchID, err := protocol.BranchIDFromPublicKey(testPeerPrivateKey.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("derive target BranchID: %v", err)
+	}
+	sendJSON(t, target.Conn, map[string]any{
+		"type":         "CONTACT_ANNOUNCE",
+		"session_id":   target.Ready.SessionID,
+		"discoverable": true,
+		"sequence":     1,
+	})
+	issuedAt := time.Unix(1_789_000_000, 0)
+	sendJSON(t, requester.Conn, map[string]any{
+		"type":                      "CONTACT_LOOKUP",
+		"session_id":                requester.Ready.SessionID,
+		"request_id":                testB64x16,
+		"branch_id":                 branchID,
+		"requester_hpke_public_key": testB64x32,
+		"issued_at":                 issuedAt.UnixMilli(),
+		"expires_at":                issuedAt.Add(time.Minute).UnixMilli(),
+	})
+
+	probe := readObject(t, target.Conn)
+	if probe["type"] != "CONTACT_PROBE" || probe["session_id"] != target.Ready.SessionID || probe["request_id"] != testB64x16 || probe["branch_id"] != branchID {
+		t.Fatalf("unexpected contact probe: %+v", probe)
+	}
+	if probe["requester_peer_id"] != requester.PeerID || probe["requester_hpke_public_key"] != testB64x32 {
+		t.Fatalf("unexpected probe requester: %+v", probe)
+	}
+}
+
 func TestHandlerRejectsInvalidClientProofBeforeSessionAttach(t *testing.T) {
 	hub, handler := newTestHubAndHandler(t)
 	server := httptest.NewServer(handler)
@@ -1091,6 +1131,11 @@ func dialAndReady(t *testing.T, serverURL string) testClient {
 
 func dialAndReadyAs(t *testing.T, serverURL string, privateKey ed25519.PrivateKey) testClient {
 	t.Helper()
+	return dialAndReadyAsWithExtensions(t, serverURL, privateKey, nil)
+}
+
+func dialAndReadyAsWithExtensions(t *testing.T, serverURL string, privateKey ed25519.PrivateKey, extensions []string) testClient {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(serverURL, "http")+Path, nil)
@@ -1109,7 +1154,7 @@ func dialAndReadyAs(t *testing.T, serverURL string, privateKey ed25519.PrivateKe
 			"profile_multihash":     protocol.DevelopmentProfileMultihash,
 			"capabilities":          []string{"relay.forward.live/0", "route.relay.wss/0"},
 			"required_capabilities": []string{"relay.forward.live/0"},
-			"extensions":            []string{},
+			"extensions":            extensions,
 			"required_extensions":   []string{},
 		}},
 	}

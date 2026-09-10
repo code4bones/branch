@@ -4,17 +4,21 @@ import type { AppStore } from "../store.js";
 
 export const maxContactDiscoveryRows = 32;
 export type ContactDiscoveryRow = StoredContactDiscovery;
+export type ContactDiscoveryAvailability = "unavailable" | "ready" | "disabled" | "unsupported";
 export interface ContactDiscoverySlice {
   readonly contactDiscoveries: readonly ContactDiscoveryRow[];
+  readonly contactDiscoveryAvailability: ContactDiscoveryAvailability;
   readonly upsertContactDiscovery: (branchId: string, now: number) => boolean;
   readonly retryContactDiscovery: (branchId: string, now: number) => void;
   readonly checkedContactDiscovery: (branchId: string, now: number) => void;
   readonly resolveContactDiscovery: (branchId: string, candidate: { readonly displayName: string; readonly peerId: string; readonly hpkePublicKey: string }, now: number) => void;
   readonly deleteContactDiscovery: (branchId: string) => void;
+  readonly setContactDiscoveryAvailability: (availability: ContactDiscoveryAvailability) => void;
 }
 
 export const createContactDiscoverySlice: StateCreator<AppStore, [], [], ContactDiscoverySlice> = (set) => ({
   contactDiscoveries: [],
+  contactDiscoveryAvailability: "unavailable",
   upsertContactDiscovery: (branchId, now) => {
     let accepted = false;
     set((state) => {
@@ -54,5 +58,6 @@ export const createContactDiscoverySlice: StateCreator<AppStore, [], [], Contact
   deleteContactDiscovery: (branchId) => {
     set((state) => ({ contactDiscoveries: state.contactDiscoveries.filter((row) => row.branchId !== branchId) }));
     void deleteStoredContactDiscovery(branchId).catch(() => {});
-  }
+  },
+  setContactDiscoveryAvailability: (contactDiscoveryAvailability) => { set({ contactDiscoveryAvailability }); }
 });

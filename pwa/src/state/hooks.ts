@@ -7,7 +7,7 @@ import { downloadVerifiedCompletedAttachment, type CompletedAttachmentDownloadRe
 import { ECHO_CONTACT_ID } from "../app/paths.js";
 import type { RouteStatus } from "./slices/connection-slice.js";
 import type { ContactSummary } from "./slices/contacts-slice.js";
-import type { ContactDiscoveryRow } from "./slices/contact-discovery-slice.js";
+import type { ContactDiscoveryAvailability, ContactDiscoveryRow } from "./slices/contact-discovery-slice.js";
 import type { ContactPresence } from "./slices/contact-presence-slice.js";
 import type { MessageDeliveryState, MessageSummary } from "./slices/conversations-slice.js";
 import type { IncomingMessageRequest } from "./slices/message-requests-slice.js";
@@ -73,6 +73,7 @@ export function useContacts(): ContactsControls {
 
 export interface ContactDiscoveryControls {
   readonly rows: readonly ContactDiscoveryRow[];
+  readonly availability: ContactDiscoveryAvailability;
   readonly search: (branchId: string, now?: number) => boolean;
   readonly retry: (branchId: string, now?: number) => void;
   readonly remove: (branchId: string) => void;
@@ -91,11 +92,13 @@ export function useContactDiscoveryPolicy(): ContactDiscoveryPolicyControls {
 
 export function useContactDiscoveries(): ContactDiscoveryControls {
   const rows = useAppStore((state) => state.contactDiscoveries);
+  const availability = useAppStore((state) => state.contactDiscoveryAvailability);
   const upsert = useAppStore((state) => state.upsertContactDiscovery);
   const retryContactDiscovery = useAppStore((state) => state.retryContactDiscovery);
   const remove = useAppStore((state) => state.deleteContactDiscovery);
   return {
     rows,
+    availability,
     search: (branchId, now = Date.now()) => upsert(branchId, now),
     retry: (branchId, now = Date.now()) => { retryContactDiscovery(branchId, now); },
     remove

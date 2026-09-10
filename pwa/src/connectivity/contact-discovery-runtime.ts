@@ -22,6 +22,7 @@ export function startContactDiscoveryRuntime(storeApi: AppStoreApi, client: Same
     if (getRelaySessionClient() !== client) return;
     if (state.allowContactDiscovery !== previous.allowContactDiscovery) {
       announcePolicy(storeApi, client);
+      setAvailability(storeApi, client);
       if (state.allowContactDiscovery && client.supportsContactDiscovery) {
         startScheduler(storeApi, client);
       } else {
@@ -32,6 +33,7 @@ export function startContactDiscoveryRuntime(storeApi: AppStoreApi, client: Same
     }
     if (state.contactDiscoveries !== previous.contactDiscoveries) scheduler?.wake();
   });
+  setAvailability(storeApi, client);
   announcePolicy(storeApi, client);
   startScheduler(storeApi, client);
 }
@@ -43,6 +45,22 @@ export function stopContactDiscoveryRuntime(): void {
   scheduler = null;
   lookupTimes = [];
   pendingRequests.clear();
+}
+
+function setAvailability(storeApi: AppStoreApi, client: SameRelayTransportClient): void {
+  const state = storeApi.getState();
+  if (!client.supportsContactDiscovery) {
+    state.setContactDiscoveryAvailability("unsupported");
+    state.recordTransportTrace("contact discovery: extension unavailable on attached relay");
+    return;
+  }
+  if (!state.allowContactDiscovery) {
+    state.setContactDiscoveryAvailability("disabled");
+    state.recordTransportTrace("contact discovery: disabled locally");
+    return;
+  }
+  state.setContactDiscoveryAvailability("ready");
+  state.recordTransportTrace("contact discovery: ready");
 }
 
 function announcePolicy(storeApi: AppStoreApi, client: SameRelayTransportClient): void {
@@ -72,7 +90,15 @@ function attemptDiscovery(storeApi: AppStoreApi, client: SameRelayTransportClien
   if (lookupTimes.length >= maxLookupsPerSessionMinute) return;
   const row = state.contactDiscoveries.find((candidate) => candidate.displayName === null && isEligible(candidate, now));
   if (row === undefined) return;
-  const request = client.lookupContact(row.branchId, state.identity.hpkePublicKey);
+  let request: { readonly requestId: string; readonly expiresAt: number };
+  try {
+    request = client.lookupContact(row.branchId, state.identity.hpkePublicKey);
+  } catch {
+    // A local validation or socket failure is not a remote negative result.
+    // Keep the row eligible and expose only a bounded diagnostic label.
+    state.recordTransportTrace("contact discovery: lookup not sent");
+    return;
+  }
   pendingRequests.set(request.requestId, { branchId: row.branchId, expiresAt: request.expiresAt });
   lookupTimes.push(now);
   state.checkedContactDiscovery(row.branchId, now);

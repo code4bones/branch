@@ -1,6 +1,7 @@
 import { decodeBase64URL, encodeBase64URL } from "../protocol/v0/base64url.js";
 import { protocolID } from "../protocol/v0/envelope.js";
 import { developmentProfileMultihash } from "../protocol/v0/profile.js";
+import { parseBranchID } from "../protocol/v0/identity-contact.js";
 import {
   decodeDraftRelayAttachmentFrameText,
   contactDiscoveryLiveExtension,
@@ -383,9 +384,7 @@ export class SameRelayTransportClient {
 
   lookupContact(branchId: string, requesterHpkePublicKey: string): { readonly requestId: string; readonly expiresAt: number } {
     this.requireContactDiscovery();
-    if (decodeBase64URL(branchId).byteLength !== 32) {
-      throw new Error("invalid BranchID");
-    }
+    parseBranchID(branchId);
     if (decodeBase64URL(requesterHpkePublicKey).byteLength !== 32) {
       throw new Error("invalid requester HPKE public key");
     }

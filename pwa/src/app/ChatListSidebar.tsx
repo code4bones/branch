@@ -19,6 +19,7 @@ export function ChatListSidebar(): React.JSX.Element {
   const echoPreview = useEchoPreview();
   const transport = useTransportStatus();
   const messageRequests = useIncomingMessageRequests();
+  const contactDiscovery = useContactDiscoveries();
   const [query, setQuery] = useState("");
   const [addContactOpen, setAddContactOpen] = useState(false);
 
@@ -38,7 +39,9 @@ export function ChatListSidebar(): React.JSX.Element {
           </Tooltip>
         </div>
         <Space>
-          <Button aria-label="Add contact" icon={<UserAddOutlined />} onClick={() => { setAddContactOpen(true); }} type="text" />
+          <Badge count={contactDiscovery.rows.filter((row) => row.displayName === null).length} offset={[-2, 2]} size="small">
+            <Button aria-label="Add contact" icon={<UserAddOutlined />} onClick={() => { setAddContactOpen(true); }} type="text" />
+          </Badge>
           <Button
             aria-label="Settings"
             icon={<SettingOutlined />}
@@ -170,8 +173,11 @@ function AddContactModal({ open, onClose }: { readonly open: boolean; readonly o
     >
       <Space direction="vertical" style={{ width: "100%" }}>
         <Typography.Text type="secondary">
-          Search one exact BranchID. This list stays only on this device and retries only while this PWA is open and attached.
+          Search one exact BranchID. This list stays only on this device and retries only while this PWA is open and attached to the same relay as the contact.
         </Typography.Text>
+        {discovery.availability === "unsupported" && <Typography.Text type="warning">BranchID lookup is paused: the attached relay did not negotiate contact discovery.</Typography.Text>}
+        {discovery.availability === "disabled" && <Typography.Text type="warning">BranchID lookup is disabled in Settings.</Typography.Text>}
+        {discovery.availability === "unavailable" && <Typography.Text type="warning">BranchID lookup is waiting for a live relay attachment.</Typography.Text>}
         {error !== null && <Typography.Text type="danger">{error}</Typography.Text>}
         <Space.Compact style={{ width: "100%" }}><Input onChange={(event) => { setBranchId(event.currentTarget.value); }} onPressEnter={search} placeholder="BranchID" value={branchId} /><Button onClick={search} type="primary">Search</Button></Space.Compact>
         <Table

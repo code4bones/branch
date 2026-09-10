@@ -65,6 +65,24 @@ void test("contact discovery remains an explicit negotiated live extension", () 
   assert.deepEqual(events, ["contact_probe"]);
 });
 
+void test("contact lookup accepts the canonical br1 multihash BranchID", () => {
+  const client = clientWithPending([]);
+  const sent: string[] = [];
+  const internals = client as unknown as {
+    ready: { sessionId: string; routeId: string; presenceTtlSeconds: number; heartbeatIntervalSeconds: number };
+    contactDiscoveryEnabled: boolean;
+    socket: { readonly readyState: number; send(frame: string): void };
+  };
+  internals.ready = { sessionId: token(12), routeId: Buffer.alloc(16, 13).toString("base64url"), presenceTtlSeconds: 30, heartbeatIntervalSeconds: 10 };
+  internals.contactDiscoveryEnabled = true;
+  internals.socket = { readyState: 1, send: (frame) => { sent.push(frame); } };
+  const branchID = `br1.${Buffer.concat([Buffer.from([0x12, 0x20]), Buffer.alloc(32, 15)]).toString("base64url")}`;
+
+  assert.doesNotThrow(() => client.lookupContact(branchID, token(17)));
+  assert.equal(sent.length, 1);
+  assert.equal(JSON.parse(sent[0] ?? "{}").branch_id, branchID);
+});
+
 function clientWithPending(pendingEnvelopes: readonly SameRelayPendingEnvelope[], maxPendingEnvelopes?: number): SameRelayTransportClient {
   return new SameRelayTransportClient({
     route: {
