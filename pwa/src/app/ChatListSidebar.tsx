@@ -64,57 +64,59 @@ export function ChatListSidebar(): React.JSX.Element {
         placeholder="Search"
         value={query}
       />
-      <div
-        className={`pwa-echo-pinned${location.pathname === ECHO_PATH ? " is-active" : ""}`}
-        onClick={() => { void navigate(ECHO_PATH); }}
-      >
-        <span className="pwa-echo-avatar"><RadarChartOutlined /></span>
-        <div className="pwa-chat-list-text">
-          <div className="pwa-chat-list-row">
-            <span className="pwa-chat-list-name">Echo</span>
-            {echoPreview.lastMessage !== null && (
-              <span className="pwa-chat-list-time">{formatChatListTimestamp(echoPreview.lastMessage.sentAt)}</span>
-            )}
-          </div>
-          <div className="pwa-chat-list-row">
-            <span className="pwa-chat-list-preview">{echoPreview.lastMessage?.body ?? "Test your connection"}</span>
-            {echoPreview.unreadCount > 0 && <Badge count={echoPreview.unreadCount} />}
+      <div className="pwa-chat-list-container">
+        <div
+          className={`pwa-echo-pinned${location.pathname === ECHO_PATH ? " is-active" : ""}`}
+          onClick={() => { void navigate(ECHO_PATH); }}
+        >
+          <span className="pwa-echo-avatar"><RadarChartOutlined /></span>
+          <div className="pwa-chat-list-text">
+            <div className="pwa-chat-list-row">
+              <span className="pwa-chat-list-name">Echo</span>
+              {echoPreview.lastMessage !== null && (
+                <span className="pwa-chat-list-time">{formatChatListTimestamp(echoPreview.lastMessage.sentAt)}</span>
+              )}
+            </div>
+            <div className="pwa-chat-list-row">
+              <span className="pwa-chat-list-preview">{echoPreview.lastMessage?.body ?? "Test your connection"}</span>
+              {echoPreview.unreadCount > 0 && <Badge count={echoPreview.unreadCount} />}
+            </div>
           </div>
         </div>
+        {filtered.length === 0 ? (
+          <Empty className="pwa-sidebar-empty" description="No chats yet" />
+        ) : (
+          <List
+            className="pwa-chat-list"
+            dataSource={[...filtered]}
+            renderItem={(entry) => (
+              <List.Item
+                className={entry.contact.contactId === activeContactId ? "is-active" : ""}
+                key={entry.contact.contactId}
+                onClick={() => { void navigate(chatPath(entry.contact.contactId)); }}
+              >
+                <ChatAvatar name={entry.contact.displayName} size={48} />
+                <div className="pwa-chat-list-text">
+                  <div className="pwa-chat-list-row">
+                    <span className="pwa-chat-list-contact-name">
+                      <span className="pwa-chat-list-name">{entry.contact.displayName}</span>
+                      <ContactOnlineBadge contactId={entry.contact.contactId} />
+                      {entry.contact.peerId !== null && <IncomingAttachmentBadge peerId={entry.contact.peerId} />}
+                    </span>
+                    {entry.lastMessage !== null && (
+                      <span className="pwa-chat-list-time">{formatChatListTimestamp(entry.lastMessage.sentAt)}</span>
+                    )}
+                  </div>
+                  <div className="pwa-chat-list-row">
+                    <ContactPreview contactId={entry.contact.contactId} fallback={entry.lastMessage?.body ?? "No messages yet"} />
+                    {entry.unreadCount > 0 && <Badge count={entry.unreadCount} />}
+                  </div>
+                </div>
+              </List.Item>
+            )}
+          />
+        )}
       </div>
-      {filtered.length === 0 ? (
-        <Empty className="pwa-sidebar-empty" description="No chats yet" />
-      ) : (
-        <List
-          className="pwa-chat-list"
-          dataSource={[...filtered]}
-          renderItem={(entry) => (
-            <List.Item
-              className={entry.contact.contactId === activeContactId ? "is-active" : ""}
-              key={entry.contact.contactId}
-              onClick={() => { void navigate(chatPath(entry.contact.contactId)); }}
-            >
-              <ChatAvatar name={entry.contact.displayName} size={48} />
-              <div className="pwa-chat-list-text">
-                <div className="pwa-chat-list-row">
-                  <span className="pwa-chat-list-contact-name">
-                    <span className="pwa-chat-list-name">{entry.contact.displayName}</span>
-                    <ContactOnlineBadge contactId={entry.contact.contactId} />
-                    {entry.contact.peerId !== null && <IncomingAttachmentBadge peerId={entry.contact.peerId} />}
-                  </span>
-                  {entry.lastMessage !== null && (
-                    <span className="pwa-chat-list-time">{formatChatListTimestamp(entry.lastMessage.sentAt)}</span>
-                  )}
-                </div>
-                <div className="pwa-chat-list-row">
-                  <ContactPreview contactId={entry.contact.contactId} fallback={entry.lastMessage?.body ?? "No messages yet"} />
-                  {entry.unreadCount > 0 && <Badge count={entry.unreadCount} />}
-                </div>
-              </div>
-            </List.Item>
-          )}
-        />
-      )}
       <AddContactModal onClose={() => { setAddContactOpen(false); }} open={addContactOpen} />
     </aside>
   );

@@ -156,6 +156,19 @@ body {
   margin-top: 32px;
 }
 
+.pwa-chat-list-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 16px;
+  background: rgb(27 32 40 / 82%);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
 .pwa-chat-list {
   flex: 1 1 auto;
   min-height: 0;
