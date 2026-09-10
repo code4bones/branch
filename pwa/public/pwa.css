@@ -622,11 +622,46 @@ body {
 
 .pwa-chat-message-meta {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 6px;
   margin-top: 4px;
   color: var(--pwa-muted);
   font-size: 0.7rem;
+}
+
+.pwa-chat-delivery-status {
+  display: inline-flex;
+  align-items: center;
+  min-width: 1em;
+  line-height: 1;
+}
+
+.pwa-chat-delivery-status.is-pending {
+  color: var(--pwa-muted);
+}
+
+.pwa-chat-delivery-status.is-relayed,
+.pwa-chat-delivery-status.is-delivered,
+.pwa-chat-delivery-status.is-received {
+  color: #b7c4d2;
+}
+
+.pwa-chat-delivery-status.is-read {
+  color: var(--pwa-cyan);
+}
+
+.pwa-chat-delivery-status.is-unavailable {
+  color: #eb7770;
+}
+
+.pwa-chat-delivery-double-check {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pwa-chat-delivery-double-check .anticon + .anticon {
+  margin-left: -0.3em;
 }
 
 .pwa-chat-day-divider {

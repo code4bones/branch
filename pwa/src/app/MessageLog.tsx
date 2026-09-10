@@ -1,4 +1,4 @@
-import { DownOutlined } from "@ant-design/icons";
+import { CheckOutlined, ExclamationCircleOutlined, LoadingOutlined, DownOutlined } from "@ant-design/icons";
 import { Button, Empty, Tooltip } from "antd";
 import { Fragment, useCallback, useLayoutEffect, useRef, useState } from "react";
 
@@ -123,7 +123,7 @@ function ChatBubble({ message }: { readonly message: MessageSummary }): React.JS
       <span className="pwa-chat-message-body">{message.body}</span>
       <footer className="pwa-chat-message-meta">
         <time dateTime={new Date(message.sentAt).toISOString()}>{formatMessageTime(message.sentAt)}</time>
-        {message.direction === "outgoing" && <span>{formatDeliveryState(message.deliveryState)}</span>}
+        {message.direction === "outgoing" && <DeliveryStateIcon state={message.deliveryState} />}
       </footer>
     </article>
   );
@@ -160,19 +160,39 @@ function formatMessageDay(timestamp: number): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatDeliveryState(state: MessageDeliveryState): string {
+function DeliveryStateIcon({ state }: { readonly state: MessageDeliveryState }): React.JSX.Element {
+  const presentation = deliveryStatePresentation(state);
+  return (
+    <Tooltip title={presentation.label}>
+      <span aria-label={presentation.label} className={`pwa-chat-delivery-status is-${state}`} role="img">
+        {presentation.icon}
+      </span>
+    </Tooltip>
+  );
+}
+
+function deliveryStatePresentation(state: MessageDeliveryState): { readonly label: string; readonly icon: React.JSX.Element } {
   switch (state) {
     case "pending":
-      return "Sending";
+      return { label: "Sending", icon: <LoadingOutlined spin /> };
     case "relayed":
-      return "Relayed";
+      return { label: "Relayed", icon: <CheckOutlined /> };
     case "delivered":
-      return "Delivered";
+      return { label: "Delivered", icon: <DoubleCheckIcon /> };
     case "read":
-      return "Read";
+      return { label: "Read", icon: <DoubleCheckIcon /> };
     case "received":
-      return "Received (legacy)";
+      return { label: "Received (legacy)", icon: <DoubleCheckIcon /> };
     case "unavailable":
-      return "Unavailable";
+      return { label: "Unavailable", icon: <ExclamationCircleOutlined /> };
   }
+}
+
+function DoubleCheckIcon(): React.JSX.Element {
+  return (
+    <span aria-hidden="true" className="pwa-chat-delivery-double-check">
+      <CheckOutlined />
+      <CheckOutlined />
+    </span>
+  );
 }

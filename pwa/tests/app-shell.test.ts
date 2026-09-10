@@ -744,7 +744,12 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(messageLog, /setShowLatest\(true\)/);
   assert.match(messageLog, /Jump to latest message/);
   assert.match(messageLog, /ChatDayDivider/);
-  assert.match(messageLog, /formatDeliveryState/);
+  assert.match(messageLog, /DeliveryStateIcon/);
+  assert.match(messageLog, /LoadingOutlined spin/);
+  assert.match(messageLog, /CheckOutlined/);
+  assert.match(messageLog, /DoubleCheckIcon/);
+  assert.match(messageLog, /ExclamationCircleOutlined/);
+  assert.match(messageLog, /aria-label=\{presentation\.label\}/);
   assert.match(messageLog, /hour12: false/);
   assert.match(formatTime, /hour12: false/);
 });
