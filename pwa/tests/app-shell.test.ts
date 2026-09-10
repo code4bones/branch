@@ -756,6 +756,10 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(formatTime, /hour12: false/);
   assert.match(messageComposer, /SendOutlined/);
   assert.match(messageComposer, /aria-label="Send message"/);
+  assert.match(messageComposer, /Input\.TextArea/);
+  assert.match(messageComposer, /maxRows: 5/);
+  assert.match(messageComposer, /event\.ctrlKey && !event\.metaKey/);
+  assert.match(messageComposer, /event\.preventDefault\(\)/);
 });
 
 void test("PWA typing uses the shared signed control runtime and remains volatile", async () => {

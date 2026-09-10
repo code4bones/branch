@@ -8,16 +8,25 @@ export function MessageComposer({ value, onChange, onSend, onTyping, placeholder
   readonly onTyping?: () => void;
   readonly placeholder: string;
 }): React.JSX.Element {
+  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+      return;
+    }
+    event.preventDefault();
+    onSend();
+  };
+
   return (
     <Space.Compact className="pwa-chat-composer">
-      <Input
+      <Input.TextArea
+        autoSize={{ minRows: 1, maxRows: 5 }}
         onChange={(event) => {
           onChange(event.currentTarget.value);
           if (event.currentTarget.value.trim() !== "") {
             onTyping?.();
           }
         }}
-        onPressEnter={onSend}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         value={value}
       />

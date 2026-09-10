@@ -838,6 +838,12 @@ body {
   box-shadow: none;
 }
 
+.pwa-chat-composer textarea.ant-input {
+  padding-block: 11px;
+  resize: none;
+  line-height: 1.35;
+}
+
 .pwa-chat-composer .ant-btn {
   width: 48px;
   min-width: 48px;
