@@ -56,9 +56,9 @@ body {
 }
 
 .pwa-sidebar-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   min-height: 48px;
   padding: 0 8px;
   border-radius: 16px;
@@ -78,6 +78,18 @@ body {
   min-width: 0;
   align-items: center;
   gap: 8px;
+}
+
+.pwa-copy-branch-id {
+  flex-shrink: 0;
+}
+
+.pwa-sidebar-release-version {
+  justify-self: center;
+}
+
+.pwa-sidebar-actions {
+  justify-self: end;
 }
 
 .pwa-local-identity-name {

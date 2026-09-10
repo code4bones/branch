@@ -1,4 +1,4 @@
-import { InboxOutlined, PaperClipOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
+import { CopyOutlined, InboxOutlined, PaperClipOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
 import { Badge, Button, Empty, Input, List, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -8,6 +8,7 @@ import { ContactTyping } from "./ContactTyping.js";
 import { formatChatListTimestamp } from "./format-time.js";
 import { chatPath, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
+import { useBranchID } from "../identity/use-branch-id.js";
 import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useIdentity, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
 import { parseBranchID } from "@code4bones/branch-core";
 
@@ -27,18 +28,36 @@ export function ChatListSidebar(): React.JSX.Element {
     ? chatList
     : chatList.filter((entry) => entry.contact.displayName.toLowerCase().includes(needle));
   const localDisplayName = identity.identity?.displayName ?? "B.R.A.N.C.H.";
+  const branchID = useBranchID(identity.identity?.peerId ?? null);
+
+  const copyBranchID = (): void => {
+    if (branchID !== null) {
+      void navigator.clipboard.writeText(branchID);
+    }
+  };
 
   return (
     <aside className="pwa-sidebar" aria-label="Chats">
       <div className="pwa-sidebar-header">
         <div className="pwa-sidebar-title">
           <Typography.Text className="pwa-local-identity-name" ellipsis>{localDisplayName}</Typography.Text>
-          <Typography.Text className="pwa-release-version" type="secondary">v{pwaReleaseVersion}</Typography.Text>
+          <Tooltip title={branchID === null ? "Preparing BranchID" : "Copy BranchID"}>
+            <Button
+              aria-label="Copy BranchID"
+              className="pwa-copy-branch-id"
+              disabled={branchID === null}
+              icon={<CopyOutlined />}
+              onClick={copyBranchID}
+              size="small"
+              type="text"
+            />
+          </Tooltip>
           <Tooltip title={transport.attachMessage}>
             <span className={`pwa-attach-dot is-${transport.attachStatus}`} aria-label={`Relay: ${transport.attachStatus}`} />
           </Tooltip>
         </div>
-        <Space>
+        <Typography.Text className="pwa-release-version pwa-sidebar-release-version" type="secondary">v{pwaReleaseVersion}</Typography.Text>
+        <Space className="pwa-sidebar-actions">
           <Badge count={contactDiscovery.rows.filter((row) => row.displayName === null).length} offset={[-2, 2]} size="small">
             <Button aria-label="Add contact" icon={<UserAddOutlined />} onClick={() => { setAddContactOpen(true); }} type="text" />
           </Badge>

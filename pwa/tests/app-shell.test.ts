@@ -854,11 +854,17 @@ void test("PWA exposes the local identity and release in the contact-list header
   assert.match(sidebar, /useIdentity/);
   assert.match(sidebar, /identity\.identity\?\.displayName \?\? "B\.R\.A\.N\.C\.H\."/);
   assert.match(sidebar, /className="pwa-local-identity-name" ellipsis>\{localDisplayName\}</);
+  assert.match(sidebar, /useBranchID/);
+  assert.match(sidebar, /aria-label="Copy BranchID"/);
+  assert.match(sidebar, /navigator\.clipboard\.writeText\(branchID\)/);
   assert.match(sidebar, /pwaReleaseVersion/);
+  assert.match(sidebar, /pwa-sidebar-release-version/);
   assert.match(sidebar, />v\{pwaReleaseVersion\}</);
   assert.match(discovery, /pwaReleaseVersion/);
   assert.match(discovery, /pwa-discovery-title-row/);
   assert.match(styles, /\.pwa-local-identity-name/);
+  assert.match(styles, /\.pwa-copy-branch-id/);
+  assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
   assert.match(styles, /\.pwa-release-version/);
   assert.match(styles, /\.pwa-discovery-title-row/);
 });
