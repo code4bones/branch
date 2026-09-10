@@ -83,6 +83,32 @@ void test("contact lookup accepts the canonical br1 multihash BranchID", () => {
   assert.equal(JSON.parse(sent[0] ?? "{}").branch_id, branchID);
 });
 
+void test("distinct peers use distinct live lookup routes while retaining the READY origin nonce", () => {
+  const client = clientWithPending([]);
+  const sent: string[] = [];
+  const internals = client as unknown as {
+    ready: { sessionId: string; routeId: string; presenceTtlSeconds: number; heartbeatIntervalSeconds: number };
+    socket: { readonly readyState: number; send(frame: string): void };
+  };
+  const originRouteId = routeToken(21);
+  internals.ready = { sessionId: token(20), routeId: originRouteId, presenceTtlSeconds: 30, heartbeatIntervalSeconds: 10 };
+  internals.socket = { readyState: 1, send: (frame) => { sent.push(frame); } };
+  const firstRouteId = routeToken(22);
+  const secondRouteId = routeToken(23);
+
+  client.rendezvous(token(24), { routeId: firstRouteId });
+  client.sendSealedEnvelope("AA", { deliveryId: routeToken(25), routeId: firstRouteId, originRouteId });
+  client.rendezvous(token(26), { routeId: secondRouteId });
+  client.sendSealedEnvelope("AA", { deliveryId: routeToken(27), routeId: secondRouteId, originRouteId });
+
+  const frames = sent.map((frame) => JSON.parse(frame) as Record<string, unknown>);
+  assert.deepEqual(frames.map((frame) => frame.route_id), [firstRouteId, firstRouteId, secondRouteId, secondRouteId]);
+  assert.deepEqual(
+    frames.filter((frame) => frame.type === "ENVELOPE").map((frame) => frame.origin_route_id),
+    [originRouteId, originRouteId]
+  );
+});
+
 function clientWithPending(pendingEnvelopes: readonly SameRelayPendingEnvelope[], maxPendingEnvelopes?: number): SameRelayTransportClient {
   return new SameRelayTransportClient({
     route: {
@@ -108,4 +134,8 @@ function pending(value: number): SameRelayPendingEnvelope {
 
 function token(value: number): string {
   return Buffer.alloc(32, value).toString("base64url");
+}
+
+function routeToken(value: number): string {
+  return Buffer.alloc(16, value).toString("base64url");
 }

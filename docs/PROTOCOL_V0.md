@@ -324,7 +324,13 @@ presence, route, mailbox, or message state.
 `heartbeat_interval_seconds`, and `accepted_limits`. Accepted limits include
 `max_frame_bytes`, `max_queue_depth`, `max_frames_per_session`, and
 `max_bytes_per_session`. A relay may choose lower limits than the client
-offered. Limits are live connection limits, not storage quotas.
+offered. Limits are live connection limits, not storage quotas. The
+relay-generated READY `route_id` is the sender's `origin_route_id` nonce for
+E2EE AAD; it is not a relay route lookup key. Within one attachment, a client
+allocates a fresh 16-byte `route_id` for each target peer it binds with
+`RENDEZVOUS`, retains that mapping only for the attachment lifetime, and uses
+that target route ID in its matching `ENVELOPE` frames. It must not reuse one
+occupied lookup route ID for another target peer.
 
 `PRESENCE` and `HEARTBEAT` create only ephemeral routing state. A peer is
 currently reachable only until disconnect, close, quota exhaustion, relay

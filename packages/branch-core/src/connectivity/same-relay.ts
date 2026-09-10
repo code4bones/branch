@@ -114,6 +114,7 @@ interface ReadyState {
 interface PendingEnvelope {
   readonly deliveryId: string;
   readonly ciphertext: string;
+  readonly routeId: string;
   readonly originRouteId: string;
   readonly streamId: number;
   readonly ackRequested: boolean;
@@ -122,6 +123,8 @@ interface PendingEnvelope {
 export interface SameRelayPendingEnvelope {
   readonly deliveryId: string;
   readonly ciphertext: string;
+  /** The volatile relay lookup route. Older saved client entries use originRouteId. */
+  readonly routeId?: string;
   readonly originRouteId: string;
   readonly streamId: number;
   readonly ackRequested: boolean;
@@ -177,7 +180,10 @@ export class SameRelayTransportClient {
       if (!this.pending.has(pending.deliveryId) && this.pending.size >= this.maxPendingEnvelopes) {
         throw new Error("live pending envelope limit exceeded");
       }
-      this.pending.set(pending.deliveryId, { ...pending });
+      this.pending.set(pending.deliveryId, {
+        ...pending,
+        routeId: pending.routeId ?? pending.originRouteId
+      });
     }
   }
 
@@ -407,35 +413,39 @@ export class SameRelayTransportClient {
   // A same-route/same-peer repeat is intentionally idempotent at the relay.
   // Adapters call this immediately before a live ENVELOPE so a peer that
   // refreshed its WebSocket can be rebound without retaining any route state.
-  rendezvous(peerId: string, options: { readonly routeHints?: readonly RelayRouteHint[] } = {}): void {
+  rendezvous(peerId: string, options: { readonly routeHints?: readonly RelayRouteHint[]; readonly routeId?: string } = {}): void {
     const ready = this.requireReady();
     const sequence = this.nextSequence();
     const routeHints = validateRouteHints(options.routeHints ?? []);
+    const routeId = options.routeId ?? ready.routeId;
+    assertRouteID(routeId, "invalid relay route id");
     this.sendReadyFrame({
       type: "RENDEZVOUS",
       session_id: ready.sessionId,
-      route_id: ready.routeId,
+      route_id: routeId,
       peer_id: peerId,
       sequence,
       ...(routeHints.length > 0 ? { route_hints: routeHints.map(toWireRouteHint) } : {})
     });
-    this.emit({ type: "rendezvous_ready", peerId, routeId: ready.routeId, sequence, routeHintCount: routeHints.length });
+    this.emit({ type: "rendezvous_ready", peerId, routeId, sequence, routeHintCount: routeHints.length });
   }
 
-  sendEnvelope(ciphertext: string, options: { readonly deliveryId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
+  sendEnvelope(ciphertext: string, options: { readonly deliveryId?: string; readonly routeId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
     return this.sendSealedEnvelope(encodeBase64URL(new TextEncoder().encode(ciphertext)), options);
   }
 
-  sendSealedEnvelope(sealedPayload: string, options: { readonly deliveryId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
+  sendSealedEnvelope(sealedPayload: string, options: { readonly deliveryId?: string; readonly routeId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
     decodeBase64URL(sealedPayload);
-    const originRouteId = options.originRouteId ?? this.requireReady().routeId;
-    if (decodeBase64URL(originRouteId).byteLength !== 16) {
-      throw new Error("invalid origin route id");
-    }
+    const ready = this.requireReady();
+    const routeId = options.routeId ?? ready.routeId;
+    const originRouteId = options.originRouteId ?? ready.routeId;
+    assertRouteID(routeId, "invalid relay route id");
+    assertRouteID(originRouteId, "invalid origin route id");
     const deliveryId = options.deliveryId ?? this.randomToken(16);
     const pending = {
       deliveryId,
       ciphertext: sealedPayload,
+      routeId,
       originRouteId,
       streamId: defaultStreamID,
       ackRequested: options.ackRequested ?? true
@@ -486,7 +496,7 @@ export class SameRelayTransportClient {
     this.sendReadyFrame({
       type: "ENVELOPE",
       session_id: ready.sessionId,
-      route_id: ready.routeId,
+      route_id: pending.routeId,
       origin_route_id: pending.originRouteId,
       path_epoch: defaultPathEpoch,
       stream_id: pending.streamId,
@@ -494,7 +504,7 @@ export class SameRelayTransportClient {
       ciphertext: pending.ciphertext,
       ack_requested: pending.ackRequested
     });
-    this.emit({ type: "envelope_sent", deliveryId: pending.deliveryId, routeId: ready.routeId, originRouteId: pending.originRouteId });
+    this.emit({ type: "envelope_sent", deliveryId: pending.deliveryId, routeId: pending.routeId, originRouteId: pending.originRouteId });
   }
 
   private readonly handleSocketMessage = (event: RelaySocketEvent): void => {
@@ -789,6 +799,12 @@ function boundedPendingEnvelopeLimit(value: number): number {
     throw new Error("invalid live pending envelope limit");
   }
   return value;
+}
+
+function assertRouteID(value: string, message: string): void {
+  if (decodeBase64URL(value).byteLength !== 16) {
+    throw new Error(message);
+  }
 }
 
 export function validateRouteMaterial(route: RelayRouteMaterial): RelayRouteMaterial {

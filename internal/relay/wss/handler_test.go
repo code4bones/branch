@@ -407,6 +407,15 @@ func TestHandlerSkipsRelayAckWhenEnvelopeDoesNotRequestIt(t *testing.T) {
 	assertNoImmediateFrame(t, alice.Conn)
 }
 
+func TestHandlerKeepsRouteCollisionNonFatal(t *testing.T) {
+	if got := mapRelayError(relay.ErrRouteExists); got != "route_unavailable" {
+		t.Fatalf("route collision code = %q", got)
+	}
+	if isFatal(relay.ErrRouteExists) {
+		t.Fatal("route collision must not close an authenticated live session")
+	}
+}
+
 func TestHandlerFederatesLivePeerAcrossTwoRelays(t *testing.T) {
 	rightHub, rightHandler := newTestHubAndHandler(t)
 	rightServer := httptest.NewServer(rightHandler)

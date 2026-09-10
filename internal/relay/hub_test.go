@@ -237,9 +237,6 @@ func TestHubRendezvousIsIdempotentOnlyForSameLiveBinding(t *testing.T) {
 	alice := attach(t, hub, "alice-session")
 	bob := attach(t, hub, "bob-session")
 	charlie := attach(t, hub, "charlie-session")
-	if err := alice.AnnouncePresence("alice-peer", now); err != nil {
-		t.Fatalf("announce alice presence: %v", err)
-	}
 	if err := bob.AnnouncePresence("bob-peer", now); err != nil {
 		t.Fatalf("announce bob presence: %v", err)
 	}
@@ -260,18 +257,6 @@ func TestHubRendezvousIsIdempotentOnlyForSameLiveBinding(t *testing.T) {
 	}
 	if frame := receive(t, bob); string(frame.Payload) != "live" {
 		t.Fatalf("unexpected forwarded payload: %+v", frame)
-	}
-	// Either endpoint may issue the recovery RENDEZVOUS. A reply envelope uses
-	// the same deterministic route id in the opposite direction, so that must
-	// preserve the existing live binding rather than be treated as a collision.
-	if err := bob.Rendezvous("route-recovery", "alice-peer", now); err != nil {
-		t.Fatalf("reverse idempotent rendezvous: %v", err)
-	}
-	if err := bob.Send(context.Background(), "route-recovery", []byte("reply")); err != nil {
-		t.Fatalf("send after reverse idempotent rendezvous: %v", err)
-	}
-	if frame := receive(t, alice); string(frame.Payload) != "reply" {
-		t.Fatalf("unexpected reverse forwarded payload: %+v", frame)
 	}
 	if err := alice.Rendezvous("route-recovery", "charlie-peer", now); !errors.Is(err, ErrRouteExists) {
 		t.Fatalf("different target reused route id: %v", err)

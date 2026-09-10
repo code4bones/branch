@@ -930,6 +930,8 @@ func mapRelayError(err error) string {
 		return "quota_exceeded"
 	case errors.Is(err, relay.ErrBackpressure):
 		return "rate_limited"
+	case errors.Is(err, relay.ErrRouteExists):
+		return "route_unavailable"
 	case errors.Is(err, relay.ErrNoRoute), errors.Is(err, relay.ErrSessionClosed), errors.Is(err, relay.ErrSessionNotFound):
 		return "peer_unavailable"
 	default:
@@ -940,6 +942,7 @@ func mapRelayError(err error) string {
 func isFatal(err error) bool {
 	return !errors.Is(err, relay.ErrPeerUnavailable) &&
 		!errors.Is(err, relay.ErrNoRoute) &&
+		!errors.Is(err, relay.ErrRouteExists) &&
 		!errors.Is(err, ErrFrameReplayed) &&
 		!errors.Is(err, relay.ErrDeliveryConflict)
 }

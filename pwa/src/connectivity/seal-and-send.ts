@@ -12,6 +12,9 @@ import { encodeChatTextApplicationPayload } from "./application-payload.js";
 import { encodeBetaPwaMessagePayload, encodeBetaPwaPresencePing, encodeBetaPwaPresencePong } from "./message-payload.js";
 import { clearDelivery, getRelaySessionClient, trackDelivery } from "./relay-session.js";
 
+const liveRouteIDs = new WeakMap<object, Map<string, string>>();
+const maxLiveRoutesPerAttachment = 64;
+
 export interface SealAndSendOptions {
   readonly deliveryId?: string;
   readonly senderPeerId: string;
@@ -154,18 +157,38 @@ async function sealAndSendPayload(options: SealPayloadOptions): Promise<void> {
     aad,
     expectedCiphertextBytes
   });
-  // Recreate only the live route if a peer refreshed; no control or message
-  // is retained by the relay when the route cannot be bound.
-  client.rendezvous(options.recipientPeerId);
+  // READY.route_id is an E2EE origin nonce, not a relay lookup key. Each
+  // reachable contact receives one distinct, tab-volatile lookup route so
+  // concurrent conversations cannot overwrite one another's live binding.
+  const routeId = liveRouteID(client, options.recipientPeerId);
+  client.rendezvous(options.recipientPeerId, { routeId });
   if (options.track !== undefined) {
     trackDelivery(options.deliveryId, options.track.contactId, options.track.onTimeout);
   }
   try {
-    client.sendSealedEnvelope(sealed, { deliveryId: options.deliveryId, originRouteId, ackRequested: fixedAckRequested });
+    client.sendSealedEnvelope(sealed, { deliveryId: options.deliveryId, routeId, originRouteId, ackRequested: fixedAckRequested });
   } catch (cause) {
     clearDelivery(options.deliveryId);
     throw cause;
   }
+}
+
+function liveRouteID(client: object, peerId: string): string {
+  let routes = liveRouteIDs.get(client);
+  if (routes === undefined) {
+    routes = new Map<string, string>();
+    liveRouteIDs.set(client, routes);
+  }
+  const existing = routes.get(peerId);
+  if (existing !== undefined) {
+    return existing;
+  }
+  if (routes.size >= maxLiveRoutesPerAttachment) {
+    throw new Error("live contact route limit reached");
+  }
+  const routeId = createDeliveryID();
+  routes.set(peerId, routeId);
+  return routeId;
 }
 
 export function createDeliveryID(

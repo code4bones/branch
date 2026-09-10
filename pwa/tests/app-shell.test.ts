@@ -323,9 +323,14 @@ void test("relay attach and message sealing keep canonical protocol state out of
   assert.match(sealAndSend, /expectedCiphertextBytes/);
   assert.match(sealAndSend, /createDeliveryID/);
   assert.match(sealAndSend, /encodeBase64URL/);
-  assert.match(sealAndSend, /client\.rendezvous\(options\.recipientPeerId\)/);
+  assert.match(sealAndSend, /const routeId = liveRouteID\(client, options\.recipientPeerId\)/);
+  assert.match(sealAndSend, /client\.rendezvous\(options\.recipientPeerId, \{ routeId \}\)/);
+  assert.match(sealAndSend, /const liveRouteIDs = new WeakMap/);
+  assert.match(sealAndSend, /maxLiveRoutesPerAttachment = 64/);
+  assert.match(sealAndSend, /live contact route limit reached/);
+  assert.match(sealAndSend, /function liveRouteID/);
   assert.doesNotMatch(sealAndSend, /crypto\.randomUUID/);
-  assert.match(sealAndSend, /sendSealedEnvelope\(sealed, \{ deliveryId: options\.deliveryId, originRouteId, ackRequested: fixedAckRequested \}\)/);
+  assert.match(sealAndSend, /sendSealedEnvelope\(sealed, \{ deliveryId: options\.deliveryId, routeId, originRouteId, ackRequested: fixedAckRequested \}\)/);
   assert.match(sealAndSend, /from "\.\/payload-aad-defaults\.js"/);
   assert.match(openEnvelope, /openBetaPayload/);
   assert.match(openEnvelope, /betaHpkeCiphertextBytesFromSealedPayload/);
