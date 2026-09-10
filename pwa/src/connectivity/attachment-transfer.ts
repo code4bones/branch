@@ -60,6 +60,15 @@ export interface AttachmentControllerEvent {
 }
 
 /**
+ * A verified inbound offer. Its manifest is a detached core copy and contains
+ * no received file bytes. It is safe to hand to the volatile UI boundary.
+ */
+export interface InboundAttachmentOffer {
+  readonly peerId: string;
+  readonly manifest: AttachmentManifest;
+}
+
+/**
  * Browser-bound dependencies. The controller deliberately receives all
  * identity, transport and timer authority instead of importing React, relay
  * singletons, local storage, or an identity-key module.
@@ -79,7 +88,12 @@ export interface AttachmentTransferPorts {
   readonly send: (request: AttachmentSendRequest) => void | Promise<void>;
   readonly timers: AttachmentTimerPort;
   /** Called only after a known peer's manifest signature and core admission pass. */
-  readonly onInboundOffer?: (offer: { readonly peerId: string; readonly manifest: AttachmentManifest }) => boolean | undefined;
+  readonly onInboundOffer?: (offer: InboundAttachmentOffer) => boolean | undefined;
+  /**
+   * Synchronous hand-off of a fully accepted, SHA-256-verified inbound file.
+   * The controller never retains these bytes after this callback returns.
+   */
+  readonly onInboundComplete?: (offer: InboundAttachmentOffer, bytes: Uint8Array) => void;
   readonly onEvent?: (event: AttachmentControllerEvent) => void;
 }
 
@@ -99,6 +113,11 @@ export interface AttachmentSendRequest {
 export type AttachmentOfferResult =
   | { readonly status: "offered"; readonly transferId: string }
   | { readonly status: "rejected"; readonly reason: "unknown_peer" | "unsupported" | "busy" | "unavailable" | "send_failed" };
+
+/** Read-only local admission for a file picker; it never reads a File. */
+export type AttachmentOfferAdmission =
+  | { readonly status: "ready"; readonly maximumBytes: number }
+  | { readonly status: "rejected"; readonly reason: "unknown_peer" | "unsupported" | "busy" | "unavailable" };
 
 export type AttachmentIncomingResult =
   | { readonly status: "handled"; readonly kind: typeof attachmentManifestKind | typeof attachmentDecisionKind | typeof attachmentChunkKind }
@@ -153,11 +172,29 @@ export class AttachmentTransferController {
     this.#ports = ports;
   }
 
+  /**
+   * Checks only current local state and the peer's volatile application
+   * capability. The eventual offer repeats this admission before it reads or
+   * hashes a File, so a picker result cannot bypass a changed peer state.
+   */
+  canOffer(peerId: string): AttachmentOfferAdmission {
+    if (!this.#ports.isKnownPeer(peerId)) return { status: "rejected", reason: "unknown_peer" };
+    const maximumBytes = this.#maximumOfferBytes(peerId);
+    if (maximumBytes === null) return { status: "rejected", reason: "unsupported" };
+    if (this.#outbound.has(peerId) || this.#offeringPeers.has(peerId) || this.#activeDirectionCount() + this.#offeringPeers.size >= maximumActiveDirections) {
+      return { status: "rejected", reason: "busy" };
+    }
+    if (this.#ports.localSigningKey() === null || this.#ports.localPeerId() === "") {
+      return { status: "rejected", reason: "unavailable" };
+    }
+    return { status: "ready", maximumBytes };
+  }
+
   /** Builds and signs a relay-sized live offer. It never auto-retries. */
   async offer(peerId: string, file: File): Promise<AttachmentOfferResult> {
-    if (!this.#ports.isKnownPeer(peerId)) return this.#offerRejected(peerId, "unknown_peer");
-    if (!this.#canOfferTo(peerId, file.size)) return this.#offerRejected(peerId, "unsupported");
-    if (this.#outbound.has(peerId) || this.#offeringPeers.has(peerId) || this.#activeDirectionCount() + this.#offeringPeers.size >= maximumActiveDirections) return this.#offerRejected(peerId, "busy");
+    const admission = this.canOffer(peerId);
+    if (admission.status !== "ready") return this.#offerRejected(peerId, admission.reason);
+    if (!Number.isSafeInteger(file.size) || file.size <= 0 || file.size > admission.maximumBytes) return this.#offerRejected(peerId, "unsupported");
     const signingKey = this.#ports.localSigningKey();
     if (signingKey === null || this.#ports.localPeerId() === "") return this.#offerRejected(peerId, "unavailable");
     this.#offeringPeers.add(peerId);
@@ -357,8 +394,13 @@ export class AttachmentTransferController {
     const chunk = decodeAttachmentChunk(bytes);
     const result = await inbound.transfer.receiveChunk(chunk, this.#ports.now());
     if (result.status === "completed") {
-      // Completed bytes remain only in this return path; this controller does
-      // not put them in IndexedDB, render them, or retain a file handle.
+      // Core returns `completed` only after the receiver accepted the offer,
+      // all chunks arrived, and the complete SHA-256 digest matched. Hand the
+      // volatile bytes off before releasing this controller's inbound state.
+      // A UI callback cannot interfere with endpoint cleanup or transit.
+      try {
+        this.#ports.onInboundComplete?.({ peerId, manifest: inbound.transfer.manifest }, result.bytes);
+      } catch { /* UI delivery is optional and must not retain transport state. */ }
       this.#endInbound(peerId, "accepted");
     } else if (result.status === "aborted" || result.status === "expired") {
       this.#endInbound(peerId, result.reason === "integrity_failed" ? "integrity_failed" : "invalid_payload");
@@ -467,12 +509,15 @@ export class AttachmentTransferController {
     return created;
   }
 
-  #canOfferTo(peerId: string, fileBytes: number): boolean {
+  #maximumOfferBytes(peerId: string): number | null {
     const capabilities = this.#ports.peerCapabilities(peerId);
-    return capabilities !== null && capabilities.attachmentMode === "receiver-accept" &&
+    if (capabilities !== null && capabilities.attachmentMode === "receiver-accept" &&
       capabilities.applicationVersions.includes(attachmentApplicationVersion) &&
       attachmentKinds.every((kind) => capabilities.kinds.includes(kind)) &&
-      capabilities.maxRelayAttachmentBytes >= fileBytes && fileBytes <= maxRelayAttachmentBytes;
+      Number.isSafeInteger(capabilities.maxRelayAttachmentBytes) && capabilities.maxRelayAttachmentBytes > 0) {
+      return Math.min(capabilities.maxRelayAttachmentBytes, maxRelayAttachmentBytes);
+    }
+    return null;
   }
 
   #activeDirectionCount(): number { return this.#inbound.size + this.#outbound.size; }

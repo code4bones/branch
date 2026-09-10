@@ -7,16 +7,19 @@ import { ChatAvatar } from "../app/ChatAvatar.js";
 import { ContactPresence } from "../app/ContactPresence.js";
 import { ContactRouteLookup } from "../app/ContactRouteLookup.js";
 import { DetailHeader } from "../app/DetailHeader.js";
+import { AttachmentSendControl } from "../app/AttachmentSendControl.js";
 import { InboundAttachmentOffer } from "../app/InboundAttachmentOffer.js";
 import { MessageComposer } from "../app/MessageComposer.js";
 import { MessageLog } from "../app/MessageLog.js";
+import { VerifiedCompletedAttachment } from "../app/VerifiedCompletedAttachment.js";
+import { clearTransientCompletedAttachment } from "../app/transient-attachment-presentation.js";
 import { peerSupportsChatText, sendApplicationCapabilities } from "../connectivity/application-capabilities-control.js";
 import { sendDeliveryReceipt } from "../connectivity/delivery-receipt-control.js";
 import { getRelaySessionClient, hasAttachedRelaySession } from "../connectivity/relay-session.js";
 import { createDeliveryID, sealAndSendApplicationTextMessage, sealAndSendMessage } from "../connectivity/seal-and-send.js";
 import { sendTypingControl } from "../connectivity/typing-control.js";
 import { CHATS_PATH } from "../app/paths.js";
-import { useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
+import { useCompletedAttachment, useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
 import type { MessageSummary } from "../state/slices/conversations-slice.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 
@@ -39,6 +42,15 @@ export function ChatPage(): React.JSX.Element {
 
   const contact = contacts.contacts.find((candidate) => candidate.contactId === resolvedContactId) ?? null;
   const inboundAttachmentOffer = useInboundAttachmentOffer(contact?.peerId ?? null);
+  const completedAttachment = useCompletedAttachment(contact?.peerId ?? null);
+
+  useEffect(() => {
+    const peerId = contact?.peerId ?? null;
+    if (peerId === null) {
+      return;
+    }
+    return () => { clearTransientCompletedAttachment(storeApi, peerId); };
+  }, [contact?.peerId, storeApi]);
 
   useEffect(() => {
     if (contact === null || contact.peerId === null || contact.hpkePublicKey === null || transport.attachStatus !== "attached") {
@@ -74,6 +86,9 @@ export function ChatPage(): React.JSX.Element {
   };
 
   const forgetContact = (): void => {
+    if (peerId !== null) {
+      clearTransientCompletedAttachment(storeApi, peerId);
+    }
     contacts.forgetContact(contact.contactId);
     void navigate(CHATS_PATH);
   };
@@ -220,15 +235,23 @@ export function ChatPage(): React.JSX.Element {
       />
       {isReachable && <ContactRouteLookup peerId={peerId} />}
       <InboundAttachmentOffer offer={inboundAttachmentOffer.offer} onDecision={(decision) => { void inboundAttachmentOffer.respond(decision); }} />
+      <VerifiedCompletedAttachment attachment={completedAttachment.attachment} onDownload={() => {
+        if (completedAttachment.download() !== "downloaded") {
+          setSendError("That verified file is no longer available in this live tab.");
+        }
+      }} />
       <MessageLog contactId={contact.contactId} emptyDescription="No messages yet." messages={conversation.messages} onIncomingMessageAutoPresented={handleIncomingMessageAutoPresented} />
       {sendError !== null && <div className="pwa-chat-error">{sendError}</div>}
-      <MessageComposer
-        onChange={setDraft}
-        onSend={handleSend}
-        placeholder={isReachable ? "Message" : "Message body is not yet end-to-end sealed for demo contacts"}
-        value={draft}
-        {...(isReachable ? { onTyping: handleTyping } : {})}
-      />
+      <div className="pwa-chat-compose-row">
+        {peerId !== null && hpkePublicKey !== null && <AttachmentSendControl peerId={peerId} />}
+        <MessageComposer
+          onChange={setDraft}
+          onSend={handleSend}
+          placeholder={isReachable ? "Message" : "Message body is not yet end-to-end sealed for demo contacts"}
+          value={draft}
+          {...(isReachable ? { onTyping: handleTyping } : {})}
+        />
+      </div>
       <Modal
         okText="Save"
         onCancel={() => { setRenameOpen(false); }}

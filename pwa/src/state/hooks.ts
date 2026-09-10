@@ -2,6 +2,8 @@ import type { RelayRouteMaterial } from "@code4bones/branch-core";
 import { useEffect } from "react";
 
 import { useAppStore } from "./StoreProvider.js";
+import { useAppStoreApi } from "./StoreProvider.js";
+import { downloadVerifiedCompletedAttachment, type CompletedAttachmentDownloadResult } from "../app/transient-attachment-presentation.js";
 import { ECHO_CONTACT_ID } from "../app/paths.js";
 import type { RouteStatus } from "./slices/connection-slice.js";
 import type { ContactSummary } from "./slices/contacts-slice.js";
@@ -10,6 +12,7 @@ import type { MessageDeliveryState, MessageSummary } from "./slices/conversation
 import type { IncomingMessageRequest } from "./slices/message-requests-slice.js";
 import type { IdentityStatus, LocalIdentitySummary } from "./slices/identity-slice.js";
 import type { InboundAttachmentOffer, InboundAttachmentOfferDecision, InboundAttachmentOfferResponse } from "./slices/inbound-attachment-offers-slice.js";
+import type { CompletedAttachment } from "./slices/completed-attachments-slice.js";
 import type { AttachStatus } from "./slices/transport-slice.js";
 import type { TransportTraceEntry } from "./slices/transport-slice.js";
 import type { ThemeMode } from "./slices/ui-slice.js";
@@ -134,6 +137,22 @@ export function useInboundAttachmentOffer(peerId: string | null): InboundAttachm
   return {
     offer,
     respond: async (decision) => peerId === null ? "not_found" : respondToInboundAttachmentOffer(peerId, decision)
+  };
+}
+
+export interface CompletedAttachmentControls {
+  readonly attachment: CompletedAttachment | null;
+  readonly download: () => CompletedAttachmentDownloadResult;
+}
+
+// The selector exposes metadata only. `download` enters the separate volatile
+// handle registry during an explicit click; it never reads Blob/File state.
+export function useCompletedAttachment(peerId: string | null): CompletedAttachmentControls {
+  const storeApi = useAppStoreApi();
+  const attachment = useAppStore((state) => (peerId === null ? null : state.completedAttachmentsByPeerId[peerId] ?? null));
+  return {
+    attachment,
+    download: () => peerId === null ? "not_found" : downloadVerifiedCompletedAttachment(storeApi, peerId)
   };
 }
 

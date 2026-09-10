@@ -1,16 +1,46 @@
 import { decodeBase64URL, type AttachmentManifest } from "@code4bones/branch-core";
 
+import { installAttachmentSendBridge } from "../app/attachment-send-bridge.js";
 import { getLocalIdentityKeys } from "../identity/identity-keys.js";
 import type { AppStoreApi } from "../state/store.js";
 import { peerApplicationCapabilities } from "./application-capabilities-control.js";
-import { AttachmentTransferController } from "./attachment-transfer.js";
-import { setLiveForwardedAckListener } from "./relay-session.js";
+import {
+  AttachmentTransferController,
+  type InboundAttachmentOffer
+} from "./attachment-transfer.js";
+import { hasAttachedRelaySession, setLiveForwardedAckListener } from "./relay-session.js";
 import { sendApplicationPayload } from "./seal-and-send.js";
 
 // One tab owns one volatile transfer controller. It is deliberately separate
 // from Zustand and from relay-session: neither a File nor partial plaintext
 // bytes can become UI state, relay state, or durable storage.
-let active: { readonly storeApi: AppStoreApi; readonly controller: AttachmentTransferController } | null = null;
+let active: {
+  readonly storeApi: AppStoreApi;
+  readonly controller: AttachmentTransferController;
+  readonly clearSendBridge: () => void;
+} | null = null;
+
+/**
+ * The UI may install one in-tab receiver for a verified file. This bridge is
+ * intentionally not a store: it owns no bytes, Blob, object URL, transfer
+ * metadata, or persistence lifecycle. `clear` releases a UI-owned staged
+ * presentation without unregistering the app-root handler on relay reconnect.
+ */
+export interface InboundAttachmentPresentationHandler {
+  complete(offer: InboundAttachmentOffer, bytes: Uint8Array): void;
+  clear(peerId?: string): void;
+}
+
+let inboundAttachmentPresentationHandler: InboundAttachmentPresentationHandler | null = null;
+
+export function setInboundAttachmentPresentationHandler(handler: InboundAttachmentPresentationHandler | null): () => void {
+  inboundAttachmentPresentationHandler = handler;
+  return () => {
+    if (inboundAttachmentPresentationHandler === handler) {
+      inboundAttachmentPresentationHandler = null;
+    }
+  };
+}
 
 export function attachmentTransferController(storeApi: AppStoreApi): AttachmentTransferController {
   if (active?.storeApi === storeApi) {
@@ -51,17 +81,45 @@ export function attachmentTransferController(storeApi: AppStoreApi): AttachmentT
       cancel: (handle) => { clearTimeout(handle as ReturnType<typeof setTimeout>); }
     },
     onInboundOffer: stagedInboundOffer,
+    onInboundComplete: (offer, bytes) => {
+      // A UI consumer is optional. Its failure must not change cleanup,
+      // integrity, relay behavior, or the byte lifetime held by this runtime.
+      try { inboundAttachmentPresentationHandler?.complete(offer, bytes); } catch { /* Optional UI boundary. */ }
+    },
     onEvent: (event) => {
       // Stable lifecycle labels only: never record names, manifests, IDs,
       // capability values, chunk bytes, or cryptographic material.
       storeApi.getState().recordTransportTrace(`attachment: ${event.event} ${event.direction} ${event.reason}`);
       if (event.event === "attachment.transfer.ended" && event.direction === "inbound") {
         storeApi.getState().dismissInboundAttachmentOffer(event.peerId);
+        // A successful completion was just staged for the UI. Every other
+        // terminal outcome invalidates any prior volatile presentation.
+        if (event.reason !== "accepted") {
+          try { inboundAttachmentPresentationHandler?.clear(event.peerId); } catch { /* Optional UI boundary. */ }
+        }
       }
     }
   });
   controller = created;
-  active = { storeApi, controller: created };
+  const clearSendBridge = installAttachmentSendBridge(storeApi, {
+    canSelect: (peerId) => {
+      if (!hasAttachedRelaySession()) {
+        return { status: "unavailable" };
+      }
+      const admission = created.canOffer(peerId);
+      if (admission.status === "ready") {
+        return { status: "ready" };
+      }
+      switch (admission.reason) {
+        case "unsupported": return { status: "unsupported" };
+        case "busy": return { status: "busy" };
+        case "unknown_peer": return { status: "unavailable" };
+        case "unavailable": return { status: "unavailable" };
+      }
+    },
+    offer: async (peerId, file) => await created.offer(peerId, file)
+  });
+  active = { storeApi, controller: created, clearSendBridge };
   setLiveForwardedAckListener((deliveryId) => { created.onRelayForwarded(deliveryId); });
   return created;
 }
@@ -69,6 +127,10 @@ export function attachmentTransferController(storeApi: AppStoreApi): AttachmentT
 export function clearAttachmentTransferController(): void {
   const current = active;
   active = null;
+  current?.clearSendBridge();
+  // The app-root presentation handler remains registered across a relay
+  // reconnect, but any of its staged bytes must be released immediately.
+  try { inboundAttachmentPresentationHandler?.clear(); } catch { /* Optional UI boundary. */ }
   setLiveForwardedAckListener(null);
   current?.controller.close();
   current?.storeApi.getState().clearInboundAttachmentOffers();
@@ -97,6 +159,9 @@ function stageInboundOffer(
   peerId: string,
   manifest: AttachmentManifest
 ): boolean {
+  // A newly verified offer replaces any earlier completed presentation from
+  // this peer. Release UI-owned bytes before exposing the next consent card.
+  try { inboundAttachmentPresentationHandler?.clear(peerId); } catch { /* Optional UI boundary. */ }
   return storeApi.getState().stageVerifiedInboundAttachmentOffer({
     peerId,
     transferId: manifest.transferId,

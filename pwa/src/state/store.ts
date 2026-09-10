@@ -5,6 +5,7 @@ import { createContactPresenceSlice, type ContactPresenceSlice } from "./slices/
 import { createContactTypingSlice, type ContactTypingSlice } from "./slices/contact-typing-slice.js";
 import { createContactsSlice, type ContactsSlice } from "./slices/contacts-slice.js";
 import { createConversationsSlice, type ConversationsSlice } from "./slices/conversations-slice.js";
+import { createCompletedAttachmentsSlice, type CompletedAttachmentsSlice } from "./slices/completed-attachments-slice.js";
 import { createHydrationSlice, type HydrationSlice } from "./slices/hydration-slice.js";
 import { createInboundAttachmentOffersSlice, type InboundAttachmentOffersSlice } from "./slices/inbound-attachment-offers-slice.js";
 import { createIdentitySlice, type IdentitySlice } from "./slices/identity-slice.js";
@@ -23,6 +24,7 @@ export type AppStore = UiSlice &
   ContactPresenceSlice &
   ContactTypingSlice &
   ConversationsSlice &
+  CompletedAttachmentsSlice &
   InboundAttachmentOffersSlice &
   MessageRequestsSlice &
   ReadStateSlice &
@@ -41,6 +43,7 @@ export function createAppStore(): AppStoreApi {
     ...createContactPresenceSlice(...creator),
     ...createContactTypingSlice(...creator),
     ...createConversationsSlice(...creator),
+    ...createCompletedAttachmentsSlice(...creator),
     ...createInboundAttachmentOffersSlice(...creator),
     ...createMessageRequestsSlice(...creator),
     ...createReadStateSlice(...creator),

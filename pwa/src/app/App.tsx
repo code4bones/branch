@@ -1,10 +1,13 @@
 import { ConfigProvider, theme } from "antd";
+import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./AppShell.js";
+import { inboundAttachmentCompletionHandler } from "./transient-attachment-presentation.js";
 import { EmptyChatPane } from "./EmptyChatPane.js";
 import { RequireIdentity } from "./RequireIdentity.js";
 import { RequireRoute } from "./RequireRoute.js";
+import { setInboundAttachmentPresentationHandler } from "../connectivity/attachment-runtime.js";
 import { useRelayTransport } from "../connectivity/use-relay-transport.js";
 import { useIdentityBootstrap } from "../identity/use-identity-bootstrap.js";
 import { ChatPage } from "../pages/ChatPage.js";
@@ -14,7 +17,7 @@ import { OnboardingPage } from "../pages/OnboardingPage.js";
 import { MessageRequestsPage } from "../pages/MessageRequestsPage.js";
 import { SettingsPage } from "../pages/SettingsPage.js";
 import { useThemeControls } from "../state/hooks.js";
-import { AppStoreProvider } from "../state/StoreProvider.js";
+import { AppStoreProvider, useAppStoreApi } from "../state/StoreProvider.js";
 import { useConversationsBootstrap } from "../storage/use-conversations-bootstrap.js";
 
 export function PwaApp(): React.JSX.Element {
@@ -30,9 +33,18 @@ export function PwaApp(): React.JSX.Element {
 // the component tree.
 function ThemedApp(): React.JSX.Element {
   const themeControls = useThemeControls();
+  const storeApi = useAppStoreApi();
   useIdentityBootstrap();
   useConversationsBootstrap();
   useRelayTransport();
+  useEffect(() => {
+    const handler = inboundAttachmentCompletionHandler(storeApi);
+    const unregister = setInboundAttachmentPresentationHandler(handler);
+    return () => {
+      unregister();
+      handler.clear();
+    };
+  }, [storeApi]);
 
   return (
     <ConfigProvider

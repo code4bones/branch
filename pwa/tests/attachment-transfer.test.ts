@@ -25,6 +25,7 @@ import {
   createSignedAttachmentDecision,
   createSignedAttachmentManifest,
   type AttachmentControllerEvent,
+  type InboundAttachmentOffer,
   type AttachmentSendRequest,
   type AttachmentTimerPort,
   type AttachmentTransferPorts
@@ -72,6 +73,7 @@ interface Harness {
   readonly timers: FakeTimers;
   readonly local: CryptoKeyPair;
   readonly remote: CryptoKeyPair;
+  readonly completed: Array<{ readonly offer: InboundAttachmentOffer; readonly bytes: Uint8Array }>;
 }
 
 async function harness(options: { readonly known?: boolean; readonly trustedRemote?: CryptoKey; readonly capabilities?: ApplicationCapabilities } = {}): Promise<Harness> {
@@ -79,6 +81,7 @@ async function harness(options: { readonly known?: boolean; readonly trustedRemo
   const remote = await signingKeys();
   const sent: AttachmentSendRequest[] = [];
   const events: AttachmentControllerEvent[] = [];
+  const completed: Array<{ readonly offer: InboundAttachmentOffer; readonly bytes: Uint8Array }> = [];
   const timers = new FakeTimers();
   let randomCounter = 0;
   const capabilities: ApplicationCapabilities = {
@@ -103,9 +106,10 @@ async function harness(options: { readonly known?: boolean; readonly trustedRemo
     peerCapabilities: (candidate) => candidate === peerId ? options.capabilities ?? capabilities : null,
     send: (request) => { sent.push(request); },
     timers,
+    onInboundComplete: (offer, bytes) => { completed.push({ offer, bytes }); },
     onEvent: (event) => { events.push(event); }
   };
-  return { controller: new AttachmentTransferController(ports), sent, events, timers, local, remote };
+  return { controller: new AttachmentTransferController(ports), sent, events, timers, local, remote, completed };
 }
 
 void test("attachment offer is explicitly accepted and the decision uses the shared canonical decoder", async () => {
@@ -150,11 +154,17 @@ void test("attachment offers require a current receiver-accept relay capability 
     maxDirectAttachmentBytes: 0
   };
   const fixture = await harness({ capabilities: unsupported });
+  assert.deepEqual(fixture.controller.canOffer(peerId), { status: "rejected", reason: "unsupported" });
   const file = new File([new Uint8Array([1])], "not-offered.bin");
   assert.deepEqual(await fixture.controller.offer(peerId, file), { status: "rejected", reason: "unsupported" });
   assert.equal(fixture.sent.length, 0);
 
   const supported = await harness();
+  assert.deepEqual(supported.controller.canOffer(peerId), { status: "ready", maximumBytes: 4 * 1024 * 1024 });
+  const empty = new File([], "empty.bin");
+  assert.deepEqual(await supported.controller.offer(peerId, empty), { status: "rejected", reason: "unsupported" });
+  assert.equal(supported.sent.length, 0);
+
   const tooLarge = new File([new Uint8Array(4 * 1024 * 1024 + 1)], "too-large.bin");
   assert.deepEqual(await supported.controller.offer(peerId, tooLarge), { status: "rejected", reason: "unsupported" });
   assert.equal(supported.sent.length, 0);
@@ -187,6 +197,7 @@ void test("receiver rejection, expiry, and final digest failure all release inbo
     { status: "handled", kind: attachmentChunkKind }
   );
   assert.equal(corrupted.events.at(-1)?.reason, "integrity_failed");
+  assert.equal(corrupted.completed.length, 0, "a mismatched digest must never reach the completion callback");
   assert.deepEqual(await corrupted.controller.accept(peerId), { status: "rejected", reason: "busy" });
 
   const cancelled = await harness();
@@ -195,6 +206,24 @@ void test("receiver rejection, expiry, and final digest failure all release inbo
   const cancelRequest = required(cancelled.sent.at(-1));
   assert.equal(decodeAttachmentDecision(decodeApplicationPayload(cancelRequest.plaintext).body).kind, "cancel");
   assert.equal(cancelled.controller.onRelayForwarded(required(cancelled.sent[0]).deliveryId), false);
+});
+
+void test("only accepted, full-digest-verified inbound bytes reach the one-shot completion callback", async () => {
+  const fixture = await harness();
+  const bytes = new Uint8Array([8, 6, 7, 5, 3, 0, 9]);
+  const manifest = await signedManifest(fixture.remote.privateKey, bytes);
+  await fixture.controller.receive(peerId, applicationEnvelope(attachmentManifestKind, encodeAttachmentManifest(manifest)));
+
+  await fixture.controller.receive(peerId, applicationEnvelope(attachmentChunkKind, encodeChunk(manifest, bytes)));
+  assert.equal(fixture.completed.length, 0, "chunks before explicit acceptance are not delivered");
+
+  assert.deepEqual(await fixture.controller.accept(peerId), { status: "sent" });
+  await fixture.controller.receive(peerId, applicationEnvelope(attachmentChunkKind, encodeChunk(manifest, bytes)));
+  assert.equal(fixture.completed.length, 1);
+  assert.equal(required(fixture.completed[0]).offer.peerId, peerId);
+  assert.equal(required(fixture.completed[0]).offer.manifest.transferId, manifest.transferId);
+  assert.deepEqual(required(fixture.completed[0]).bytes, bytes);
+  assert.deepEqual(await fixture.controller.accept(peerId), { status: "rejected", reason: "busy" });
 });
 
 void test("outbound transfers open no chunks before explicit remote accept and keep a four-chunk forwarded window", async () => {

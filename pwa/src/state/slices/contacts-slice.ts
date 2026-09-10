@@ -25,7 +25,7 @@ export interface ContactsSlice {
   readonly selectContact: (contactId: string | null) => void;
 }
 
-export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> = (set) => ({
+export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> = (set, get) => ({
   contacts: demoContacts,
   selectedContactId: null,
   upsertContact: (contact) => {
@@ -38,6 +38,13 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
     });
   },
   forgetContact: (contactId) => {
+    // The completed-file handle is not state, but its owning volatile bridge
+    // is bound to this projection's clear action. Contact removal must clear
+    // it even when no ChatPage happens to be mounted.
+    const peerId = get().contacts.find((existing) => existing.contactId === contactId)?.peerId ?? null;
+    if (peerId !== null) {
+      get().clearCompletedAttachmentProjection(peerId);
+    }
     set((state) => {
       const { [contactId]: removedMessages, ...messagesByContactId } = state.messagesByContactId;
       const { [contactId]: removedReadState, ...lastReadAtByContactId } = state.lastReadAtByContactId;
