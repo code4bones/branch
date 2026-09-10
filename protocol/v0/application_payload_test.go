@@ -29,6 +29,14 @@ type applicationPayloadVectors struct {
 			SHA256     string `json:"sha256"`
 			Signature  string `json:"signature"`
 		} `json:"manifest"`
+		ContactCard struct {
+			RequestID     string `json:"request_id"`
+			BranchID      string `json:"branch_id"`
+			PeerID        string `json:"peer_id"`
+			HPKEPublicKey string `json:"hpke_public_key"`
+			DisplayName   string `json:"display_name"`
+			CanonicalBody string `json:"canonical_body"`
+		} `json:"contact_card"`
 	} `json:"valid"`
 }
 
@@ -73,5 +81,33 @@ func TestApplicationPayloadSharedVectors(t *testing.T) {
 	}
 	if err := (AttachmentChunk{Version: AttachmentVersion, TransferID: manifest.TransferID, ManifestID: manifest.ManifestID, Index: 1, Bytes: make([]byte, 1025)}).ValidateFor(manifest); err != nil {
 		t.Fatalf("last chunk: %v", err)
+	}
+	cardVector := vectors.Valid.ContactCard
+	requestID, err := base64.RawURLEncoding.DecodeString(cardVector.RequestID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerID, err := base64.RawURLEncoding.DecodeString(cardVector.PeerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hpkePublicKey, err := base64.RawURLEncoding.DecodeString(cardVector.HPKEPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := ContactCard{RequestID: requestID, BranchID: cardVector.BranchID, PeerID: peerID, HPKEPublicKey: hpkePublicKey, DisplayName: cardVector.DisplayName}
+	encodedCard, err := EncodeContactCard(card)
+	if err != nil {
+		t.Fatalf("contact card vector: %v", err)
+	}
+	if base64.RawURLEncoding.EncodeToString(encodedCard) != cardVector.CanonicalBody {
+		t.Fatalf("contact card canonical bytes = %q, want %q", base64.RawURLEncoding.EncodeToString(encodedCard), cardVector.CanonicalBody)
+	}
+	decodedCard, err := DecodeContactCard(encodedCard)
+	if err != nil || decodedCard.DisplayName != card.DisplayName || decodedCard.BranchID != card.BranchID {
+		t.Fatalf("contact card canonical decode: %v", err)
+	}
+	if _, err := DecodeContactCard(encodedCard[:len(encodedCard)-1]); err == nil {
+		t.Fatal("truncated contact card accepted")
 	}
 }

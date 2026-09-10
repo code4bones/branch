@@ -90,6 +90,9 @@ branch-relay-attachment-frame =
   relay-identity-want /
   relay-federation-identity-want /
   relay-identity-have /
+  relay-contact-announce /
+  relay-contact-lookup /
+  relay-contact-probe /
   relay-rendezvous /
   relay-envelope /
   relay-ack /
@@ -202,6 +205,41 @@ relay-identity-have = {
   records: [*4 branch-text-wrapper],
 }
 
+; D-BRANCH-063 optional extension branch.contact-discovery.live/0.draft.
+; It is same-relay, live-only contact discovery. The relay derives the
+; BranchID mapping from the authenticated target identity; clients never send
+; a target peer id or a target BranchID in CONTACT_ANNOUNCE.
+relay-contact-announce = {
+  type: "CONTACT_ANNOUNCE",
+  session_id: b64url-32,
+  discoverable: bool,
+  sequence: draft-timestamp,
+}
+
+relay-contact-lookup = {
+  type: "CONTACT_LOOKUP",
+  session_id: b64url-32,
+  request_id: b64url-16,
+  branch_id: branch-id,
+  requester_hpke_public_key: b64url-32,
+  issued_at: draft-timestamp,
+  expires_at: draft-timestamp,
+}
+
+; CONTACT_PROBE is relay-to-live-target only. requester_peer_id is supplied by
+; the relay from the authenticated requester session, never trusted from a
+; requester-controlled lookup field.
+relay-contact-probe = {
+  type: "CONTACT_PROBE",
+  session_id: b64url-32,
+  request_id: b64url-16,
+  branch_id: branch-id,
+  requester_peer_id: b64url-32,
+  requester_hpke_public_key: b64url-32,
+  issued_at: draft-timestamp,
+  expires_at: draft-timestamp,
+}
+
 relay-rendezvous = {
   type: "RENDEZVOUS",
   session_id: b64url-32,
@@ -302,6 +340,18 @@ application-capabilities = {
 }
 
 application-identifier = text .size (1..96)
+
+; Deterministic-CBOR body of signed application-control kind
+; branch.contact-card/0.draft. It is carried only inside existing HPKE
+; ENVELOPE plaintext, never as relay metadata. BranchID and peer_id are bound
+; again by the receiving descriptor to the authenticated sender identity.
+contact-card = {
+  request_id: bstr .size 16,
+  branch_id: branch-id,
+  peer_id: bstr .size 32,
+  hpke_public_key: bstr .size 32,
+  display_name: text .size (1..96),
+}
 
 attachment-manifest = {
   version: "branch.attachment/0.draft",

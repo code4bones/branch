@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { attachmentManifestSigningBytes, classifyApplicationPayload, createApplicationPayloadRegistry, decodeAttachmentChunk, decodeAttachmentDecision, decodeAttachmentManifest, decodeApplicationPayload, encodeAttachmentChunk, encodeAttachmentDecision, encodeAttachmentManifest, encodeApplicationPayload, inlineBinaryKind, maxInlineBinaryBytes, type AttachmentManifest } from "../src/index.js";
+import { attachmentManifestSigningBytes, classifyApplicationPayload, createApplicationPayloadRegistry, decodeAttachmentChunk, decodeAttachmentDecision, decodeAttachmentManifest, decodeApplicationPayload, decodeContactCard, encodeAttachmentChunk, encodeAttachmentDecision, encodeAttachmentManifest, encodeApplicationPayload, encodeContactCard, inlineBinaryKind, maxInlineBinaryBytes, type AttachmentManifest } from "../src/index.js";
 import { decodeBase64URL, encodeBase64URL } from "../src/protocol/v0/base64url.js";
 
 const fixtureURL = new URL("../../../../testdata/vectors/protocol-v0/application-payload-vectors.json", import.meta.url);
@@ -52,8 +52,30 @@ test("attachment decisions canonical-decode through the shared core", () => {
   assert.throws(() => decodeAttachmentDecision(bytes.subarray(0, bytes.byteLength - 1)));
 });
 
+test("live contact-card vector is closed canonical CBOR", async () => {
+  const fixture = await vectors();
+  const card = fixture.valid.contact_card;
+  const encoded = encodeContactCard({
+    requestId: card.request_id,
+    branchId: card.branch_id,
+    peerId: card.peer_id,
+    hpkePublicKey: card.hpke_public_key,
+    displayName: card.display_name
+  });
+  assert.equal(encodeBase64URL(encoded), card.canonical_body);
+  assert.deepEqual(decodeContactCard(encoded), {
+    requestId: card.request_id,
+    branchId: card.branch_id,
+    peerId: card.peer_id,
+    hpkePublicKey: card.hpke_public_key,
+    displayName: card.display_name
+  });
+  assert.throws(() => decodeContactCard(encoded.subarray(0, encoded.byteLength - 1)));
+});
+
 type FixturePayload = { readonly kind: string; readonly message_id: string; readonly body: string };
 type FixtureManifest = { readonly transfer_id: string; readonly manifest_id: string; readonly issued_at: number; readonly expires_at: number; readonly file_name: string; readonly media_type: string; readonly byte_count: number; readonly chunk_bytes: number; readonly chunk_count: number; readonly sha256: string; readonly signature: string };
-async function vectors(): Promise<{ readonly valid: { readonly text: FixturePayload; readonly inline_binary: FixturePayload; readonly unknown_kind: FixturePayload; readonly manifest: FixtureManifest; readonly first_chunk: { readonly index: number; readonly body: string }; readonly last_chunk: { readonly index: number; readonly body: string } } }> { return JSON.parse(await readFile(fileURLToPath(fixtureURL), "utf8")) as Awaited<ReturnType<typeof vectors>>; }
+type FixtureContactCard = { readonly request_id: string; readonly branch_id: string; readonly peer_id: string; readonly hpke_public_key: string; readonly display_name: string; readonly canonical_body: string };
+async function vectors(): Promise<{ readonly valid: { readonly text: FixturePayload; readonly inline_binary: FixturePayload; readonly unknown_kind: FixturePayload; readonly manifest: FixtureManifest; readonly first_chunk: { readonly index: number; readonly body: string }; readonly last_chunk: { readonly index: number; readonly body: string }; readonly contact_card: FixtureContactCard } }> { return JSON.parse(await readFile(fileURLToPath(fixtureURL), "utf8")) as Awaited<ReturnType<typeof vectors>>; }
 function toPayload(value: FixturePayload) { return { version: "branch.application-payload/0.draft" as const, kind: value.kind, messageId: value.message_id, body: decodeBase64URL(value.body) }; }
 function toManifest(value: FixtureManifest): AttachmentManifest { return { version: "branch.attachment/0.draft", transferId: value.transfer_id, manifestId: value.manifest_id, issuedAt: value.issued_at, expiresAt: value.expires_at, fileName: value.file_name, mediaType: value.media_type, byteCount: value.byte_count, chunkBytes: value.chunk_bytes, chunkCount: value.chunk_count, sha256: value.sha256, signature: decodeBase64URL(value.signature) }; }

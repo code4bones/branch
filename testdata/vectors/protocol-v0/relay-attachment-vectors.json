@@ -163,6 +163,43 @@
       }
     },
     {
+      "name": "contact-announce-live-opt-in",
+      "expect": "accept",
+      "frame": {
+        "type": "CONTACT_ANNOUNCE",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "discoverable": true,
+        "sequence": 5
+      }
+    },
+    {
+      "name": "contact-lookup-exact-live-branch-id",
+      "expect": "accept",
+      "frame": {
+        "type": "CONTACT_LOOKUP",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "request_id": "CgoKCgoKCgoKCgoKCgoKCg",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "requester_hpke_public_key": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws",
+        "issued_at": 1789000000000,
+        "expires_at": 1789000060000
+      }
+    },
+    {
+      "name": "contact-probe-binds-authenticated-requester",
+      "expect": "accept",
+      "frame": {
+        "type": "CONTACT_PROBE",
+        "session_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+        "request_id": "CgoKCgoKCgoKCgoKCgoKCg",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "requester_peer_id": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw",
+        "requester_hpke_public_key": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws",
+        "issued_at": 1789000000000,
+        "expires_at": 1789000060000
+      }
+    },
+    {
       "name": "federation-identity-want-has-one-hop-context",
       "expect": "accept",
       "frame": {
@@ -224,6 +261,34 @@
     }
   ],
   "invalid": [
+    {
+      "name": "contact-lookup-rejects-overlong-live-ttl",
+      "expect": "reject",
+      "reason": "frame_replayed",
+      "frame": {
+        "type": "CONTACT_LOOKUP",
+        "session_id": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "request_id": "CgoKCgoKCgoKCgoKCgoKCg",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "requester_hpke_public_key": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws",
+        "issued_at": 1789000000000,
+        "expires_at": 1789000060001
+      }
+    },
+    {
+      "name": "contact-probe-rejects-requester-key-substitution",
+      "expect": "reject",
+      "reason": "frame_malformed",
+      "frame": {
+        "type": "CONTACT_PROBE",
+        "session_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+        "request_id": "CgoKCgoKCgoKCgoKCgoKCg",
+        "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+        "requester_peer_id": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw",
+        "issued_at": 1789000000000,
+        "expires_at": 1789000060000
+      }
+    },
     {
       "name": "federation-hello-rejects-missing-signed-beacon",
       "expect": "reject",

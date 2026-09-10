@@ -88,6 +88,53 @@
       ]
     },
     {
+      "name": "contact-discovery-extension-absent-preserves-ordinary-attachment",
+      "kind": "contact_discovery_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "steps": [
+        "alice and relay negotiate a normal relay.forward.live/0 attachment without branch.contact-discovery.live/0.draft",
+        "alice does not send CONTACT_ANNOUNCE, CONTACT_LOOKUP, or CONTACT_PROBE and treats BranchID live discovery as unsupported locally",
+        "the ordinary live attachment continues without reinterpreting LOOKUP, IDENTITY_WANT, IDENTITY_HAVE, ENVELOPE, or HPKE AAD"
+      ]
+    },
+    {
+      "name": "contact-discovery-exact-live-card",
+      "kind": "contact_discovery_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "steps": [
+        "a newly created PWA local identity defaults Allow contact discovery to enabled and sends authenticated CONTACT_ANNOUNCE discoverable true only after the extension is selected",
+        "relay derives that attached target's BranchID from its authenticated Ed25519 peer identity and holds one volatile mapping only while the session remains live",
+        "alice sends one exact canonical BranchID CONTACT_LOOKUP with fresh request_id, X25519 public key and a TTL at most 60 seconds",
+        "relay matches no aliases, prefixes, history, federation or directory records and forwards one CONTACT_PROBE with requester peer id derived from alice authenticated session",
+        "target returns an HPKE-sealed signed branch.contact-card/0.draft; alice verifies pending request id, sender/AAD binding, BranchID derivation and shows only an ephemeral candidate until explicit Add"
+      ]
+    },
+    {
+      "name": "contact-discovery-replay-expiry-cancel-and-wrong-binding-are-inert",
+      "kind": "contact_discovery_transcript",
+      "expect": "reject",
+      "selected_error": "frame_replayed",
+      "steps": [
+        "relay rejects a CONTACT_LOOKUP or CONTACT_PROBE with non-positive or over-60-second lifetime, a replayed request id in its live window, or rate above four per session per rolling minute",
+        "requester cancellation removes only local pending state; no cancellation frame, relay queue, negative result or later delivery exists",
+        "a late contact card, or a card whose BranchID, signed sender, recipient, HPKE/AAD route sender or pending request id disagrees, has no projection and creates no contact",
+        "if no opted-in target is currently attached the relay drops the lookup silently; absence proves neither offline nor unknown"
+      ]
+    },
+    {
+      "name": "contact-discovery-disconnect-restart-restores-no-map-or-card",
+      "kind": "contact_discovery_transcript",
+      "expect": "accept",
+      "selected_error": null,
+      "steps": [
+        "discoverable false, session disconnect, TTL expiry, quota close or relay restart removes the exact mapping, probe, rate counter and pending output immediately",
+        "relay restart restores no contact mapping, card, query history, file, mailbox, delivery queue or store-and-forward traffic",
+        "a later live discovery needs a new attachment, announce and fresh request and does not reuse an old response"
+      ]
+    },
+    {
       "name": "delivery-dedup-overlap",
       "kind": "delivery_dedup_transcript",
       "expect": "accept",

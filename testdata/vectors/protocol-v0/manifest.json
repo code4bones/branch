@@ -18,6 +18,7 @@
     "required_kinds": [
       "negotiation_transcript",
       "relay_attachment_transcript",
+      "contact_discovery_transcript",
       "delivery_dedup_transcript",
       "path_migration_transcript",
       "relay_restart_transcript"
@@ -53,6 +54,9 @@
       "LOOKUP",
       "IDENTITY_WANT",
       "IDENTITY_HAVE",
+      "CONTACT_ANNOUNCE",
+      "CONTACT_LOOKUP",
+      "CONTACT_PROBE",
       "RENDEZVOUS",
       "ENVELOPE",
       "ACK",

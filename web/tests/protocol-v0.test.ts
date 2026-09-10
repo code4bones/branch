@@ -92,6 +92,9 @@ type RelayFrameType =
   | "LOOKUP"
   | "IDENTITY_WANT"
   | "IDENTITY_HAVE"
+  | "CONTACT_ANNOUNCE"
+  | "CONTACT_LOOKUP"
+  | "CONTACT_PROBE"
   | "RENDEZVOUS"
   | "ENVELOPE"
   | "ACK"
@@ -116,6 +119,7 @@ interface BootstrapBeaconVectors {
 type TranscriptKind =
   | "negotiation_transcript"
   | "relay_attachment_transcript"
+  | "contact_discovery_transcript"
   | "delivery_dedup_transcript"
   | "path_migration_transcript"
   | "relay_restart_transcript";
@@ -680,6 +684,9 @@ function isRelayFrameType(value: unknown): value is RelayFrameType {
     value === "LOOKUP" ||
     value === "IDENTITY_WANT" ||
     value === "IDENTITY_HAVE" ||
+    value === "CONTACT_ANNOUNCE" ||
+    value === "CONTACT_LOOKUP" ||
+    value === "CONTACT_PROBE" ||
     value === "RENDEZVOUS" ||
     value === "ENVELOPE" ||
     value === "ACK" ||
@@ -778,6 +785,7 @@ function isTranscriptKind(value: unknown): value is TranscriptKind {
   return (
     value === "negotiation_transcript" ||
     value === "relay_attachment_transcript" ||
+    value === "contact_discovery_transcript" ||
     value === "delivery_dedup_transcript" ||
     value === "path_migration_transcript" ||
     value === "relay_restart_transcript"

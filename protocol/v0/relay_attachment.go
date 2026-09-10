@@ -50,10 +50,17 @@ const (
 	RelayFrameLookup       RelayFrameType = "LOOKUP"
 	RelayFrameIdentityWant RelayFrameType = "IDENTITY_WANT"
 	RelayFrameIdentityHave RelayFrameType = "IDENTITY_HAVE"
-	RelayFrameRendezvous   RelayFrameType = "RENDEZVOUS"
-	RelayFrameEnvelope     RelayFrameType = "ENVELOPE"
-	RelayFrameAck          RelayFrameType = "ACK"
-	RelayFrameError        RelayFrameType = "ERROR"
+	// ContactDiscoveryLiveExtension gates the draft, same-relay-only contact
+	// discovery frames. It is an optional extension: old attachments retain
+	// their existing semantics and must never receive these frame types.
+	ContactDiscoveryLiveExtension                = "branch.contact-discovery.live/0.draft"
+	RelayFrameContactAnnounce     RelayFrameType = "CONTACT_ANNOUNCE"
+	RelayFrameContactLookup       RelayFrameType = "CONTACT_LOOKUP"
+	RelayFrameContactProbe        RelayFrameType = "CONTACT_PROBE"
+	RelayFrameRendezvous          RelayFrameType = "RENDEZVOUS"
+	RelayFrameEnvelope            RelayFrameType = "ENVELOPE"
+	RelayFrameAck                 RelayFrameType = "ACK"
+	RelayFrameError               RelayFrameType = "ERROR"
 )
 
 var (
@@ -106,6 +113,9 @@ func KnownRelayFrameType(frameType RelayFrameType) bool {
 		RelayFrameLookup,
 		RelayFrameIdentityWant,
 		RelayFrameIdentityHave,
+		RelayFrameContactAnnounce,
+		RelayFrameContactLookup,
+		RelayFrameContactProbe,
 		RelayFrameRendezvous,
 		RelayFrameEnvelope,
 		RelayFrameAck,
@@ -136,6 +146,12 @@ func validateRelayFrame(frameType RelayFrameType, frame map[string]json.RawMessa
 		return validateIdentityWantFrame(frame)
 	case RelayFrameIdentityHave:
 		return validateIdentityHaveFrame(frame)
+	case RelayFrameContactAnnounce:
+		return validateContactAnnounceFrame(frame)
+	case RelayFrameContactLookup:
+		return validateContactLookupFrame(frame)
+	case RelayFrameContactProbe:
+		return validateContactProbeFrame(frame)
 	case RelayFrameRendezvous:
 		return validateRendezvousFrame(frame)
 	case RelayFrameEnvelope:
@@ -352,6 +368,89 @@ func validateIdentityHaveFrame(frame map[string]json.RawMessage) error {
 		return err
 	}
 	return readIdentityRecordsField(frame, "records")
+}
+
+// These validators intentionally check only deterministic, clock-free frame
+// shape. A relay adapter later verifies the negotiated extension, authenticated
+// session ownership, current time, rate window, and memory-only target mapping.
+// It must never infer consent from a missing announce or emit a negative lookup
+// result.
+func validateContactAnnounceFrame(frame map[string]json.RawMessage) error {
+	if err := rejectUnknownRawKeys(frame, "type", "session_id", "discoverable", "sequence"); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "session_id", 32); err != nil {
+		return err
+	}
+	if _, err := readBoolField(frame, "discoverable"); err != nil {
+		return err
+	}
+	_, err := readBoundedUintField(frame, "sequence", 0, MaxDraftTimestamp)
+	return err
+}
+
+func validateContactLookupFrame(frame map[string]json.RawMessage) error {
+	if err := rejectUnknownRawKeys(frame, "type", "session_id", "request_id", "branch_id", "requester_hpke_public_key", "issued_at", "expires_at"); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "session_id", 32); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "request_id", 16); err != nil {
+		return err
+	}
+	branchID, err := readStringField(frame, "branch_id")
+	if err != nil {
+		return err
+	}
+	if err := ParseBranchID(branchID); err != nil {
+		return fmt.Errorf("%w: invalid branch_id", ErrInvalidRelayAttachmentFrame)
+	}
+	if err := readBase64Field(frame, "requester_hpke_public_key", 32); err != nil {
+		return err
+	}
+	return validateContactDiscoveryLifetime(frame)
+}
+
+func validateContactProbeFrame(frame map[string]json.RawMessage) error {
+	if err := rejectUnknownRawKeys(frame, "type", "session_id", "request_id", "branch_id", "requester_peer_id", "requester_hpke_public_key", "issued_at", "expires_at"); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "session_id", 32); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "request_id", 16); err != nil {
+		return err
+	}
+	branchID, err := readStringField(frame, "branch_id")
+	if err != nil {
+		return err
+	}
+	if err := ParseBranchID(branchID); err != nil {
+		return fmt.Errorf("%w: invalid branch_id", ErrInvalidRelayAttachmentFrame)
+	}
+	if err := readBase64Field(frame, "requester_peer_id", 32); err != nil {
+		return err
+	}
+	if err := readBase64Field(frame, "requester_hpke_public_key", 32); err != nil {
+		return err
+	}
+	return validateContactDiscoveryLifetime(frame)
+}
+
+func validateContactDiscoveryLifetime(frame map[string]json.RawMessage) error {
+	issuedAt, err := readTimestampField(frame, "issued_at")
+	if err != nil {
+		return err
+	}
+	expiresAt, err := readTimestampField(frame, "expires_at")
+	if err != nil {
+		return err
+	}
+	if expiresAt <= issuedAt || expiresAt-issuedAt > 60000 {
+		return fmt.Errorf("%w: frame_replayed", ErrInvalidRelayAttachmentFrame)
+	}
+	return nil
 }
 
 func validateRendezvousFrame(frame map[string]json.RawMessage) error {

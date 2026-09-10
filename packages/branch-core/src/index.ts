@@ -1,4 +1,5 @@
 export * from "./application-control/runtime.js";
+export * from "./application-control/contact-card.js";
 export * from "./application-payload/runtime.js";
 export * from "./application-payload/attachment.js";
 export * from "./application-payload/capabilities.js";

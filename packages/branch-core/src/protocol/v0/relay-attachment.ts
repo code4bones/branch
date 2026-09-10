@@ -18,6 +18,7 @@ const draftRelayAttachmentPath = "/relay/v0";
 
 export const relayForwardLiveRole = "relay.forward.live/0" as const;
 export const relayFederationLiveRole = "relay.federate.live/0.draft" as const;
+export const contactDiscoveryLiveExtension = "branch.contact-discovery.live/0.draft" as const;
 
 const relayFrameTypes = [
   "HELLO",
@@ -29,6 +30,9 @@ const relayFrameTypes = [
   "LOOKUP",
   "IDENTITY_WANT",
   "IDENTITY_HAVE",
+  "CONTACT_ANNOUNCE",
+  "CONTACT_LOOKUP",
+  "CONTACT_PROBE",
   "RENDEZVOUS",
   "ENVELOPE",
   "ACK",
@@ -123,6 +127,15 @@ export function validateDraftRelayAttachmentFrame(value: unknown): DraftRelayAtt
       break;
     case "IDENTITY_HAVE":
       validateIdentityHave(value);
+      break;
+    case "CONTACT_ANNOUNCE":
+      validateContactAnnounce(value);
+      break;
+    case "CONTACT_LOOKUP":
+      validateContactLookup(value);
+      break;
+    case "CONTACT_PROBE":
+      validateContactProbe(value);
       break;
     case "RENDEZVOUS":
       validateRendezvous(value);
@@ -243,6 +256,44 @@ function validateIdentityHave(record: Record<string, unknown>): void {
   readBranchID(record, "branch_id");
   readBoundedInteger(record, "sequence", 0, maxDraftTimestamp);
   readIdentityRecords(record, "records");
+}
+
+// Frame validation is intentionally clock-free and side-effect-free. The
+// adapter owns negotiated-extension checks, authenticated session binding,
+// current-time/replay/rate policy, and its volatile mapping. A missing response
+// is never encoded as a negative identity or availability claim.
+function validateContactAnnounce(record: Record<string, unknown>): void {
+  rejectUnknownKeys(record, ["type", "session_id", "discoverable", "sequence"]);
+  readBase64URLBytes(record, "session_id", 32);
+  readBoolean(record, "discoverable");
+  readBoundedInteger(record, "sequence", 0, maxDraftTimestamp);
+}
+
+function validateContactLookup(record: Record<string, unknown>): void {
+  rejectUnknownKeys(record, ["type", "session_id", "request_id", "branch_id", "requester_hpke_public_key", "issued_at", "expires_at"]);
+  readBase64URLBytes(record, "session_id", 32);
+  readBase64URLBytes(record, "request_id", 16);
+  readBranchID(record, "branch_id");
+  readBase64URLBytes(record, "requester_hpke_public_key", 32);
+  validateContactDiscoveryLifetime(record);
+}
+
+function validateContactProbe(record: Record<string, unknown>): void {
+  rejectUnknownKeys(record, ["type", "session_id", "request_id", "branch_id", "requester_peer_id", "requester_hpke_public_key", "issued_at", "expires_at"]);
+  readBase64URLBytes(record, "session_id", 32);
+  readBase64URLBytes(record, "request_id", 16);
+  readBranchID(record, "branch_id");
+  readBase64URLBytes(record, "requester_peer_id", 32);
+  readBase64URLBytes(record, "requester_hpke_public_key", 32);
+  validateContactDiscoveryLifetime(record);
+}
+
+function validateContactDiscoveryLifetime(record: Record<string, unknown>): void {
+  const issuedAt = readInteger(record, "issued_at");
+  const expiresAt = readInteger(record, "expires_at");
+  if (expiresAt <= issuedAt || expiresAt - issuedAt > 60_000) {
+    throw new RelayAttachmentError("frame_replayed");
+  }
 }
 
 function validateRendezvous(record: Record<string, unknown>): void {

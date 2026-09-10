@@ -33,6 +33,14 @@
       "max_relay_attachment_bytes": 4194304,
       "max_direct_attachment_bytes": 16777216,
       "canonical_body": "pmVraW5kc4N4H2JyYW5jaC5hdHRhY2htZW50LmNodW5rLzAuZHJhZnR4HGJyYW5jaC5iaW5hcnkuaW5saW5lLzAuZHJhZnR4GGJyYW5jaC5jaGF0LnRleHQvMC5kcmFmdG9hdHRhY2htZW50X21vZGVvcmVjZWl2ZXItYWNjZXB0cG1heF9pbmxpbmVfYnl0ZXMZC7h0YXBwbGljYXRpb25fdmVyc2lvbnOBeCJicmFuY2guYXBwbGljYXRpb24tcGF5bG9hZC8wLmRyYWZ0eBptYXhfcmVsYXlfYXR0YWNobWVudF9ieXRlcxoAQAAAeBttYXhfZGlyZWN0X2F0dGFjaG1lbnRfYnl0ZXMaAQAAAA"
+    },
+    "contact_card": {
+      "request_id": "CgoKCgoKCgoKCgoKCgoKCg",
+      "branch_id": "br1.EiAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw",
+      "peer_id": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw",
+      "hpke_public_key": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws",
+      "display_name": "Ribbon Bearer",
+      "canonical_body": "pWdwZWVyX2lkWCAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDGlicmFuY2hfaWR4MmJyMS5FaUFBQVFJREJBVUdCd2dKQ2dzTURRNFBFQkVTRXhRVkZoY1lHUm9iSEIwZUh3anJlcXVlc3RfaWRQCgoKCgoKCgoKCgoKCgoKCmxkaXNwbGF5X25hbWVtUmliYm9uIEJlYXJlcm9ocGtlX3B1YmxpY19rZXlYIAsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsL"
     }
   },
   "invalid_application_capabilities": [
@@ -99,5 +107,11 @@
     "attachment chunk before accept is rejected by the transfer adapter",
     "attachment chunk mismatching transfer, manifest, index, or exact nonfinal size aborts",
     "recipient unavailable sends neither offer nor chunks and has no relay retry state"
+  ],
+  "invalid_contact_card": [
+    "unknown deterministic-CBOR body field rejects",
+    "incorrect request, peer, or HPKE key length rejects",
+    "empty or overlong display name rejects",
+    "a card whose BranchID, signed sender, HPKE/AAD route sender, or pending request do not agree is inert at the application adapter"
   ]
 }

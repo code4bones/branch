@@ -276,6 +276,9 @@ The initial frame roles are:
 | `LOOKUP` | authenticated client to relay | Asks whether a specific peer id is currently reachable under local policy. |
 | `IDENTITY_WANT` | authenticated client/relay to relay | Asks for exact signed `identity.announce` source records for one BranchID. |
 | `IDENTITY_HAVE` | relay/client to relay/client | Returns a bounded list of exact signed `identity.announce` wrappers for the requested BranchID, or an empty list. |
+| `CONTACT_ANNOUNCE` | authenticated client to relay | Opts the attached identity into or out of the optional, in-memory live contact-discovery map. |
+| `CONTACT_LOOKUP` | authenticated client to relay | Requests one exact BranchID through the optional live contact-discovery extension. |
+| `CONTACT_PROBE` | relay to opted-in live target | Carries a bounded lookup probe; no response frame or availability assertion exists. |
 | `RENDEZVOUS` | authenticated client/relay | Binds a live route id to a currently reachable peer id; beta frames may include bounded client-discovered relay `route_hints`. |
 | `ENVELOPE` | authenticated client/relay | Carries opaque end-to-end encrypted bytes over a live route only. |
 | `ACK` | relay/client | Reports relay acceptance/forwarding or peer receipt; it never claims durable custody. |
@@ -374,6 +377,77 @@ The executable draft shapes for these two frames are `relay-identity-want` and
 draft `br1.` SHA-256 multihash text form; a `records` member is a bounded
 `BRANCH0.` wrapper whose signature and semantic checks remain mandatory after
 structural frame validation.
+
+### Live BranchID contact discovery extension
+
+D-BRANCH-063 defines `branch.contact-discovery.live/0.draft` as an optional
+same-relay extension for a person who shares only a BranchID. It is not a
+carrier lookup, account directory, GitHub/GitLab feature, mailbox, or presence
+API. It does not alter `LOOKUP`, `IDENTITY_WANT`, `IDENTITY_HAVE`, `ENVELOPE`,
+HPKE AAD, or any existing application payload semantics.
+
+The extension is usable only when both sides selected it in the attachment
+offer. An implementation without it ignores the optional offer entry and must
+not send or accept its three frame types. A client that needs it for a specific
+operation treats absent selection as unsupported locally; it must not put this
+draft extension in `required_extensions` for ordinary relay attachment.
+
+The PWA setting **Allow contact discovery** defaults to enabled for a newly
+created local identity. This is a local product default, not network consent:
+when enabled, a client sends `CONTACT_ANNOUNCE {discoverable: true}` after a
+live attachment; when disabled it sends `false` when possible and drops its
+local discovery state. A relay creates an entry only after an authenticated,
+negotiated `true` announce, deriving the exact BranchID from that session's
+authenticated Ed25519 identity. A `false`, disconnect, expiry, quota close,
+shutdown, or restart deletes that entry immediately. The relay never accepts a
+client-supplied target mapping and never persists the map.
+
+A requester submits exactly one canonical BranchID, fresh 16-byte `request_id`,
+its X25519 HPKE public key, and issue/expiry times in `CONTACT_LOOKUP`. Its TTL
+must be positive and at most 60 seconds. The relay validates the current
+authenticated session and negotiated extension, applies a hard maximum of four
+lookups per session per rolling 60 seconds, and matches only one currently
+attached opted-in exact BranchID on that relay. It does not perform prefix,
+alias, reverse, bulk, carrier, federation, historical, or cross-relay lookup.
+It does not send an empty result, error, ACK, negative cache, or presence claim
+when there is no eligible target. It simply drops the request.
+
+For an eligible target the relay emits one `CONTACT_PROBE` while both sessions
+remain live. It copies the request ID, exact BranchID, requester HPKE public
+key, issue/expiry, and the requester peer ID derived from the authenticated
+requester session; it retains neither probe nor pending result after the write.
+The target receives at most four probes per 60 seconds, drops expired or
+unselected-extension probes, and may decline locally without a response. The
+requester holds at most four pending IDs, each only through its expiry. User
+cancellation is local: it deletes that pending ID and any late probe/card is
+inert. There is intentionally no cancellation frame or relay cancellation
+state. Disconnect or restart clears all map, rate, probe, and pending relay
+state; a recipient that is unavailable receives nothing and no later delivery
+is attempted.
+
+An opted-in target may answer only with a signed
+`branch.application-control/0.draft` of kind `branch.contact-card/0.draft`,
+inside the existing HPKE `ENVELOPE` addressed to the requester's supplied HPKE
+key. Its deterministic-CBOR closed body is `{request_id, branch_id, peer_id,
+hpke_public_key, display_name}`: request ID is 16 bytes; peer and HPKE keys are
+32 bytes; BranchID is canonical; and display name is strict UTF-8 1..96 bytes.
+The card body is at most 512 bytes and its control TTL is positive and at most
+60 seconds. It uses the established application-control signature domain and
+existing HPKE AAD unchanged. The receiver accepts it only when the original
+request ID is still locally pending for that exact BranchID, its recipient is
+the requester identity, the body peer ID equals the signed control sender and
+the HPKE/AAD route sender, and the BranchID derives from that peer ID. The
+descriptor's one allowed effect is an ephemeral candidate projection. It never
+auto-adds a contact: the user explicitly chooses Add after validation.
+
+The card's plaintext name and HPKE public key are never visible to the relay.
+The relay can observe that an attached requester queried a BranchID and whether
+it forwarded a bounded live probe; this privacy trade-off must be shown next to
+the PWA setting. A missing card means only no usable live response before the
+local expiry; it proves neither that the BranchID is absent nor that its owner
+is offline, undiscoverable, or unwilling. Relays remain opaque live transit:
+they keep no card, file, contact record, query history, queue, mailbox, or
+store-and-forward state.
 
 `RENDEZVOUS.route_hints` is rejected by the executable beta JSON profile. Route
 material carried by a client remains hostile unless it is represented in a
