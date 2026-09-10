@@ -91,6 +91,22 @@ export function attachmentTransferController(storeApi: AppStoreApi): AttachmentT
       // capability values, chunk bytes, or cryptographic material.
       storeApi.getState().recordTransportTrace(`attachment: ${event.event} ${event.direction} ${event.reason}`);
       notifyAttachmentSendProgress(storeApi, event);
+      if (event.event === "attachment.transfer.accepted") {
+        const contact = storeApi.getState().contacts.find((candidate) => candidate.peerId === event.peerId);
+        if (contact !== undefined) {
+          // Both endpoints independently record this after their authenticated
+          // accept path succeeds. It is a local service event, not a claim
+          // that the recipient has downloaded or retained the file.
+          storeApi.getState().appendMessage({
+            messageId: crypto.randomUUID(),
+            contactId: contact.contactId,
+            direction: "service",
+            body: "File transfer accepted.",
+            sentAt: Date.now(),
+            deliveryState: "received"
+          });
+        }
+      }
       if (event.event === "attachment.transfer.ended" && event.direction === "inbound") {
         storeApi.getState().dismissInboundAttachmentOffer(event.peerId);
         // A successful completion was just staged for the UI. Every other

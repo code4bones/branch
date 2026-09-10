@@ -14,6 +14,10 @@ export function AttachmentSendControl({ peerId }: { readonly peerId: string }): 
 
   useEffect(() => subscribeAttachmentSendProgress(storeApi, (event) => {
     if (event.peerId !== peerId || event.direction !== "outbound") return;
+    if (event.event === "attachment.transfer.ended" && event.reason === "accepted") {
+      setNotice(null);
+      return;
+    }
     const next = transferNotice(event);
     if (next !== null) setNotice(next);
   }), [peerId, storeApi]);

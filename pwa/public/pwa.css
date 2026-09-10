@@ -610,6 +610,15 @@ body {
   border-bottom-left-radius: 2px;
 }
 
+.pwa-chat-message.is-service {
+  align-self: center;
+  background: transparent;
+  border: 1px solid var(--pwa-border);
+  color: var(--pwa-muted);
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
 .pwa-chat-message-body {
   white-space: pre-wrap;
 }

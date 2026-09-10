@@ -8,11 +8,14 @@ import { saveStoredMessage } from "../../storage/messages-store.js";
 // outcomes for an outgoing message are explicit: a relay may say Relayed, but
 // only a signed endpoint control may establish Delivered or Read.
 export type MessageDeliveryState = "pending" | "relayed" | "delivered" | "read" | "received" | "unavailable";
+export type MessageDirection = "outgoing" | "incoming" | "service";
 
 export interface MessageSummary {
   readonly messageId: string;
   readonly contactId: string;
-  readonly direction: "outgoing" | "incoming";
+  // `service` is local, user-visible state about a verified endpoint action.
+  // It is never an application payload or a relay acknowledgement.
+  readonly direction: MessageDirection;
   readonly body: string;
   readonly sentAt: number;
   readonly deliveryState: MessageDeliveryState;
