@@ -618,6 +618,12 @@ void test("only a new incoming message auto-presented at the bottom is reported 
   }), null);
   assert.equal(autoPresentedIncomingMessage({
     newest: incoming,
+    previousNewestId: incoming.messageId,
+    openedDifferentConversation: true,
+    wasAtBottom: false
+  })?.messageId, incoming.messageId);
+  assert.equal(autoPresentedIncomingMessage({
+    newest: incoming,
     previousNewestId: null,
     openedDifferentConversation: false,
     wasAtBottom: false
@@ -815,15 +821,19 @@ void test("PWA typing uses the shared signed control runtime and remains volatil
   assert.match(presence, /hasAttachedRelaySession\(\)/);
 });
 
-void test("PWA exposes the release beside Chats and during relay discovery", async () => {
+void test("PWA exposes the local identity and release in the contact-list header", async () => {
   const sidebar = await readFile(chatListSidebarPath, "utf8");
   const discovery = await readFile(discoveryPagePath, "utf8");
   const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
 
+  assert.match(sidebar, /useIdentity/);
+  assert.match(sidebar, /identity\.identity\?\.displayName \?\? "B\.R\.A\.N\.C\.H\."/);
+  assert.match(sidebar, /className="pwa-local-identity-name" ellipsis>\{localDisplayName\}</);
   assert.match(sidebar, /pwaReleaseVersion/);
   assert.match(sidebar, />v\{pwaReleaseVersion\}</);
   assert.match(discovery, /pwaReleaseVersion/);
   assert.match(discovery, /pwa-discovery-title-row/);
+  assert.match(styles, /\.pwa-local-identity-name/);
   assert.match(styles, /\.pwa-release-version/);
   assert.match(styles, /\.pwa-discovery-title-row/);
 });

@@ -8,7 +8,7 @@ import { ContactTyping } from "./ContactTyping.js";
 import { formatChatListTimestamp } from "./format-time.js";
 import { chatPath, ECHO_PATH, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
-import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useEchoPreview, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
+import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useEchoPreview, useIdentity, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
 import { parseBranchID } from "@code4bones/branch-core";
 
 export function ChatListSidebar(): React.JSX.Element {
@@ -17,6 +17,7 @@ export function ChatListSidebar(): React.JSX.Element {
   const { contactId: activeContactId } = useParams<{ contactId?: string }>();
   const chatList = useChatList();
   const echoPreview = useEchoPreview();
+  const identity = useIdentity();
   const transport = useTransportStatus();
   const messageRequests = useIncomingMessageRequests();
   const contactDiscovery = useContactDiscoveries();
@@ -27,11 +28,13 @@ export function ChatListSidebar(): React.JSX.Element {
   const filtered = needle === ""
     ? chatList
     : chatList.filter((entry) => entry.contact.displayName.toLowerCase().includes(needle));
+  const localDisplayName = identity.identity?.displayName ?? "B.R.A.N.C.H.";
 
   return (
     <aside className="pwa-sidebar" aria-label="Chats">
       <div className="pwa-sidebar-header">
         <div className="pwa-sidebar-title">
+          <Typography.Text className="pwa-local-identity-name" ellipsis>{localDisplayName}</Typography.Text>
           <Typography.Text className="pwa-release-version" type="secondary">v{pwaReleaseVersion}</Typography.Text>
           <Tooltip title={transport.attachMessage}>
             <span className={`pwa-attach-dot is-${transport.attachStatus}`} aria-label={`Relay: ${transport.attachStatus}`} />

@@ -75,11 +75,22 @@ body {
 
 .pwa-sidebar-title {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
 }
 
+.pwa-local-identity-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pwa-ink);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pwa-release-version {
+  flex-shrink: 0;
   font-size: 0.72rem;
   white-space: nowrap;
 }

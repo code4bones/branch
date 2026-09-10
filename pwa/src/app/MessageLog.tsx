@@ -115,10 +115,16 @@ export function autoPresentedIncomingMessage(options: {
   if (options.newest === null || options.newest.direction !== "incoming") {
     return null;
   }
+  // Changing conversations is an explicit new presentation of this chat. Do
+  // not compare against a stale prior-log ID here: a valid read receipt for
+  // the selected incoming message is still deduplicated by its control path.
+  if (options.openedDifferentConversation) {
+    return options.newest;
+  }
   if (options.newest.messageId === options.previousNewestId) {
     return null;
   }
-  return options.openedDifferentConversation || options.wasAtBottom ? options.newest : null;
+  return options.wasAtBottom ? options.newest : null;
 }
 
 function ChatBubble({ message, onRetryUnavailableMessage }: {
