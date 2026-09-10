@@ -23,7 +23,7 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
     count: 0,
     newestId: null
   });
-  const [showLatest, setShowLatest] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const newest = messages.at(-1) ?? null;
 
   const scrollToLatest = useCallback((): void => {
@@ -33,7 +33,7 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
     }
     node.scrollTop = node.scrollHeight;
     stickToBottom.current = true;
-    setShowLatest(false);
+    setShowScrollToBottom(false);
   }, []);
 
   const onScroll = useCallback((): void => {
@@ -43,9 +43,7 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
     }
     const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight <= bottomThresholdPx;
     stickToBottom.current = atBottom;
-    if (atBottom) {
-      setShowLatest(false);
-    }
+    setShowScrollToBottom(!atBottom);
   }, []);
 
   useLayoutEffect(() => {
@@ -67,7 +65,7 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
         onIncomingMessageAutoPresented?.(autoPresentedIncoming);
       }
     } else if (receivedNewMessage) {
-      setShowLatest(true);
+      setShowScrollToBottom(true);
     }
 
     previous.current = { contactId, count: messages.length, newestId: newest?.messageId ?? null };
@@ -90,16 +88,17 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
           ))
         )}
       </div>
-      {showLatest && (
-        <Tooltip title="Jump to latest message">
+      {showScrollToBottom && (
+        <Tooltip title="Scroll to bottom">
           <Button
-            aria-label="Jump to latest message"
+            aria-label="Scroll to bottom"
             className="pwa-chat-latest-button"
             icon={<DownOutlined />}
             onClick={scrollToLatest}
-            shape="circle"
             type="primary"
-          />
+          >
+            Scroll to bottom
+          </Button>
         </Tooltip>
       )}
     </div>
