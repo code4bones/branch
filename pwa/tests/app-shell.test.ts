@@ -114,6 +114,7 @@ const messageRequestsPagePath = resolve(process.cwd(), "src/pages/MessageRequest
 const contactPresencePath = resolve(process.cwd(), "src/app/ContactPresence.tsx");
 const contactPresenceSlicePath = resolve(process.cwd(), "src/state/slices/contact-presence-slice.ts");
 const messageLogPath = resolve(process.cwd(), "src/app/MessageLog.tsx");
+const messageComposerPath = resolve(process.cwd(), "src/app/MessageComposer.tsx");
 const typingControlPath = resolve(process.cwd(), "src/connectivity/typing-control.ts");
 const deliveryReceiptControlPath = resolve(process.cwd(), "src/connectivity/delivery-receipt-control.ts");
 const contactTypingSlicePath = resolve(process.cwd(), "src/state/slices/contact-typing-slice.ts");
@@ -736,6 +737,7 @@ void test("PWA contact presence is an in-memory encrypted ping-pong result, not 
 
 void test("PWA chat log follows the reader only when they are already at the latest message", async () => {
   const messageLog = await readFile(messageLogPath, "utf8");
+  const messageComposer = await readFile(messageComposerPath, "utf8");
   const formatTime = await readFile(formatTimePath, "utf8");
 
   assert.match(messageLog, /openedDifferentConversation/);
@@ -752,6 +754,8 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(messageLog, /aria-label=\{presentation\.label\}/);
   assert.match(messageLog, /hour12: false/);
   assert.match(formatTime, /hour12: false/);
+  assert.match(messageComposer, /SendOutlined/);
+  assert.match(messageComposer, /aria-label="Send message"/);
 });
 
 void test("PWA typing uses the shared signed control runtime and remains volatile", async () => {

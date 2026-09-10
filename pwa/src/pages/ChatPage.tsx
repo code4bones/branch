@@ -226,7 +226,7 @@ export function ChatPage(): React.JSX.Element {
   return (
     <section className="pwa-chat" aria-label={`Chat with ${contact.displayName}`}>
       <DetailHeader
-        avatar={<ChatAvatar name={contact.displayName} size={36} />}
+        avatar={<ChatAvatar name={contact.displayName} size={42} />}
         extra={
           !isReachable
             ? <Tag>demo contact</Tag>

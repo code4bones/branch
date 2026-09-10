@@ -1,4 +1,5 @@
-import { Button, Input, Space } from "antd";
+import { SendOutlined } from "@ant-design/icons";
+import { Button, Input, Space, Tooltip } from "antd";
 
 export function MessageComposer({ value, onChange, onSend, onTyping, placeholder }: {
   readonly value: string;
@@ -20,7 +21,9 @@ export function MessageComposer({ value, onChange, onSend, onTyping, placeholder
         placeholder={placeholder}
         value={value}
       />
-      <Button onClick={onSend} type="primary">Send</Button>
+      <Tooltip title="Send message">
+        <Button aria-label="Send message" icon={<SendOutlined />} onClick={onSend} type="primary" />
+      </Tooltip>
     </Space.Compact>
   );
 }

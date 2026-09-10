@@ -94,7 +94,7 @@ export function ChatListSidebar(): React.JSX.Element {
               key={entry.contact.contactId}
               onClick={() => { void navigate(chatPath(entry.contact.contactId)); }}
             >
-              <ChatAvatar name={entry.contact.displayName} />
+              <ChatAvatar name={entry.contact.displayName} size={48} />
               <div className="pwa-chat-list-text">
                 <div className="pwa-chat-list-row">
                   <span className="pwa-chat-list-contact-name">

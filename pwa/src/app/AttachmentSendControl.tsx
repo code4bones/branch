@@ -1,5 +1,5 @@
 import { PaperClipOutlined } from "@ant-design/icons";
-import { Button, Typography } from "antd";
+import { Button, Tooltip, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
 import { attachmentSendAdmission, offerSelectedAttachment, subscribeAttachmentSendProgress } from "./attachment-send-bridge.js";
@@ -68,9 +68,9 @@ export function AttachmentSendControl({ peerId }: { readonly peerId: string }): 
         ref={inputRef}
         type="file"
       />
-      <Button aria-label="Send file" disabled={offering} icon={<PaperClipOutlined />} loading={offering} onClick={selectFile} type="text">
-        File
-      </Button>
+      <Tooltip title="Send file">
+        <Button aria-label="Send file" disabled={offering} icon={<PaperClipOutlined />} loading={offering} onClick={selectFile} shape="circle" type="text" />
+      </Tooltip>
       {notice !== null && <Typography.Text aria-live="polite" className="pwa-attachment-send-notice" type="secondary">{notice}</Typography.Text>}
     </div>
   );
