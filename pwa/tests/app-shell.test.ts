@@ -580,6 +580,11 @@ void test("file picker retains its DOM input across asynchronous offer completio
   assert.doesNotMatch(control, /finally\(\(\) => \{[\s\S]{0,260}event\.currentTarget/u);
 });
 
+void test("a successful relay attachment eagerly installs the volatile file bridge", async () => {
+  const transport = await readFile(resolve(process.cwd(), "src/connectivity/use-relay-transport.ts"), "utf8");
+  assert.match(transport, /startContactDiscoveryRuntime\(storeApi, attachedClient\);[\s\S]{0,320}attachmentTransferController\(storeApi\)/);
+});
+
 void test("only a new incoming message auto-presented at the bottom is reported to read-receipt UI", () => {
   const incoming = {
     messageId: "incoming-1",

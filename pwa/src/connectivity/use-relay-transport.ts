@@ -139,6 +139,10 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
       storeApi.getState().setAttachStatus("attached", `Attached to relay ${String(index + 1)} of ${String(attachmentRoutes.length)}`);
       startHeartbeat(attachedClient);
       startContactDiscoveryRuntime(storeApi, attachedClient);
+      // Install the tab-local file bridge at the same successful attachment
+      // boundary as the other live adapters. Waiting for an unrelated inbound
+      // payload made File intermittently appear unavailable after reload.
+      attachmentTransferController(storeApi);
       return;
     } catch (cause) {
       if (!isActiveAttachmentAttempt(lifecycle, attachKey)) {
