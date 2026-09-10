@@ -1,7 +1,6 @@
 import type { StateCreator } from "zustand";
 
 import type { AppStore } from "../store.js";
-import { demoMessages } from "../demo-seed.js";
 import { replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
 
 // `received` remains an inbound/local compatibility value. Remote user-facing
@@ -30,7 +29,7 @@ export interface ConversationsSlice {
 }
 
 export const createConversationsSlice: StateCreator<AppStore, [], [], ConversationsSlice> = (set) => ({
-  messagesByContactId: groupMessagesByContactId(demoMessages),
+  messagesByContactId: {},
   appendMessage: (message) => {
     set((state) => ({
       messagesByContactId: {

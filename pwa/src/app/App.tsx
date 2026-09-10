@@ -12,7 +12,6 @@ import { useRelayTransport } from "../connectivity/use-relay-transport.js";
 import { useIdentityBootstrap } from "../identity/use-identity-bootstrap.js";
 import { ChatPage } from "../pages/ChatPage.js";
 import { DiscoveryPage } from "../pages/DiscoveryPage.js";
-import { EchoChatPage } from "../pages/EchoChatPage.js";
 import { OnboardingPage } from "../pages/OnboardingPage.js";
 import { MessageRequestsPage } from "../pages/MessageRequestsPage.js";
 import { SettingsPage } from "../pages/SettingsPage.js";
@@ -96,7 +95,6 @@ function ThemedApp(): React.JSX.Element {
             <Route index element={<Navigate replace to="chats" />} />
             <Route path="chats" element={<EmptyChatPane />} />
             <Route path="chats/:contactId" element={<ChatPage />} />
-            <Route path="echo" element={<EchoChatPage />} />
             <Route path="requests" element={<MessageRequestsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate replace to="chats" />} />

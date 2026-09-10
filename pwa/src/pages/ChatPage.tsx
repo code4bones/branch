@@ -203,7 +203,8 @@ export function ChatPage(): React.JSX.Element {
       conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
       setSendError("relay is not attached");
     }
-    // Demo contacts deliberately remain local-only UI samples.
+    // A contact without complete verified route material stays local and is
+    // never sent as a plaintext fallback.
   };
 
   const handleSend = (): void => {
@@ -266,7 +267,7 @@ export function ChatPage(): React.JSX.Element {
         avatar={<ChatAvatar name={contact.displayName} size={42} />}
         extra={
           !isReachable
-            ? <Tag>demo contact</Tag>
+            ? <Tag>contact unavailable</Tag>
             : (
               <Dropdown menu={contactActions} placement="bottomRight" trigger={["click"]}>
                 <Tooltip title="Contact settings">
@@ -275,7 +276,7 @@ export function ChatPage(): React.JSX.Element {
               </Dropdown>
             )
         }
-        subtitle={isReachable ? <ContactPresence contact={contact} /> : "Demo contact"}
+        subtitle={isReachable ? <ContactPresence contact={contact} /> : "Contact unavailable"}
         title={contact.displayName}
       />
       {isReachable && <ContactRouteLookup peerId={peerId} />}
@@ -292,7 +293,7 @@ export function ChatPage(): React.JSX.Element {
         <MessageComposer
           onChange={setDraft}
           onSend={handleSend}
-          placeholder={isReachable ? "Message" : "Message body is not yet end-to-end sealed for demo contacts"}
+          placeholder={isReachable ? "Message" : "Messaging is unavailable until this contact has a live identity route"}
           value={draft}
           {...(isReachable ? { onTyping: handleTyping } : {})}
         />

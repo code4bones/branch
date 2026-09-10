@@ -167,6 +167,14 @@ body {
   margin-top: 32px;
 }
 
+.pwa-empty-contact-list {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
 .pwa-chat-list-container {
   flex: 1 1 auto;
   min-height: 0;
@@ -254,35 +262,6 @@ body {
   flex: 0 0 auto;
   font-size: 12px;
   line-height: 1;
-}
-
-.pwa-echo-pinned {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0;
-  padding: 10px 8px;
-  border-radius: 12px;
-  cursor: pointer;
-}
-
-.pwa-echo-pinned:hover,
-.pwa-echo-pinned.is-active {
-  background: #2b6060;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
-}
-
-.pwa-echo-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--pwa-panel-strong);
-  color: var(--pwa-cyan);
-  font-size: 1.1rem;
 }
 
 .pwa-chat-detail {

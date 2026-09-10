@@ -14,8 +14,7 @@ export interface FindRelayRouteResult {
 
 // Searches GitHub for signed relay bootstrap beacons and returns every
 // accepted route (bounded by routesFromBeaconObservations), not just the
-// first. The primary chat session and Echo each use these candidates with
-// independent live transport attempts.
+// first. The primary chat session makes independent live transport attempts.
 export async function findRelayRouteViaGitHub(signal?: AbortSignal): Promise<FindRelayRouteResult> {
   const discovery = await discoverClientBootstrapBeacons({
     carrier: createGitHubSearchCarrier(),

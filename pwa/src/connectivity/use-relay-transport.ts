@@ -42,9 +42,7 @@ interface AttachmentLifecycle {
 // persistent chat session to the first discovered route that accepts the
 // attachment as soon as a local identity is ready, keeps a heartbeat alive, and translates
 // transport events into store updates (message delivery state, incoming
-// messages) via storeApi.getState() so this never goes stale between
-// renders. Echo (T-BRANCH-103) does not use this session at all — its
-// round-trip helper opens its own ephemeral connection per request.
+// messages) via storeApi.getState() so this never goes stale between renders.
 export function useRelayTransport(): void {
   const storeApi = useAppStoreApi();
   const lifecycleRef = useRef<AttachmentLifecycle | null>(null);

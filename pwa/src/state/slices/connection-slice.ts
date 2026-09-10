@@ -8,8 +8,7 @@ export type RouteStatus = "idle" | "searching" | "found" | "failed";
 export interface ConnectionSlice {
   readonly routeStatus: RouteStatus;
   // Bounded list of validated candidate routes. The primary chat session
-  // tries them locally in order until one accepts attachment; Echo runs its
-  // own independent round trip across the same bounded candidates.
+  // tries them locally in order until one accepts attachment.
   readonly discoveredRoutes: readonly RelayRouteMaterial[];
   readonly routeSource: string;
   readonly discoveryMessage: string;

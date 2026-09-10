@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { useAppStore } from "./StoreProvider.js";
 import { useAppStoreApi } from "./StoreProvider.js";
 import { downloadVerifiedCompletedAttachment, type CompletedAttachmentDownloadResult } from "../app/transient-attachment-presentation.js";
-import { ECHO_CONTACT_ID } from "../app/paths.js";
 import type { RouteStatus } from "./slices/connection-slice.js";
 import type { ContactSummary } from "./slices/contacts-slice.js";
 import type { ContactDiscoveryAvailability, ContactDiscoveryRow } from "./slices/contact-discovery-slice.js";
@@ -245,22 +244,6 @@ export function useChatList(): readonly ChatListEntry[] {
 }
 
 const emptyMessages: readonly MessageSummary[] = [];
-
-export interface EchoPreview {
-  readonly lastMessage: MessageSummary | null;
-  readonly unreadCount: number;
-}
-
-// Same shape as one useChatList() entry, but for the pinned Echo row, which
-// isn't a ContactSummary — it just reads the message log kept under the
-// reserved ECHO_CONTACT_ID (see src/app/paths.ts).
-export function useEchoPreview(): EchoPreview {
-  const messages = useAppStore((state) => state.messagesByContactId[ECHO_CONTACT_ID] ?? emptyMessages);
-  const lastReadAt = useAppStore((state) => state.lastReadAtByContactId[ECHO_CONTACT_ID] ?? 0);
-  const lastMessage = messages.length > 0 ? messages[messages.length - 1] ?? null : null;
-  const unreadCount = messages.filter((message) => message.direction === "incoming" && message.sentAt > lastReadAt).length;
-  return { lastMessage, unreadCount };
-}
 
 export interface ConnectionControls {
   readonly routeStatus: RouteStatus;

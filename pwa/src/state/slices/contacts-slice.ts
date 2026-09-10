@@ -1,7 +1,6 @@
 import type { StateCreator } from "zustand";
 
 import type { AppStore } from "../store.js";
-import { demoContacts } from "../demo-seed.js";
 import { deleteStoredContact, saveStoredContact } from "../../storage/contacts-store.js";
 import { deleteStoredMessagesForContact } from "../../storage/messages-store.js";
 import { deleteStoredReadState } from "../../storage/read-state-store.js";
@@ -9,8 +8,7 @@ import { deleteStoredReadState } from "../../storage/read-state-store.js";
 export interface ContactSummary {
   readonly contactId: string;
   readonly displayName: string;
-  // peerId/hpkePublicKey are null for the demo/placeholder contacts seeded
-  // below; only a contact with both set can actually be reached over a
+  // Only a contact with both values set can actually be reached over a
   // relay (see src/connectivity/seal-and-send.ts).
   readonly peerId: string | null;
   readonly hpkePublicKey: string | null;
@@ -26,7 +24,7 @@ export interface ContactsSlice {
 }
 
 export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> = (set, get) => ({
-  contacts: demoContacts,
+  contacts: [],
   selectedContactId: null,
   upsertContact: (contact) => {
     set((state) => ({

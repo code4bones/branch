@@ -101,9 +101,7 @@ const contactsSlicePath = resolve(process.cwd(), "src/state/slices/contacts-slic
 const conversationsSlicePath = resolve(process.cwd(), "src/state/slices/conversations-slice.ts");
 const readStateSlicePath = resolve(process.cwd(), "src/state/slices/read-state-slice.ts");
 const hydrationSlicePath = resolve(process.cwd(), "src/state/slices/hydration-slice.ts");
-const connectionSlicePath = resolve(process.cwd(), "src/state/slices/connection-slice.ts");
-const echoChatPagePath = resolve(process.cwd(), "src/pages/EchoChatPage.tsx");
-const appPathsPath = resolve(process.cwd(), "src/app/paths.ts");
+const legacyDemoCleanupPath = resolve(process.cwd(), "src/storage/legacy-demo-cleanup.ts");
 const branchIdPath = resolve(process.cwd(), "src/identity/branch-id.ts");
 const lookupIdentityContactPath = resolve(process.cwd(), "src/discovery/lookup-identity-contact.ts");
 const contactRouteLookupPath = resolve(process.cwd(), "src/app/ContactRouteLookup.tsx");
@@ -810,7 +808,7 @@ void test("PWA typing uses the shared signed control runtime and remains volatil
   assert.match(transport, /state\.clearContactTyping\(disposition\.contactId\)/);
   assert.match(composer, /onTyping/);
   assert.match(chatPage, /typing control: outbound_sent/);
-  assert.match(chatPage, /subtitle=\{isReachable \? <ContactPresence contact=\{contact\} \/> : "Demo contact"\}/);
+  assert.match(chatPage, /subtitle=\{isReachable \? <ContactPresence contact=\{contact\} \/> : "Contact unavailable"\}/);
   assert.doesNotMatch(chatPage, /\{isReachable && <ContactPresence/);
   assert.match(presence, /expiresAt !== null/);
   assert.match(presence, /<ContactTyping contactId=\{contact\.contactId\} variant="header" \/>/);
@@ -1174,6 +1172,7 @@ void test("contacts, messages, read state, and inbound requests persist through 
   const bootstrap = await readFile(conversationsBootstrapPath, "utf8");
   const contactsSlice = await readFile(contactsSlicePath, "utf8");
   const conversationsSlice = await readFile(conversationsSlicePath, "utf8");
+  const legacyDemoCleanup = await readFile(legacyDemoCleanupPath, "utf8");
   const readStateSlice = await readFile(readStateSlicePath, "utf8");
   const hydrationSlice = await readFile(hydrationSlicePath, "utf8");
   const requireIdentity = await readFile(requireIdentityPath, "utf8");
@@ -1193,6 +1192,7 @@ void test("contacts, messages, read state, and inbound requests persist through 
   assert.match(bootstrap, /loadStoredContacts/);
   assert.match(bootstrap, /loadStoredMessages/);
   assert.match(bootstrap, /loadStoredReadState/);
+  assert.match(bootstrap, /await removeLegacyDemoState\(\)/);
   assert.match(bootstrap, /loadStoredMessageRequests/);
   assert.match(bootstrap, /setConversationsLoaded/);
   assert.match(contactsSlice, /saveStoredContact/);
@@ -1208,6 +1208,9 @@ void test("contacts, messages, read state, and inbound requests persist through 
   assert.match(hydrationSlice, /conversationsLoaded: false/);
   assert.match(requireIdentity, /useConversationsLoaded/);
   assert.match(requireIdentity, /!conversationsLoaded/);
+  assert.match(legacyDemoCleanup, /db\.transaction\(\[CONTACTS_STORE, MESSAGES_STORE, READ_STATE_STORE\], "readwrite"\)/);
+  assert.match(legacyDemoCleanup, /"demo-ribbon-bearer"/);
+  assert.match(legacyDemoCleanup, /"echo"/);
 });
 
 void test("removing a real contact is explicit and clears only local PWA state", async () => {
@@ -1227,43 +1230,28 @@ void test("removing a real contact is explicit and clears only local PWA state",
   assert.doesNotMatch(contactsSlice, /WebSocket|fetch\(/);
 });
 
-void test("chat contacts stay purely user-managed — Echo is not a ContactSummary", async () => {
-  const chatPage = await readFile(chatPagePath, "utf8");
-  const useRelayTransport = await readFile(useRelayTransportPath, "utf8");
-
-  assert.doesNotMatch(chatPage, /runEchoRoundTrip/);
-  assert.match(useRelayTransport, /event\.senderPeerId/);
-  assert.doesNotMatch(useRelayTransport, /boundPeerId|ECHO_CONTACT|runEchoRoundTrip/);
-});
-
-void test("Echo is pinned in the chat list (D-BRANCH-040 self-addressed loopback, not a fixed contact)", async () => {
-  const echoChatPage = await readFile(echoChatPagePath, "utf8");
+void test("PWA starts with user-managed contacts only and offers one add action when empty", async () => {
+  const contactsSlice = await readFile(contactsSlicePath, "utf8");
+  const conversationsSlice = await readFile(conversationsSlicePath, "utf8");
+  const bootstrap = await readFile(conversationsBootstrapPath, "utf8");
   const chatListSidebar = await readFile(chatListSidebarForContactPath, "utf8");
-  const appPathsSource = await readFile(appPathsPath, "utf8");
   const app = await readFile(appPath, "utf8");
-  const connectionSlice = await readFile(connectionSlicePath, "utf8");
-  const findRelayRoute = await readFile(findRelayRoutePath, "utf8");
   const hooks = await readFile(hooksPath, "utf8");
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
 
-  assert.match(appPathsSource, /ECHO_CONTACT_ID = "echo"/);
-  assert.doesNotMatch(appPathsSource, /readonly peerId|readonly hpkePublicKey/);
-  assert.match(chatListSidebar, /pwa-echo-pinned/);
-  assert.match(chatListSidebar, /ECHO_PATH/);
-  assert.match(app, /path="echo" element=\{<EchoChatPage/);
-  assert.match(hooks, /export function useEchoPreview/);
-  assert.match(echoChatPage, /from "@code4bones\/branch-core"/);
-  assert.match(echoChatPage, /runEchoRoundTrip\(\{ routes: connection\.discoveredRoutes, body \}\)/);
-  assert.doesNotMatch(echoChatPage, /contact:/);
-  assert.match(echoChatPage, /report\.status === "ok"/);
-  assert.match(echoChatPage, /Echo unavailable/);
-  assert.doesNotMatch(echoChatPage, /cause instanceof Error|cause\.message/);
-  // The failure path only ever surfaces a bounded route/attempt count, never
-  // ciphertext, keys, or tokens.
-  assert.doesNotMatch(echoChatPage, /report\.attempts\[[^\]]*\]\.reason|ciphertext|privateKey|hpkePrivateKey/);
-  assert.match(connectionSlice, /discoveredRoutes: readonly RelayRouteMaterial\[\]/);
-  assert.match(connectionSlice, /tries them locally in order until one accepts attachment/);
-  assert.match(findRelayRoute, /routesFromBeaconObservations/);
-  assert.doesNotMatch(findRelayRoute, /routes\[0\]/);
+  assert.match(contactsSlice, /contacts: \[\]/);
+  assert.match(conversationsSlice, /messagesByContactId: \{\}/);
+  assert.doesNotMatch(contactsSlice, /demo-seed/);
+  assert.doesNotMatch(conversationsSlice, /demo-seed/);
+  assert.doesNotMatch(bootstrap, /saveStoredContact|saveStoredMessage|demoContacts|demoMessages/);
+  assert.match(chatListSidebar, /chatList\.length === 0/);
+  assert.match(chatListSidebar, /pwa-empty-contact-list/);
+  assert.match(chatListSidebar, /setAddContactOpen\(true\)/);
+  assert.match(chatListSidebar, /Add contact/);
+  assert.match(styles, /\.pwa-empty-contact-list/);
+  assert.doesNotMatch(chatListSidebar, /ECHO_|pwa-echo-pinned|Echo/);
+  assert.doesNotMatch(hooks, /useEchoPreview|ECHO_CONTACT_ID/);
+  assert.doesNotMatch(app, /EchoChatPage|path="echo"/);
 });
 
 void test("BranchID lookup (T-BRANCH-107) reuses branch-core's identity-contact discovery, not a homegrown parser", async () => {

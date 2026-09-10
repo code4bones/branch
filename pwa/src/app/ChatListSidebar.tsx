@@ -1,22 +1,20 @@
-import { InboxOutlined, PaperClipOutlined, RadarChartOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
+import { InboxOutlined, PaperClipOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
 import { Badge, Button, Empty, Input, List, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { ChatAvatar } from "./ChatAvatar.js";
 import { ContactTyping } from "./ContactTyping.js";
 import { formatChatListTimestamp } from "./format-time.js";
-import { chatPath, ECHO_PATH, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
+import { chatPath, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
-import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useEchoPreview, useIdentity, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
+import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useIdentity, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
 import { parseBranchID } from "@code4bones/branch-core";
 
 export function ChatListSidebar(): React.JSX.Element {
   const navigate = useNavigate();
-  const location = useLocation();
   const { contactId: activeContactId } = useParams<{ contactId?: string }>();
   const chatList = useChatList();
-  const echoPreview = useEchoPreview();
   const identity = useIdentity();
   const transport = useTransportStatus();
   const messageRequests = useIncomingMessageRequests();
@@ -67,26 +65,14 @@ export function ChatListSidebar(): React.JSX.Element {
         value={query}
       />
       <div className="pwa-chat-list-container">
-        <div
-          className={`pwa-echo-pinned${location.pathname === ECHO_PATH ? " is-active" : ""}`}
-          onClick={() => { void navigate(ECHO_PATH); }}
-        >
-          <span className="pwa-echo-avatar"><RadarChartOutlined /></span>
-          <div className="pwa-chat-list-text">
-            <div className="pwa-chat-list-row">
-              <span className="pwa-chat-list-name">Echo</span>
-              {echoPreview.lastMessage !== null && (
-                <span className="pwa-chat-list-time">{formatChatListTimestamp(echoPreview.lastMessage.sentAt)}</span>
-              )}
-            </div>
-            <div className="pwa-chat-list-row">
-              <span className="pwa-chat-list-preview">{echoPreview.lastMessage?.body ?? "Test your connection"}</span>
-              {echoPreview.unreadCount > 0 && <Badge count={echoPreview.unreadCount} />}
-            </div>
-          </div>
-        </div>
         {filtered.length === 0 ? (
-          <Empty className="pwa-sidebar-empty" description="No chats yet" />
+          chatList.length === 0 ? (
+            <div className="pwa-empty-contact-list">
+              <Button icon={<UserAddOutlined />} onClick={() => { setAddContactOpen(true); }} type="primary">
+                Add contact
+              </Button>
+            </div>
+          ) : <Empty className="pwa-sidebar-empty" description="No matching chats" />
         ) : (
           <List
             className="pwa-chat-list"
