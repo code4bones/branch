@@ -48,10 +48,10 @@ The previous `/var/www/branch` artifact root remains useful for production-like
 copy deployments, but it is intentionally not used by this local development
 config.
 
-The local beta UI can be protected with nginx Basic Auth without blocking relay
-traffic. Keep the external Nginx Proxy Manager host-level Access List disabled
-for `branch.undoo.ru`; local nginx protects static UI paths and explicitly
-leaves `/node-admin/` and `/relay/v0` outside Basic Auth. `/node-admin/` remains
+The local admin UI is protected with nginx Basic Auth while the public PWA,
+relay traffic, health check, and public web shell remain open. Keep the external
+Nginx Proxy Manager host-level Access List disabled for `branch.undoo.ru`; local
+nginx applies Basic Auth only to `/admin` and `/admin/`. `/node-admin/` remains
 protected by the branch-node bearer token, and relay monitor ingestion remains
 protected by the dedicated monitor bearer token.
 
