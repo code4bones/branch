@@ -75,7 +75,8 @@ void test("explicit download creates, clicks, removes and immediately revokes th
   assert.equal(downloadVerifiedCompletedAttachment(store, "peer-a", environment), "downloaded");
   assert.deepEqual(calls, ["create", "append", "click", "remove", "revoke:blob:verified"]);
   assert.equal(anchor.download, "verified-report.pdf");
-  clearTransientCompletedAttachment(store, "peer-a");
+  assert.equal(store.getState().completedAttachmentsByPeerId["peer-a"], undefined);
+  assert.equal(downloadVerifiedCompletedAttachment(store, "peer-a", environment), "not_found");
 });
 
 void test("download revokes its object URL even when the browser click fails", () => {

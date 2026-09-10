@@ -175,6 +175,10 @@ export function downloadVerifiedCompletedAttachment(
     anchor.remove();
     environment.url.revokeObjectURL(objectUrl);
   }
+  // A completed explicit click is the terminal presentation action. Releasing
+  // the metadata and the tab-local byte handle closes the card and prevents a
+  // second download from silently retaining the same live transfer.
+  clearTransientCompletedAttachment(storeApi, peerId);
   return "downloaded";
 }
 
