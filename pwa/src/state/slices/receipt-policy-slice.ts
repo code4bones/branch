@@ -4,14 +4,13 @@ import type { AppStore } from "../store.js";
 import { saveStoredReadReceiptPolicy } from "../../storage/receipt-policy-store.js";
 
 export interface ReceiptPolicySlice {
-  // Privacy-safe default: enabling best-effort Read controls is an explicit
-  // decision made on this device, not a property advertised to a relay.
+  // This is a device-local disclosure preference, never relay-visible policy.
   readonly sendReadReceipts: boolean;
   readonly setSendReadReceipts: (enabled: boolean) => void;
 }
 
 export const createReceiptPolicySlice: StateCreator<AppStore, [], [], ReceiptPolicySlice> = (set) => ({
-  sendReadReceipts: false,
+  sendReadReceipts: true,
   setSendReadReceipts: (sendReadReceipts) => {
     set({ sendReadReceipts });
     void saveStoredReadReceiptPolicy(sendReadReceipts).catch(() => {

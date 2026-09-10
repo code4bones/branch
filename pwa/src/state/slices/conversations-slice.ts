@@ -1,7 +1,7 @@
 import type { StateCreator } from "zustand";
 
 import type { AppStore } from "../store.js";
-import { replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
+import { deleteStoredMessagesLocally, replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
 
 // `received` remains an inbound/local compatibility value. Remote user-facing
 // outcomes for an outgoing message are explicit: a relay may say Relayed, but
@@ -26,9 +26,11 @@ export interface ConversationsSlice {
   // A retry is a new E2EE/live delivery attempt, never a replay of the old ID.
   readonly retryUnavailableMessage: (contactId: string, previousMessageId: string, replacement: MessageSummary) => boolean;
   readonly setMessageDeliveryState: (contactId: string, messageId: string, deliveryState: MessageDeliveryState) => void;
+  // UI-initiated device-local removal. It has no transport/control side effect.
+  readonly deleteMessagesLocally: (contactId: string, messageIds: readonly string[]) => readonly MessageSummary[];
 }
 
-export const createConversationsSlice: StateCreator<AppStore, [], [], ConversationsSlice> = (set) => ({
+export const createConversationsSlice: StateCreator<AppStore, [], [], ConversationsSlice> = (set, get) => ({
   messagesByContactId: {},
   appendMessage: (message) => {
     set((state) => ({
@@ -100,6 +102,24 @@ export const createConversationsSlice: StateCreator<AppStore, [], [], Conversati
     if (transition.message !== null) {
       persistMessageInOrder(transition.message);
     }
+  },
+  deleteMessagesLocally: (contactId, messageIds) => {
+    const wanted = new Set(messageIds.filter((messageId) => messageId !== "").slice(0, maxLocalMessageActionCount));
+    if (wanted.size === 0) return [];
+    const deleted = get().messagesByContactId[contactId]?.filter((message) => wanted.has(message.messageId)) ?? [];
+    if (deleted.length === 0) return [];
+    const deletedIds = deleted.map((message) => message.messageId);
+    set((state) => ({
+      messagesByContactId: {
+        ...state.messagesByContactId,
+        [contactId]: state.messagesByContactId[contactId]?.filter((message) => !wanted.has(message.messageId)) ?? []
+      },
+      // Remove any not-yet-sent plaintext from the in-memory foreground outbox
+      // immediately. An envelope already handed to live transit is not recalled.
+      outbox: state.outbox.filter((entry) => !wanted.has(entry.messageId))
+    }));
+    persistMessageDeletionInOrder(deletedIds);
+    return deleted;
   }
 });
 
@@ -122,6 +142,7 @@ function canAdvanceDeliveryState(current: MessageDeliveryState, next: MessageDel
 }
 
 const maxPendingMessagePersists = 128;
+const maxLocalMessageActionCount = 128;
 const messagePersistenceChains = new Map<string, Promise<void>>();
 
 // IndexedDB writes are asynchronous. Serializing writes per message prevents
@@ -174,6 +195,28 @@ function persistRetriedMessageInOrder(previousMessageId: string, replacement: Me
     }
     if (messagePersistenceChains.get(replacement.messageId) === next) {
       messagePersistenceChains.delete(replacement.messageId);
+    }
+  });
+}
+
+function persistMessageDeletionInOrder(messageIds: readonly string[]): void {
+  const uniqueMessageIds = [...new Set(messageIds)].slice(0, maxLocalMessageActionCount);
+  const preceding = uniqueMessageIds.map((messageId) => messagePersistenceChains.get(messageId) ?? Promise.resolve());
+  const next = Promise.all(preceding)
+    .catch(() => {
+      // Even after an earlier persistence failure the explicit local deletion
+      // is the newest user-owned state and must still be attempted.
+    })
+    .then(async () => { await deleteStoredMessagesLocally(uniqueMessageIds, Date.now()); });
+  for (const messageId of uniqueMessageIds) messagePersistenceChains.set(messageId, next);
+  void next.catch(() => {
+    // IndexedDB can be unavailable. The current tab still honours the local
+    // deletion and never emits network traffic as a result of this action.
+  }).finally(() => {
+    for (const messageId of uniqueMessageIds) {
+      if (messagePersistenceChains.get(messageId) === next) {
+        messagePersistenceChains.delete(messageId);
+      }
     }
   });
 }

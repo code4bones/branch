@@ -39,6 +39,34 @@ void test("client pending state has the explicit reference-relay live ceiling", 
   assert.throws(() => clientWithPending([], 0), /invalid live pending envelope limit/);
 });
 
+void test("local abandonment releases exactly one pending slot without sending a frame", () => {
+  const first = pending(1);
+  const second = pending(2);
+  const client = clientWithPending([first, second]);
+  const events: string[] = [];
+  client.addEventListener((event) => { events.push(event.type); });
+
+  assert.equal(client.abandonPendingEnvelope(first.deliveryId), true);
+  assert.equal(client.pendingCount, 1);
+  assert.deepEqual(client.exportPendingEnvelopes().map((entry) => entry.deliveryId), [second.deliveryId]);
+  assert.deepEqual(events, ["pending_abandoned"]);
+  assert.equal(client.abandonPendingEnvelope(first.deliveryId), false);
+  assert.equal(client.abandonPendingEnvelope(token(99)), false);
+  assert.equal(client.pendingCount, 1);
+
+  const process = (client as unknown as { processReadyFrame(record: Record<string, unknown>): void }).processReadyFrame.bind(client);
+  process({ type: "ACK", ack_type: "relay.forwarded", delivery_id: first.deliveryId });
+  assert.equal(client.pendingCount, 1);
+});
+
+void test("local abandonment permits one replacement within the fixed 32-envelope ceiling", () => {
+  const maximum = Array.from({ length: 32 }, (_, index) => pending(index + 1));
+  const client = clientWithPending(maximum);
+  assert.equal(client.abandonPendingEnvelope(maximum[0]?.deliveryId ?? ""), true);
+  const replacement = pending(33);
+  assert.equal(clientWithPending([...client.exportPendingEnvelopes(), replacement]).pendingCount, 32);
+});
+
 void test("contact discovery remains an explicit negotiated live extension", () => {
   assert.deepEqual(makeVersionOffer().extensions, [contactDiscoveryLiveExtension]);
   const client = clientWithPending([]);

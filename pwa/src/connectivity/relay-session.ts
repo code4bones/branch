@@ -18,9 +18,19 @@ let liveForwardedAckListener: ((deliveryId: string) => void) | null = null;
 
 const maxTrackedDeliveries = 64;
 const relayAcknowledgementTimeoutMs = 12_000;
+export const bestEffortEnvelopeTimeoutMs = 8_000;
+
+interface PendingEnvelopeClient {
+  abandonPendingEnvelope(deliveryId: string): boolean;
+}
+
+const pendingAbandonmentTimers = new Map<string, { readonly client: PendingEnvelopeClient; readonly timeout: ReturnType<typeof setTimeout> }>();
 
 interface TrackedDelivery {
   readonly contactId: string;
+  // A retried generic application message has a new outer delivery ID but
+  // still projects onto this original local conversation message.
+  readonly messageId: string;
   readonly timeout: ReturnType<typeof setTimeout>;
   readonly onTimeout: () => void;
 }
@@ -83,6 +93,7 @@ export function disconnectRelaySession(): void {
   client?.disconnect();
   client = null;
   liveForwardedAckListener = null;
+  clearPendingAbandonments();
   clearTrackedDeliveries();
   incomingDeliveryIds.reset();
 }
@@ -91,7 +102,7 @@ export function reserveIncomingDelivery(deliveryId: string): boolean {
   return incomingDeliveryIds.reserve(deliveryId);
 }
 
-export function trackDelivery(deliveryId: string, contactId: string, onTimeout: () => void): void {
+export function trackDelivery(deliveryId: string, contactId: string, messageId: string, onTimeout: () => void): void {
   clearDelivery(deliveryId);
   if (trackedDeliveries.size === maxTrackedDeliveries) {
     const oldestDeliveryId = trackedDeliveries.keys().next().value;
@@ -100,20 +111,23 @@ export function trackDelivery(deliveryId: string, contactId: string, onTimeout: 
       if (oldest !== undefined) {
         clearTimeout(oldest.timeout);
         trackedDeliveries.delete(oldestDeliveryId);
+        abandonCurrentPendingEnvelope(oldestDeliveryId);
         oldest.onTimeout();
       }
     }
   }
   const timeout = setTimeout(() => {
     if (trackedDeliveries.delete(deliveryId)) {
+      abandonCurrentPendingEnvelope(deliveryId);
       onTimeout();
     }
   }, relayAcknowledgementTimeoutMs);
-  trackedDeliveries.set(deliveryId, { contactId, timeout, onTimeout });
+  trackedDeliveries.set(deliveryId, { contactId, messageId, timeout, onTimeout });
 }
 
-export function contactIdForDelivery(deliveryId: string): string | undefined {
-  return trackedDeliveries.get(deliveryId)?.contactId;
+export function messageForDelivery(deliveryId: string): { readonly contactId: string; readonly messageId: string } | undefined {
+  const delivery = trackedDeliveries.get(deliveryId);
+  return delivery === undefined ? undefined : { contactId: delivery.contactId, messageId: delivery.messageId };
 }
 
 export function clearDelivery(deliveryId: string): void {
@@ -124,8 +138,35 @@ export function clearDelivery(deliveryId: string): void {
   }
 }
 
-export function takeTrackedDeliveries(): readonly { readonly deliveryId: string; readonly contactId: string }[] {
-  const deliveries = Array.from(trackedDeliveries, ([deliveryId, delivery]) => ({ deliveryId, contactId: delivery.contactId }));
+// Controls do not have a message projection or an ACK-driven transfer
+// window. Arm their one local expiry here, beside the sole tab session, so a
+// missing terminal relay ACK cannot turn best-effort traffic into a queue.
+export function armBestEffortPendingAbandonment(clientForDelivery: PendingEnvelopeClient, deliveryId: string, delayMs: number = bestEffortEnvelopeTimeoutMs): void {
+  clearPendingAbandonment(deliveryId);
+  const timeout = setTimeout(() => {
+    const pending = pendingAbandonmentTimers.get(deliveryId);
+    if (pending?.client !== clientForDelivery) return;
+    pendingAbandonmentTimers.delete(deliveryId);
+    clientForDelivery.abandonPendingEnvelope(deliveryId);
+  }, Math.max(0, delayMs));
+  pendingAbandonmentTimers.set(deliveryId, { client: clientForDelivery, timeout });
+}
+
+export function clearPendingAbandonment(deliveryId: string): void {
+  const pending = pendingAbandonmentTimers.get(deliveryId);
+  if (pending !== undefined) {
+    clearTimeout(pending.timeout);
+    pendingAbandonmentTimers.delete(deliveryId);
+  }
+}
+
+export function abandonCurrentPendingEnvelope(deliveryId: string): void {
+  clearPendingAbandonment(deliveryId);
+  client?.abandonPendingEnvelope(deliveryId);
+}
+
+export function takeTrackedDeliveries(): readonly { readonly deliveryId: string; readonly contactId: string; readonly messageId: string }[] {
+  const deliveries = Array.from(trackedDeliveries, ([deliveryId, delivery]) => ({ deliveryId, contactId: delivery.contactId, messageId: delivery.messageId }));
   clearTrackedDeliveries();
   return deliveries;
 }
@@ -135,4 +176,11 @@ function clearTrackedDeliveries(): void {
     clearTimeout(delivery.timeout);
   }
   trackedDeliveries.clear();
+}
+
+function clearPendingAbandonments(): void {
+  for (const pending of pendingAbandonmentTimers.values()) {
+    clearTimeout(pending.timeout);
+  }
+  pendingAbandonmentTimers.clear();
 }

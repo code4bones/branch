@@ -658,6 +658,15 @@ non-empty strict UTF-8 up to 3000 bytes; its random application `message_id` is
 separate from a relay `delivery_id`. This adapter rule changes neither relay
 frames nor the immutable connectivity profile.
 
+For `branch.chat.text/0.draft`, `message_id` is the application identity, not
+an outer relay delivery identity. A device-local endpoint that retries an
+ordinary text message retains that `message_id` while creating a fresh
+`delivery_id`, HPKE ciphertext, and live send attempt. A receiver MAY retain a
+bounded local set of accepted application identities to suppress a repeated
+presentation, while still sending a Delivered receipt for each valid outer
+delivery it receives. That local deduplication is neither a relay queue nor
+delivery state, and it is not carried in discovery, relay, or E2EE metadata.
+
 The attachment kinds are `branch.attachment.manifest/0.draft`,
 `branch.attachment.decision/0.draft`, and `branch.attachment.chunk/0.draft`;
 their bodies use the schemas below. `branch.attachment/0.draft` is a separate

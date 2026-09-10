@@ -12,7 +12,7 @@ const SHELL_ASSETS: readonly string[] = [
   "/pwa/",
   "/pwa/index.html",
   "/pwa/manifest.json",
-  "/pwa/icon.svg",
+  "/pwa/branch_logo4.png",
   "/pwa/pwa-app.css",
   "/pwa/pwa.css",
   "/pwa/pwa-app.js"

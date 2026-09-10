@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -14,9 +14,20 @@ const buildDefinitions = {
 await rm(target, { recursive: true, force: true });
 await mkdir(target, { recursive: true });
 await cp(source, target, { recursive: true });
+await stampShellAssetVersion();
 
 await bundleApp();
 await bundleServiceWorker();
+
+async function stampShellAssetVersion() {
+  const indexPath = resolve(target, "index.html");
+  const sourceHtml = await readFile(indexPath, "utf8");
+  const stampedHtml = sourceHtml.replaceAll("__BRANCH_PWA_ASSET_VERSION__", encodeURIComponent(packageManifest.version));
+  if (stampedHtml === sourceHtml || stampedHtml.includes("__BRANCH_PWA_ASSET_VERSION__")) {
+    throw new Error("PWA shell asset version placeholder was not fully stamped");
+  }
+  await writeFile(indexPath, stampedHtml, "utf8");
+}
 
 async function bundleApp() {
   // main.tsx imports "antd/dist/reset.css", so esbuild also emits a CSS file

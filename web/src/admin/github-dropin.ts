@@ -13,6 +13,20 @@ import { branchTextWrapperPrefix, isBranchTextWrapper } from "@code4bones/branch
 
 const encoder = new TextEncoder();
 
+// Keep the generated repository badge byte-for-byte aligned with
+// samples/logos/branch-github-badge.svg, the approved GitHub presentation
+// asset. The generator must stay browser-local and cannot read the filesystem.
+const githubBadgeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="132" height="20" viewBox="0 0 132 20" role="img" aria-label="B.R.A.N.C.H. — Carry the Ribbon">
+  <title>B.R.A.N.C.H. — Carry the Ribbon</title>
+  <rect width="132" height="20" rx="4" fill="#1f2328"/>
+  <g transform="translate(4 2) scale(.032)" fill="#1473e6">
+    <path d="M256 18c-91 0-157 68-157 157 0 54 29 103 67 150L45 456c-8 9 4 20 14 13l139-99 58-61 58 61 139 99c10 7 22-4 14-13L346 325c38-47 67-96 67-150C413 86 347 18 256 18zm0 63c54 0 94 39 94 94 0 35-20 70-52 108l-42 48-42-48c-32-38-52-73-52-108 0-55 40-94 94-94z"/>
+    <path d="M45 456c37 23 78 31 112 19 31-11 66-38 99-72-28 21-59 36-85 39-31 4-71-5-126-30zM467 456c-37 23-78 31-112 19-31-11-66-38-99-72 28 21 59 36 85 39 31 4 71-5 126-30z"/>
+  </g>
+  <text x="24" y="14" fill="#ffffff" font-family="Verdana,DejaVu Sans,sans-serif" font-size="10" font-weight="700" letter-spacing=".35">B.R.A.N.C.H.</text>
+</svg>
+`;
+
 export type GitHubDropInMode = "demo" | "live";
 
 export interface GitHubDropInFile {
@@ -101,7 +115,7 @@ export async function makeGitHubFiles(
     {
       path: ".branch/ribbon.svg",
       type: "image/svg+xml",
-      content: makeRibbonSvg()
+      content: githubBadgeSvg
     },
     {
       path: ".github/workflows/branch-carry-ribbon.yml",
@@ -202,23 +216,6 @@ function assertDropInArchivePaths(files: readonly GitHubDropInFile[]): void {
       throw new Error("GitHub drop-in archive files must stay under .branch/ or .github/workflows/");
     }
   }
-}
-
-function makeRibbonSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="196" height="20" viewBox="0 0 196 20" role="img" aria-labelledby="title desc">
-  <title id="title">B.R.A.N.C.H. - Carry the Ribbon</title>
-  <desc id="desc">Compact B.R.A.N.C.H. Blue Ribbon repository carrier badge</desc>
-  <clipPath id="r"><rect width="196" height="20" rx="3"/></clipPath>
-  <g clip-path="url(#r)">
-    <rect width="82" height="20" fill="#24292f"/>
-    <rect x="82" width="114" height="20" fill="#0969da"/>
-    <path d="M91 4c3.9 0 6.9 2.8 7.7 6.6l-3.5 1.4c-.2-2.5-1.9-4.5-4.2-4.5-2.5 0-4.4 2.2-4.4 4.8 0 2 1.1 3.7 2.8 4.4l-2.4 2.4c-2.4-1.3-4-3.9-4-6.9C83 7.8 86.6 4 91 4Z" fill="#f6f8fa"/>
-    <path d="M98.6 10.6c1.8.9 2.9 2.8 2.9 4.9 0 .2 0 .3-.1.5h-3.8c.1-.2.1-.4.1-.6 0-1-.6-1.9-1.5-2.3l2.4-2.5Z" fill="#f6f8fa"/>
-  </g>
-  <text x="8" y="14" fill="#f6f8fa" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600">B.R.A.N.C.H.</text>
-  <text x="108" y="14" fill="#f6f8fa" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600">carry ribbon</text>
-</svg>
-`;
 }
 
 function makeWorkflow(): string {

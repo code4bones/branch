@@ -9,7 +9,10 @@ export async function loadStoredReadReceiptPolicy(): Promise<boolean> {
   try {
     return await new Promise<boolean>((resolve, reject) => {
       const request = db.transaction(RECEIPT_POLICY_STORE, "readonly").objectStore(RECEIPT_POLICY_STORE).get(sendReadReceiptsKey);
-      request.onsuccess = () => { resolve(request.result === true); };
+      // No value means this device has never made a privacy choice. Read
+      // receipts are enabled by default; only an explicit stored false opts
+      // this device out.
+      request.onsuccess = () => { resolve(request.result !== false); };
       request.onerror = () => { reject(request.error ?? new Error("failed to read receipt policy")); };
     });
   } finally {

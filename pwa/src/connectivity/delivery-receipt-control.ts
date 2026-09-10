@@ -103,12 +103,20 @@ export async function sendDeliveryReceipt(options: {
     return "skipped";
   }
   const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", keys.relayPrivateKey, toArrayBuffer(applicationControlSigningBytes(unsigned))));
-  await sendApplicationControl({
-    senderPeerId: options.senderPeerId,
-    recipientPeerId: options.recipientPeerId,
-    recipientHpkePublicKey: options.recipientHpkePublicKey,
-    plaintext: encodeApplicationControl({ ...unsigned, signature })
-  });
+  try {
+    await sendApplicationControl({
+      senderPeerId: options.senderPeerId,
+      recipientPeerId: options.recipientPeerId,
+      recipientHpkePublicKey: options.recipientHpkePublicKey,
+      plaintext: encodeApplicationControl({ ...unsigned, signature })
+    });
+  } catch (cause) {
+    // Sending failed before this endpoint had accepted the control. Release
+    // the tab-local dedup key so a durable local read record can try again on
+    // the next attached foreground attempt.
+    emittedReceiptTargets.delete(emittedKey);
+    throw cause;
+  }
   return "sent";
 }
 

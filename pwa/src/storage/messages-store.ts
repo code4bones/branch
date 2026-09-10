@@ -1,4 +1,10 @@
-import { MESSAGES_STORE, openDatabase } from "./database.js";
+import {
+  LOCALLY_DELETED_MESSAGES_STORE,
+  MESSAGES_STORE,
+  MESSAGE_DELIVERY_TARGETS_STORE,
+  MESSAGE_OUTBOX_STORE,
+  openDatabase
+} from "./database.js";
 import type { MessageSummary } from "../state/slices/conversations-slice.js";
 
 export async function loadStoredMessages(): Promise<readonly MessageSummary[]> {
@@ -18,10 +24,66 @@ export async function saveStoredMessage(message: MessageSummary): Promise<void> 
   const db = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(MESSAGES_STORE, "readwrite");
-      transaction.objectStore(MESSAGES_STORE).put(message);
+      const transaction = db.transaction([MESSAGES_STORE, LOCALLY_DELETED_MESSAGES_STORE], "readwrite");
+      const tombstones = transaction.objectStore(LOCALLY_DELETED_MESSAGES_STORE);
+      const existingDeletion = tombstones.getKey(message.messageId);
+      existingDeletion.onsuccess = () => {
+        // A local delete wins over an older queued persistence operation. The
+        // tombstone is local UI safety metadata, never a network dedup record.
+        if (existingDeletion.result === undefined) {
+          transaction.objectStore(MESSAGES_STORE).put(message);
+        }
+      };
+      existingDeletion.onerror = () => { reject(existingDeletion.error ?? new Error("failed to read local deletion marker")); };
       transaction.oncomplete = () => { resolve(); };
       transaction.onerror = () => { reject(transaction.error ?? new Error("failed to write message")); };
+    });
+  } finally {
+    db.close();
+  }
+}
+
+const maxStoredLocalDeletionTombstones = 256;
+
+// Delete only user-owned local projections and their source-addressable local
+// retry/receipt metadata. This one IndexedDB transaction cannot signal a peer,
+// alter an already-live relay delivery, or remove anything outside this device.
+export async function deleteStoredMessagesLocally(messageIds: readonly string[], deletedAt: number): Promise<void> {
+  const uniqueMessageIds = [...new Set(messageIds)].filter((messageId) => messageId !== "").slice(0, maxStoredLocalDeletionTombstones);
+  if (uniqueMessageIds.length === 0) return;
+  const db = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction([
+        MESSAGES_STORE,
+        MESSAGE_OUTBOX_STORE,
+        MESSAGE_DELIVERY_TARGETS_STORE,
+        LOCALLY_DELETED_MESSAGES_STORE
+      ], "readwrite");
+      const messages = transaction.objectStore(MESSAGES_STORE);
+      const outbox = transaction.objectStore(MESSAGE_OUTBOX_STORE);
+      const targets = transaction.objectStore(MESSAGE_DELIVERY_TARGETS_STORE);
+      const tombstones = transaction.objectStore(LOCALLY_DELETED_MESSAGES_STORE);
+      for (const messageId of uniqueMessageIds) {
+        messages.delete(messageId);
+        outbox.delete(messageId);
+        targets.delete(messageId);
+        tombstones.put({ messageId, deletedAt });
+      }
+      // Keep this crash-safe local guard bounded. It only protects currently
+      // possible delayed writes; it is not history, transport state, or export.
+      let retained = 0;
+      const cursorRequest = tombstones.index("byDeletedAt").openCursor(null, "prev");
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (cursor === null) return;
+        retained += 1;
+        if (retained > maxStoredLocalDeletionTombstones) cursor.delete();
+        cursor.continue();
+      };
+      cursorRequest.onerror = () => { reject(cursorRequest.error ?? new Error("failed to trim local deletion markers")); };
+      transaction.oncomplete = () => { resolve(); };
+      transaction.onerror = () => { reject(transaction.error ?? new Error("failed to delete local messages")); };
     });
   } finally {
     db.close();

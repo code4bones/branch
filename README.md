@@ -1,5 +1,7 @@
 # B.R.A.N.C.H.
 
+[![B.R.A.N.C.H. — Carry the Ribbon](samples/logos/branch-github-badge.svg)](docs/HERITAGE.md)
+
 **Blue Ribbon Autonomous Network for Carrier Hopping**
 
 > **The Blue Ribbon is alive again.**  

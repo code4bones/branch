@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { DeleteOutlined, EditOutlined, SettingOutlined } from "@ant-design/icons";
-import { Button, Dropdown, Empty, Input, Modal, Tag, Tooltip } from "antd";
+import { DeleteOutlined, EditOutlined, ForwardOutlined, SettingOutlined } from "@ant-design/icons";
+import { Button, Dropdown, Empty, Input, Modal, Select, Tag, Tooltip } from "antd";
 import type { MenuProps } from "antd";
 
 import { ChatAvatar } from "../app/ChatAvatar.js";
@@ -11,15 +11,16 @@ import { AttachmentSendControl } from "../app/AttachmentSendControl.js";
 import { InboundAttachmentOffer } from "../app/InboundAttachmentOffer.js";
 import { MessageComposer } from "../app/MessageComposer.js";
 import { MessageLog } from "../app/MessageLog.js";
+import { composeOutgoingText } from "../app/message-composition.js";
 import { VerifiedCompletedAttachment } from "../app/VerifiedCompletedAttachment.js";
 import { clearTransientCompletedAttachment } from "../app/transient-attachment-presentation.js";
 import { peerSupportsChatText, sendApplicationCapabilities } from "../connectivity/application-capabilities-control.js";
-import { sendDeliveryReceipt } from "../connectivity/delivery-receipt-control.js";
 import { getRelaySessionClient, hasAttachedRelaySession } from "../connectivity/relay-session.js";
-import { createDeliveryID, sealAndSendApplicationTextMessage, sealAndSendMessage } from "../connectivity/seal-and-send.js";
+import { createDeliveryID } from "../connectivity/seal-and-send.js";
 import { sendTypingControl } from "../connectivity/typing-control.js";
 import { CHATS_PATH } from "../app/paths.js";
-import { useCompletedAttachment, useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
+import { useCompletedAttachment, useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useMessageActions, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
+import type { ContactSummary } from "../state/slices/contacts-slice.js";
 import type { MessageSummary } from "../state/slices/conversations-slice.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 
@@ -29,6 +30,7 @@ export function ChatPage(): React.JSX.Element {
   const resolvedContactId = contactId ?? null;
   const contacts = useContacts();
   const conversation = useConversation(resolvedContactId);
+  const messageActions = useMessageActions();
   const identity = useIdentity();
   const transport = useTransportStatus();
   const receiptPolicy = useReceiptPolicy();
@@ -38,6 +40,11 @@ export function ChatPage(): React.JSX.Element {
   const [renameOpen, setRenameOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [displayName, setDisplayName] = useState("");
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardContactId, setForwardContactId] = useState<string | null>(null);
+  const bulkActionsMeasureRef = useRef<HTMLDivElement>(null);
+  const [topBulkActionCount, setTopBulkActionCount] = useState(4);
+  const presentedIncomingByContactId = useRef(new Map<string, Set<string>>());
 
   useMarkContactRead(resolvedContactId);
 
@@ -50,6 +57,13 @@ export function ChatPage(): React.JSX.Element {
       contacts.selectContact(contact.contactId);
     }
   }, [contact?.contactId, contacts.selectContact]);
+
+  useEffect(() => {
+    // Selection belongs only to the currently rendered chat and must never
+    // bleed into another conversation after navigation.
+    messageActions.clearMessageSelection();
+    messageActions.clearForwardSources();
+  }, [resolvedContactId]);
 
   useEffect(() => {
     const peerId = contact?.peerId ?? null;
@@ -85,6 +99,47 @@ export function ChatPage(): React.JSX.Element {
       storeApi.getState().recordTransportTrace("application capabilities: chat_failed");
     });
   }, [contact, identity.identity, storeApi, transport.attachStatus]);
+
+  useEffect(() => {
+    if (contact === null) return;
+    const previouslyPresented = presentedIncomingByContactId.current.get(contact.contactId) ?? new Set<string>();
+    const newlyPresented = conversation.messages
+      .filter((message) => message.direction === "incoming" && !previouslyPresented.has(message.messageId))
+      .map((message) => message.messageId);
+    if (newlyPresented.length === 0) return;
+    for (const messageId of newlyPresented) previouslyPresented.add(messageId);
+    presentedIncomingByContactId.current.set(contact.contactId, previouslyPresented);
+    // A local presentation is durable even while detached. The opt-in value
+    // is sampled at this moment; later presence changes cannot create or
+    // suppress a Read claim for an already displayed message.
+    storeApi.getState().recordIncomingMessagesRead(contact.contactId, newlyPresented, receiptPolicy.sendReadReceipts);
+  }, [contact, conversation.messages, receiptPolicy.sendReadReceipts, storeApi]);
+
+  useLayoutEffect(() => {
+    const measure = bulkActionsMeasureRef.current;
+    if (measure === null || messageActions.selectedMessageIds.length === 0) {
+      return;
+    }
+    const updatePlacement = (): void => {
+      const gap = Number.parseFloat(getComputedStyle(measure).gap) || 0;
+      const widths = Array.from(measure.children, (child) => child.getBoundingClientRect().width);
+      let usedWidth = 0;
+      let count = 0;
+      for (const width of widths) {
+        const nextWidth = count === 0 ? width : usedWidth + gap + width;
+        if (count > 0 && nextWidth > measure.clientWidth) break;
+        usedWidth = nextWidth;
+        count += 1;
+      }
+      // Keep one action at the top even on an exceptionally narrow viewport;
+      // the rest continue in the lower action row instead of being duplicated.
+      setTopBulkActionCount(Math.max(1, count));
+    };
+    updatePlacement();
+    const observer = new ResizeObserver(updatePlacement);
+    observer.observe(measure);
+    return () => { observer.disconnect(); };
+  }, [messageActions.selectedMessageIds.length]);
 
   if (contact === null) {
     return (
@@ -136,77 +191,54 @@ export function ChatPage(): React.JSX.Element {
     }
   };
 
-  const sendBody = (body: string, previousUnavailableMessage?: MessageSummary): void => {
+  const sendBody = (body: string, previousUnavailableMessage?: MessageSummary, destination: ContactSummary = contact): void => {
     if (body === "" || identity.identity === null) {
       return;
     }
     setSendError(null);
-    const deliveryId = createDeliveryID();
-    const pendingMessage: MessageSummary = {
-      messageId: deliveryId,
-      contactId: contact.contactId,
-      direction: "outgoing",
+    // Local projection and application identity are both fresh opaque values.
+    // A live outer delivery ID is created later by the outbox runtime; a
+    // forwarded body never inherits IDs or receipt state from its source.
+    const createdAt = Date.now();
+    const composition = composeOutgoingText({
+      contactId: destination.contactId,
       body,
-      sentAt: previousUnavailableMessage?.sentAt ?? Date.now(),
-      deliveryState: "pending"
-    };
+      createdAt: previousUnavailableMessage?.sentAt ?? createdAt,
+      createId: createDeliveryID
+    });
+    const pendingMessage = composition.message;
     if (previousUnavailableMessage === undefined) {
       conversation.appendMessage(pendingMessage);
-    } else if (!conversation.retryUnavailableMessage(contact.contactId, previousUnavailableMessage.messageId, pendingMessage)) {
+    } else if (!conversation.retryUnavailableMessage(destination.contactId, previousUnavailableMessage.messageId, pendingMessage)) {
       return;
     }
 
-    if (peerId !== null && hpkePublicKey !== null && hasAttachedRelaySession()) {
-      const supportsGenericText = peerSupportsChatText(peerId);
-      const send = supportsGenericText
-        ? sealAndSendApplicationTextMessage({
-          senderPeerId: identity.identity.peerId,
-          recipientPeerId: peerId,
-          recipientHpkePublicKey: hpkePublicKey,
-          contactId: contact.contactId,
-          deliveryId,
-          plaintext: body,
-          onRelayOutcomeTimeout: () => {
-            conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
-          }
-        })
-        : sealAndSendMessage({
-          senderPeerId: identity.identity.peerId,
-          senderHpkePublicKey: identity.identity.hpkePublicKey,
-          senderDisplayName: identity.identity.displayName ?? "Branch peer",
-          recipientPeerId: peerId,
-          recipientHpkePublicKey: hpkePublicKey,
-          contactId: contact.contactId,
-          deliveryId,
-          plaintext: body,
-          onRelayOutcomeTimeout: () => {
-            conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
-          }
-        });
-      void send.catch((cause: unknown) => {
-        conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
-        setSendError(cause instanceof Error ? cause.message : "send failed");
-      });
-      if (!supportsGenericText) {
-        void sendApplicationCapabilities({
-          senderPeerId: identity.identity.peerId,
-          recipientPeerId: peerId,
-          recipientHpkePublicKey: hpkePublicKey,
-          attached: true
-        }).then((result) => {
-          if (result === "sent") {
-            storeApi.getState().recordTransportTrace("application capabilities: outbound_sent");
-          }
-        }).catch(() => {
-          // Advisory capabilities are never queued and do not alter the visible
-          // compatibility message's own live delivery outcome.
-        });
-      }
-      return;
+    const destinationPeerId = destination.peerId;
+    const destinationHpkePublicKey = destination.hpkePublicKey;
+    const destinationReachable = destinationPeerId !== null && destinationHpkePublicKey !== null;
+    if (destinationReachable) {
+      // The foreground outbox runtime is the sole generic-text sender, even
+      // for the initial attempt. This keeps first sends and retries under the
+      // same one-envelope ACK-gated drain. Queue admission is a local
+      // user action: a cold volatile capability cache must not downgrade this
+      // message into an unqueueable legacy live attempt.
+      storeApi.getState().queueMessage({ messageId: pendingMessage.messageId, applicationMessageId: composition.applicationMessageId, contactId: destination.contactId, createdAt, nextAttemptAt: createdAt, attempts: 0, lastDeliveryId: null, deliveredAt: null });
     }
-    if (isReachable) {
-      conversation.setMessageDeliveryState(contact.contactId, deliveryId, "unavailable");
-      setSendError("relay is not attached");
+    const supportsGenericText = destinationPeerId !== null && peerSupportsChatText(destinationPeerId);
+    if (destinationReachable && !supportsGenericText && hasAttachedRelaySession()) {
+      // Capability control is the only live traffic allowed while optional
+      // generic-text support is unknown. The already-persisted text waits for
+      // its signed response; no legacy payload is silently emitted.
+      void sendApplicationCapabilities({
+        senderPeerId: identity.identity.peerId,
+        recipientPeerId: destinationPeerId,
+        recipientHpkePublicKey: destinationHpkePublicKey,
+        attached: true
+      }).then((result) => {
+        storeApi.getState().recordTransportTrace(`outbox: capability_bootstrap_${result}`);
+      }).catch(() => {
+        storeApi.getState().recordTransportTrace("outbox: capability_bootstrap_failed");
+      });
     }
     // A contact without complete verified route material stays local and is
     // never sent as a plaintext fallback.
@@ -228,6 +260,54 @@ export function ChatPage(): React.JSX.Element {
     sendBody(message.body, message);
   };
 
+  const openForward = (messages: readonly MessageSummary[]): void => {
+    // Service bubbles are local presentation facts rather than user text and
+    // are deliberately never turned into a new endpoint message.
+    const sourceIds = messages.filter((message) => message.direction !== "service").map((message) => message.messageId);
+    if (sourceIds.length === 0) return;
+    messageActions.setForwardSources(contact.contactId, sourceIds);
+    setForwardContactId(null);
+    setForwardOpen(true);
+  };
+
+  const deleteMessagesLocally = (messages: readonly MessageSummary[]): void => {
+    conversation.deleteMessagesLocally(contact.contactId, messages.map((message) => message.messageId));
+    messageActions.clearMessageSelection();
+    messageActions.clearForwardSources();
+  };
+
+  const confirmForward = (): void => {
+    const destination = contacts.contacts.find((candidate) => candidate.contactId === forwardContactId) ?? null;
+    if (destination === null) return;
+    const sources = messageActions.forwardSourceMessageIds
+      .map((messageId) => conversation.messages.find((message) => message.messageId === messageId))
+      .filter((message): message is MessageSummary => message !== undefined);
+    for (const source of sources) sendBody(source.body, undefined, destination);
+    messageActions.clearMessageSelection();
+    messageActions.clearForwardSources();
+    setForwardOpen(false);
+    setForwardContactId(null);
+  };
+
+  const selectedMessages = conversation.messages.filter((message) => messageActions.selectedMessageIds.includes(message.messageId));
+  const cancelMessageSelection = (): void => {
+    messageActions.clearMessageSelection();
+    messageActions.clearForwardSources();
+  };
+
+  const bulkActionItems = (): readonly React.JSX.Element[] => [
+    <span className="pwa-chat-bulk-item pwa-chat-bulk-selection-count" key="selected-count">{messageActions.selectedMessageIds.length} selected</span>,
+    <span className="pwa-chat-bulk-item" key="forward">
+        <Button className="pwa-chat-bulk-action" icon={<ForwardOutlined />} onClick={() => { openForward(selectedMessages); }} size="small">Forward</Button>
+    </span>,
+    <span className="pwa-chat-bulk-item" key="delete">
+        <Button className="pwa-chat-bulk-action" danger icon={<DeleteOutlined />} onClick={() => { deleteMessagesLocally(selectedMessages); }} size="small">Delete locally</Button>
+    </span>,
+    <span className="pwa-chat-bulk-item" key="cancel">
+      <Button className="pwa-chat-bulk-action" onClick={cancelMessageSelection} size="small" type="text">Cancel</Button>
+    </span>
+  ];
+
   const handleTyping = (): void => {
     if (identity.identity === null || peerId === null || hpkePublicKey === null) {
       return;
@@ -243,26 +323,6 @@ export function ChatPage(): React.JSX.Element {
       }
     }).catch((cause: unknown) => {
       storeApi.getState().recordTransportTrace(`typing control: ${typingSendFailure(cause)}`);
-    });
-  };
-
-  const handleIncomingMessageAutoPresented = (message: MessageSummary): void => {
-    if (!receiptPolicy.sendReadReceipts || identity.identity === null || peerId === null || hpkePublicKey === null || message.direction !== "incoming") {
-      return;
-    }
-    void sendDeliveryReceipt({
-      kind: "read",
-      targetDeliveryId: message.messageId,
-      senderPeerId: identity.identity.peerId,
-      recipientPeerId: peerId,
-      recipientHpkePublicKey: hpkePublicKey,
-      attached: hasAttachedRelaySession()
-    }).then((result) => {
-      storeApi.getState().recordTransportTrace(`delivery receipt: read_${result}`);
-    }).catch(() => {
-      // Read is a best-effort live control. It is never queued or retried
-      // merely because a visible message's relay path is no longer live.
-      storeApi.getState().recordTransportTrace("delivery receipt: read_failed");
     });
   };
 
@@ -290,7 +350,32 @@ export function ChatPage(): React.JSX.Element {
           setSendError("That verified file is no longer available in this live tab.");
         }
       }} />
-      <MessageLog contactId={contact.contactId} emptyDescription="No messages yet." messages={conversation.messages} onIncomingMessageAutoPresented={handleIncomingMessageAutoPresented} onRetryUnavailableMessage={retryUnavailableMessage} />
+      {messageActions.selectedMessageIds.length > 0 && (
+        <>
+          <div aria-hidden="true" className="pwa-chat-bulk-actions pwa-chat-bulk-actions-measure" ref={bulkActionsMeasureRef}>
+            {bulkActionItems()}
+          </div>
+          <div aria-label="Selected message actions" className="pwa-chat-bulk-actions">
+            {bulkActionItems().slice(0, topBulkActionCount)}
+          </div>
+        </>
+      )}
+      <MessageLog
+        contactId={contact.contactId}
+        emptyDescription="No messages yet."
+        menuMessageId={messageActions.menuMessageId}
+        messages={conversation.messages}
+        onCloseMessageMenu={messageActions.closeMessageMenu}
+        onOpenMessageMenu={(message) => { messageActions.openMessageMenu(contact.contactId, message.messageId); }}
+        onRetryUnavailableMessage={retryUnavailableMessage}
+        onToggleMessageSelection={(message) => { messageActions.toggleMessageSelection(contact.contactId, message.messageId); }}
+        selectedMessageIds={messageActions.selectedMessageIds}
+      />
+      {messageActions.selectedMessageIds.length > 0 && topBulkActionCount < bulkActionItems().length && (
+        <div aria-label="Selected message actions, continued" className="pwa-chat-bulk-actions pwa-chat-bulk-actions-bottom">
+          {bulkActionItems().slice(topBulkActionCount)}
+        </div>
+      )}
       {sendError !== null && <div className="pwa-chat-error">{sendError}</div>}
       <div className="pwa-chat-compose-row">
         {peerId !== null && hpkePublicKey !== null && <AttachmentSendControl peerId={peerId} />}
@@ -321,6 +406,28 @@ export function ChatPage(): React.JSX.Element {
         title="Remove contact?"
       >
         This deletes the contact and its local chat history from this device.
+      </Modal>
+      <Modal
+        cancelText="Cancel"
+        okButtonProps={{ disabled: forwardContactId === null }}
+        okText="Forward"
+        onCancel={() => {
+          messageActions.clearForwardSources();
+          setForwardOpen(false);
+          setForwardContactId(null);
+        }}
+        onOk={confirmForward}
+        open={forwardOpen}
+        title={`Forward ${String(messageActions.forwardSourceMessageIds.length)} message${messageActions.forwardSourceMessageIds.length === 1 ? "" : "s"}`}
+      >
+        <p>Only the visible message text is forwarded. Delivery status, timestamps, and source metadata stay on this device.</p>
+        <Select
+          aria-label="Forward destination"
+          onChange={(value: string) => { setForwardContactId(value); }}
+          options={contacts.contacts.map((candidate) => ({ value: candidate.contactId, label: candidate.displayName }))}
+          placeholder="Choose a contact"
+          value={forwardContactId}
+        />
       </Modal>
     </section>
   );

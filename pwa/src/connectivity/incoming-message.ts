@@ -13,7 +13,7 @@ import {
 } from "./message-payload.js";
 
 export type IncomingMessageDisposition =
-  | { readonly kind: "known_contact_message"; readonly body: string; readonly contactId: string }
+  | { readonly kind: "known_contact_message"; readonly body: string; readonly contactId: string; readonly applicationMessageId: string | null }
   | { readonly kind: "known_contact_presence_ping"; readonly contactId: string; readonly pingId: string }
   | { readonly kind: "known_contact_presence_pong"; readonly contactId: string; readonly pingId: string }
   | { readonly kind: "message_request"; readonly body: string; readonly senderPeerId: string; readonly senderHpkePublicKey: string; readonly senderDisplayName: string }
@@ -42,7 +42,7 @@ export function classifyIncomingMessage(options: {
     const body = decodeChatText(payload.envelope.body);
     return options.knownContactId === null
       ? { kind: "drop_unknown_application" }
-      : { kind: "known_contact_message", contactId: options.knownContactId, body };
+      : { kind: "known_contact_message", contactId: options.knownContactId, body, applicationMessageId: payload.envelope.messageId };
   } catch {
     // Only a non-application payload may fall through to the explicit beta
     // compatibility grammar. Canonical CBOR maps are not valid strict UTF-8.
@@ -53,7 +53,7 @@ export function classifyIncomingMessage(options: {
     const payload = decodeBetaPwaApplicationPayload(legacyPlaintext);
     if (payload.type === betaPwaMessageType) {
       if (options.knownContactId !== null) {
-        return { kind: "known_contact_message", contactId: options.knownContactId, body: payload.body };
+        return { kind: "known_contact_message", contactId: options.knownContactId, body: payload.body, applicationMessageId: null };
       }
       return {
         kind: "message_request",
@@ -77,7 +77,7 @@ export function classifyIncomingMessage(options: {
     if (legacyPlaintext === "") {
       return { kind: "drop_unknown_legacy" };
     }
-    return { kind: "known_contact_message", contactId: options.knownContactId, body: legacyPlaintext };
+    return { kind: "known_contact_message", contactId: options.knownContactId, body: legacyPlaintext, applicationMessageId: null };
   }
 }
 

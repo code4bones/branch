@@ -1,20 +1,28 @@
-import { CheckOutlined, ExclamationCircleOutlined, LoadingOutlined, RedoOutlined, VerticalAlignBottomOutlined } from "@ant-design/icons";
-import { Button, Empty, Tooltip } from "antd";
+import { CheckOutlined, ExclamationCircleOutlined, LoadingOutlined, RedoOutlined, SelectOutlined, VerticalAlignBottomOutlined } from "@ant-design/icons";
+import { Button, Dropdown, Empty, Tooltip } from "antd";
+import type { MenuProps } from "antd";
 import { Fragment, useCallback, useLayoutEffect, useRef, useState } from "react";
 
 import type { MessageDeliveryState, MessageSummary } from "../state/slices/conversations-slice.js";
 
 const bottomThresholdPx = 48;
 
-export function MessageLog({ contactId, messages, emptyDescription, onIncomingMessageAutoPresented, onRetryUnavailableMessage }: {
+export function MessageLog({ contactId, messages, emptyDescription, menuMessageId, selectedMessageIds, onCloseMessageMenu, onIncomingMessageAutoPresented, onOpenMessageMenu, onRetryUnavailableMessage, onToggleMessageSelection }: {
   readonly contactId: string;
   readonly messages: readonly MessageSummary[];
   readonly emptyDescription: string;
+  // All action state is supplied by the local UI slice; MessageLog never
+  // stores or sends selection, deletion, or forwarding metadata itself.
+  readonly menuMessageId?: string | null;
+  readonly selectedMessageIds?: readonly string[];
+  readonly onCloseMessageMenu?: () => void;
   // This reports only the newest incoming message that this log has actually
   // auto-scrolled into the active view. It intentionally does not fire for an
   // unread message while the reader has scrolled away from the bottom.
   readonly onIncomingMessageAutoPresented?: (message: MessageSummary) => void;
+  readonly onOpenMessageMenu?: (message: MessageSummary) => void;
   readonly onRetryUnavailableMessage?: (message: MessageSummary) => void;
+  readonly onToggleMessageSelection?: (message: MessageSummary) => void;
 }): React.JSX.Element {
   const logRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -25,6 +33,7 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
   });
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const newest = messages.at(-1) ?? null;
+  const selectionActive = (selectedMessageIds?.length ?? 0) > 0;
 
   const scrollToLatest = useCallback((): void => {
     const node = logRef.current;
@@ -82,7 +91,13 @@ export function MessageLog({ contactId, messages, emptyDescription, onIncomingMe
               {startsNewDay(messages[index - 1] ?? null, message) && <ChatDayDivider timestamp={message.sentAt} />}
               <ChatBubble
                 message={message}
+                menuOpen={menuMessageId === message.messageId}
+                selectionActive={selectionActive}
+                selected={selectedMessageIds?.includes(message.messageId) ?? false}
+                {...(onCloseMessageMenu === undefined ? {} : { onCloseMenu: onCloseMessageMenu })}
+                {...(onOpenMessageMenu === undefined ? {} : { onOpenMenu: () => { onOpenMessageMenu(message); } })}
                 {...(onRetryUnavailableMessage === undefined ? {} : { onRetryUnavailableMessage })}
+                {...(onToggleMessageSelection === undefined ? {} : { onToggleSelection: () => { onToggleMessageSelection(message); } })}
               />
             </Fragment>
           ))
@@ -126,25 +141,86 @@ export function autoPresentedIncomingMessage(options: {
   return options.wasAtBottom ? options.newest : null;
 }
 
-function ChatBubble({ message, onRetryUnavailableMessage }: {
+function ChatBubble({ menuOpen, message, onCloseMenu, onOpenMenu, onRetryUnavailableMessage, onToggleSelection, selected, selectionActive }: {
   readonly message: MessageSummary;
+  readonly menuOpen: boolean;
+  readonly selected: boolean;
+  readonly selectionActive: boolean;
+  readonly onCloseMenu?: () => void;
+  readonly onOpenMenu?: () => void;
   readonly onRetryUnavailableMessage?: (message: MessageSummary) => void;
+  readonly onToggleSelection?: () => void;
 }): React.JSX.Element {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressNextClick = useRef(false);
+  const suppressNextContextMenu = useRef(false);
+  const hasMessageActions = onToggleSelection !== undefined;
+  const messageActions: MenuProps = {
+    items: onToggleSelection === undefined ? [] : [
+      { key: "select", icon: <SelectOutlined />, label: selected ? "Unselect message" : "Select message" }
+    ],
+    onClick: ({ key }) => {
+      if (key === "select") onToggleSelection?.();
+    }
+  };
+  const clearLongPress = (): void => {
+    if (longPressTimer.current !== null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+  const onPointerDown = (event: React.PointerEvent<HTMLElement>): void => {
+    if (event.pointerType !== "touch" || onToggleSelection === undefined) return;
+    clearLongPress();
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      suppressNextClick.current = true;
+      suppressNextContextMenu.current = true;
+      onToggleSelection();
+    }, longPressDurationMs);
+  };
+  const onBubbleClick = (): void => {
+    if (suppressNextClick.current) {
+      suppressNextClick.current = false;
+      return;
+    }
+    if (selectionActive) onToggleSelection?.();
+  };
   return (
-    <article className={`pwa-chat-message is-${message.direction}`}>
-      <span className="pwa-chat-message-body">{message.body}</span>
-      <footer className="pwa-chat-message-meta">
-        <time dateTime={new Date(message.sentAt).toISOString()}>{formatMessageTime(message.sentAt)}</time>
-        {message.direction === "outgoing" && <DeliveryStateIcon state={message.deliveryState} />}
-        {message.direction === "outgoing" && message.deliveryState === "unavailable" && onRetryUnavailableMessage !== undefined && (
-          <Tooltip title="Retry sending message">
-            <Button aria-label="Retry sending message" className="pwa-chat-retry-message" icon={<RedoOutlined />} onClick={() => { onRetryUnavailableMessage(message); }} size="small" type="text" />
-          </Tooltip>
-        )}
-      </footer>
-    </article>
+    <Dropdown menu={messageActions} onOpenChange={(open) => {
+      if (!open) {
+        onCloseMenu?.();
+      } else if (suppressNextContextMenu.current) {
+        suppressNextContextMenu.current = false;
+        onCloseMenu?.();
+      } else {
+        onOpenMenu?.();
+      }
+    }} open={hasMessageActions ? menuOpen : false} trigger={hasMessageActions ? ["contextMenu"] : []}>
+      <article
+        className={`pwa-chat-message is-${message.direction}${selected ? " is-selected" : ""}`}
+        onClick={onBubbleClick}
+        onPointerCancel={clearLongPress}
+        onPointerDown={onPointerDown}
+        onPointerLeave={clearLongPress}
+        onPointerUp={clearLongPress}
+      >
+        <span className="pwa-chat-message-body">{message.body}</span>
+        <footer className="pwa-chat-message-meta">
+          <time dateTime={new Date(message.sentAt).toISOString()}>{formatMessageTime(message.sentAt)}</time>
+          {message.direction === "outgoing" && <DeliveryStateIcon state={message.deliveryState} />}
+          {message.direction === "outgoing" && message.deliveryState === "unavailable" && onRetryUnavailableMessage !== undefined && (
+            <Tooltip title="Retry sending message">
+              <Button aria-label="Retry sending message" className="pwa-chat-retry-message" icon={<RedoOutlined />} onClick={() => { onRetryUnavailableMessage(message); }} size="small" type="text" />
+            </Tooltip>
+          )}
+        </footer>
+      </article>
+    </Dropdown>
   );
 }
+
+const longPressDurationMs = 550;
 
 function ChatDayDivider({ timestamp }: { readonly timestamp: number }): React.JSX.Element {
   return <div className="pwa-chat-day-divider">{formatMessageDay(timestamp)}</div>;
@@ -182,34 +258,43 @@ function DeliveryStateIcon({ state }: { readonly state: MessageDeliveryState }):
   return (
     <Tooltip title={presentation.label}>
       <span aria-label={presentation.label} className={`pwa-chat-delivery-status is-${state}`} role="img">
-        {presentation.icon}
+        {deliveryStateIcon(presentation.mark, state)}
       </span>
     </Tooltip>
   );
 }
 
-function deliveryStatePresentation(state: MessageDeliveryState): { readonly label: string; readonly icon: React.JSX.Element } {
+export function deliveryStatePresentation(state: MessageDeliveryState): { readonly label: string; readonly mark: "pending" | "single-check" | "double-check" | "unavailable" } {
   switch (state) {
     case "pending":
-      return { label: "Sending", icon: <LoadingOutlined spin /> };
+      return { label: "Sending", mark: "pending" };
     case "relayed":
-      return { label: "Relayed", icon: <CheckOutlined /> };
+      return { label: "Sent", mark: "single-check" };
     case "delivered":
-      return { label: "Delivered", icon: <DoubleCheckIcon /> };
+      return { label: "Delivered to recipient", mark: "double-check" };
     case "read":
-      return { label: "Read", icon: <DoubleCheckIcon /> };
+      return { label: "Read by recipient", mark: "double-check" };
     case "received":
-      return { label: "Received (legacy)", icon: <DoubleCheckIcon /> };
+      return { label: "Received (legacy)", mark: "double-check" };
     case "unavailable":
-      return { label: "Unavailable", icon: <ExclamationCircleOutlined /> };
+      return { label: "Unavailable", mark: "unavailable" };
   }
 }
 
-function DoubleCheckIcon(): React.JSX.Element {
+function deliveryStateIcon(mark: ReturnType<typeof deliveryStatePresentation>["mark"], state: MessageDeliveryState): React.JSX.Element {
+  switch (mark) {
+    case "pending": return <LoadingOutlined spin />;
+    case "single-check": return <CheckOutlined className={`pwa-chat-delivery-check is-${state}`} />;
+    case "double-check": return <DoubleCheckIcon state={state} />;
+    case "unavailable": return <ExclamationCircleOutlined />;
+  }
+}
+
+function DoubleCheckIcon({ state }: { readonly state: MessageDeliveryState }): React.JSX.Element {
   return (
     <span aria-hidden="true" className="pwa-chat-delivery-double-check">
-      <CheckOutlined />
-      <CheckOutlined />
+      <CheckOutlined className={`pwa-chat-delivery-check is-${state}`} />
+      <CheckOutlined className={`pwa-chat-delivery-check is-${state}`} />
     </span>
   );
 }

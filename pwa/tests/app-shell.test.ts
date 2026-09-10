@@ -92,9 +92,15 @@ const identitySlicePath = resolve(process.cwd(), "src/state/slices/identity-slic
 const srcDir = resolve(process.cwd(), "src");
 const databasePath = resolve(process.cwd(), "src/storage/database.ts");
 const contactsStorePath = resolve(process.cwd(), "src/storage/contacts-store.ts");
+const contactFoldersStorePath = resolve(process.cwd(), "src/storage/contact-folders-store.ts");
+const contactFoldersSlicePath = resolve(process.cwd(), "src/state/slices/contact-folders-slice.ts");
 const messagesStorePath = resolve(process.cwd(), "src/storage/messages-store.ts");
 const readStateStorePath = resolve(process.cwd(), "src/storage/read-state-store.ts");
 const receiptPolicyStorePath = resolve(process.cwd(), "src/storage/receipt-policy-store.ts");
+const readReceiptOutboxStorePath = resolve(process.cwd(), "src/storage/read-receipt-outbox-store.ts");
+const readReceiptOutboxSlicePath = resolve(process.cwd(), "src/state/slices/read-receipt-outbox-slice.ts");
+const readReceiptRuntimePath = resolve(process.cwd(), "src/connectivity/read-receipt-runtime.ts");
+const messageDeliveryTargetStorePath = resolve(process.cwd(), "src/storage/message-delivery-target-store.ts");
 const lastOpenedChatStorePath = resolve(process.cwd(), "src/storage/last-opened-chat-store.ts");
 const receiptPolicySlicePath = resolve(process.cwd(), "src/state/slices/receipt-policy-slice.ts");
 const conversationsBootstrapPath = resolve(process.cwd(), "src/storage/use-conversations-bootstrap.ts");
@@ -127,6 +133,7 @@ void test("pwa shell html references the bundled app and manifest under /pwa/", 
   assert.match(html, /\/pwa\/pwa-app\.js/);
   assert.match(html, /\/pwa\/pwa-app\.css/);
   assert.match(html, /\/pwa\/pwa\.css/);
+  assert.match(html, /__BRANCH_PWA_ASSET_VERSION__/);
   assert.match(html, /rel="manifest" href="\/pwa\/manifest\.json"/);
   assert.match(html, /id="pwa-root"/);
   assert.doesNotMatch(html, /login|password|token/i);
@@ -141,8 +148,8 @@ void test("pwa manifest is scoped under /pwa/", async () => {
 
   assert.equal(manifest.start_url, "/pwa/");
   assert.equal(manifest.scope, "/pwa/");
-  assert.ok(manifest.icons.length > 0);
-  assert.ok(manifest.icons.every((icon) => icon.src.startsWith("/pwa/")));
+  assert.equal(manifest.icons.length, 1);
+  assert.equal(manifest.icons[0]?.src, "/pwa/branch_logo4.png");
 });
 
 void test("service worker only caches the /pwa/ shell and never intercepts cross-origin or non-GET requests", async () => {
@@ -410,9 +417,11 @@ void test("PWA chooses a deterministic local attachment order from the same vali
 
 void test("PWA correlates a sent message with the relay delivery acknowledgement", async () => {
   const chatPage = await readFile(chatPagePath, "utf8");
-  assert.match(chatPage, /const deliveryId = createDeliveryID\(\);/);
-  assert.match(chatPage, /messageId: deliveryId,/);
-  assert.match(chatPage, /deliveryId,\n\s*plaintext: body/);
+  const outboxRuntime = await readFile(resolve(process.cwd(), "src/connectivity/message-outbox-runtime.ts"), "utf8");
+  assert.match(chatPage, /composeOutgoingText/);
+  assert.match(chatPage, /applicationMessageId: composition\.applicationMessageId/);
+  assert.match(outboxRuntime, /const deliveryId = createDeliveryID\(\);/);
+  assert.doesNotMatch(chatPage, /sealAndSendApplicationTextMessage/);
   assert.doesNotMatch(chatPage, /messageId: crypto\.randomUUID\(\)/);
 });
 
@@ -446,7 +455,8 @@ void test("PWA classifies an authenticated unknown sender as a local message req
   assert.deepEqual(classifyIncomingMessage({ plaintext, senderPeerId, knownContactId: "contact-1" }), {
     kind: "known_contact_message",
     contactId: "contact-1",
-    body: "request body"
+    body: "request body",
+    applicationMessageId: null
   });
   assert.deepEqual(classifyIncomingMessage({ plaintext, senderPeerId, knownContactId: null }), {
     kind: "message_request",
@@ -601,7 +611,7 @@ void test("file picker retains its DOM input across asynchronous offer completio
 
 void test("a successful relay attachment eagerly installs the volatile file bridge", async () => {
   const transport = await readFile(resolve(process.cwd(), "src/connectivity/use-relay-transport.ts"), "utf8");
-  assert.match(transport, /startContactDiscoveryRuntime\(storeApi, attachedClient\);[\s\S]{0,320}attachmentTransferController\(storeApi\)/);
+  assert.match(transport, /startContactDiscoveryRuntime\(storeApi, attachedClient\);[\s\S]{0,520}attachmentTransferController\(storeApi\)/);
 });
 
 void test("only a new incoming message auto-presented at the bottom is reported to read-receipt UI", () => {
@@ -645,11 +655,11 @@ void test("only a new incoming message auto-presented at the bottom is reported 
   }), null);
 });
 
-void test("read-receipt policy defaults off and has a dedicated user-owned persistence boundary", async () => {
+void test("read-receipt policy defaults on and keeps an explicit device-owned opt-out boundary", async () => {
   const store = createAppStore();
-  assert.equal(store.getState().sendReadReceipts, false);
-  store.getState().setSendReadReceipts(true);
   assert.equal(store.getState().sendReadReceipts, true);
+  store.getState().setSendReadReceipts(false);
+  assert.equal(store.getState().sendReadReceipts, false);
 
   const database = await readFile(databasePath, "utf8");
   const policyStore = await readFile(receiptPolicyStorePath, "utf8");
@@ -657,15 +667,69 @@ void test("read-receipt policy defaults off and has a dedicated user-owned persi
   const settings = await readFile(settingsPagePath, "utf8");
   const hooks = await readFile(hooksPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 5/);
+  assert.match(database, /const DATABASE_VERSION = 11/);
   assert.match(database, /RECEIPT_POLICY_STORE/);
   assert.match(policyStore, /loadStoredReadReceiptPolicy/);
   assert.match(policyStore, /saveStoredReadReceiptPolicy/);
-  assert.match(policySlice, /sendReadReceipts: false/);
+  assert.match(policyStore, /request\.result !== false/);
+  assert.match(policySlice, /sendReadReceipts: true/);
   assert.match(policySlice, /saveStoredReadReceiptPolicy/);
   assert.match(settings, /Send read receipts/);
-  assert.match(settings, /best-effort encrypted Read receipt only after a message is shown/);
+  assert.match(settings, /Turn this off to keep read state on this device/);
   assert.match(hooks, /export function useReceiptPolicy/);
+});
+
+void test("PWA persists active-chat read presentation locally and drains opted-in receipts without presence", async () => {
+  const store = createAppStore();
+  store.getState().recordIncomingMessagesRead("contact-1", ["delivery-1"], false);
+  assert.deepEqual(store.getState().readReceiptOutbox, [{
+    targetDeliveryId: "delivery-1",
+    contactId: "contact-1",
+    readAt: store.getState().readReceiptOutbox[0]?.readAt,
+    receiptPending: false
+  }]);
+  store.getState().recordIncomingMessagesRead("contact-1", ["delivery-1", "delivery-2"], true);
+  assert.equal(store.getState().readReceiptOutbox.find((entry) => entry.targetDeliveryId === "delivery-1")?.receiptPending, true);
+  assert.equal(store.getState().readReceiptOutbox.find((entry) => entry.targetDeliveryId === "delivery-2")?.receiptPending, true);
+  store.getState().settleReadReceipt("delivery-1");
+  assert.equal(store.getState().readReceiptOutbox.find((entry) => entry.targetDeliveryId === "delivery-1")?.receiptPending, false);
+
+  const database = await readFile(databasePath, "utf8");
+  const ledger = await readFile(readReceiptOutboxStorePath, "utf8");
+  const slice = await readFile(readReceiptOutboxSlicePath, "utf8");
+  const runtime = await readFile(readReceiptRuntimePath, "utf8");
+  const chatPage = await readFile(chatPagePath, "utf8");
+  const transport = await readFile(useRelayTransportPath, "utf8");
+
+  assert.match(database, /READ_RECEIPT_OUTBOX_STORE/);
+  assert.match(database, /readReceipts\.createIndex\("byContactId", "contactId"\)/);
+  assert.match(ledger, /maxStoredReadReceiptEntries = 128/);
+  assert.match(slice, /recordIncomingMessagesRead/);
+  assert.match(slice, /receiptPending: queueReceipts/);
+  assert.match(chatPage, /recordIncomingMessagesRead\(contact\.contactId, newlyPresented, receiptPolicy\.sendReadReceipts\)/);
+  assert.match(runtime, /attachment-driven, never presence-driven/);
+  assert.doesNotMatch(runtime, /contactPresenceById|presencePong|sendPresencePing/);
+  assert.match(transport, /startReadReceiptRuntime\(storeApi, attachedClient\)/);
+  assert.match(transport, /stopReadReceiptRuntime\(\)/);
+});
+
+void test("PWA persists sender receipt targets beyond outbox settlement", async () => {
+  const database = await readFile(databasePath, "utf8");
+  const targets = await readFile(messageDeliveryTargetStorePath, "utf8");
+  const outboxRuntime = await readFile(resolve(process.cwd(), "src/connectivity/message-outbox-runtime.ts"), "utf8");
+  const transport = await readFile(useRelayTransportPath, "utf8");
+  const profileMigration = await readFile(resolve(process.cwd(), "src/storage/profile-migration-store.ts"), "utf8");
+  const contacts = await readFile(contactsSlicePath, "utf8");
+
+  assert.match(database, /MESSAGE_DELIVERY_TARGETS_STORE/);
+  assert.match(database, /const DATABASE_VERSION = 11/);
+  assert.match(targets, /maxStoredMessageDeliveryTargets = 128/);
+  assert.match(targets, /byDeliveryId/);
+  assert.match(outboxRuntime, /await saveStoredMessageDeliveryTarget/);
+  assert.match(transport, /await findStoredMessageDeliveryTarget/);
+  assert.match(transport, /deleteStoredMessageDeliveryTarget/);
+  assert.match(profileMigration, /MESSAGE_DELIVERY_TARGETS_STORE/);
+  assert.match(contacts, /deleteStoredMessageDeliveryTargetsForContact/);
 });
 
 void test("PWA bounds local message requests and promotes an accepted request into a reply-capable contact", () => {
@@ -705,6 +769,22 @@ void test("PWA transport keeps relay forwarding distinct from unknown-sender pre
   assert.match(transport, /sendPresencePong/);
   assert.match(transport, /known_contact_presence_ping/);
   assert.match(transport, /acceptContactPresencePong/);
+  assert.match(transport, /renewQueuedTextCapabilityAfterPresencePong/);
+  assert.match(transport, /Presence is deliberately not capability evidence/);
+  assert.match(transport, /advanceMessageOutboxDrainAfterRelayForwarded/);
+  assert.match(transport, /restartMessageOutboxDrainAfterPresencePong/);
+  const outboxRuntime = await readFile(resolve(process.cwd(), "src/connectivity/message-outbox-runtime.ts"), "utf8");
+  assert.match(outboxRuntime, /activeDeliveryId/);
+  assert.match(outboxRuntime, /awaitingReceiptRetryAtByMessageId/);
+  assert.match(outboxRuntime, /relay\.forwarded is only a local pacing signal/);
+  assert.match(outboxRuntime, /Release only that tab-volatile/);
+  assert.doesNotMatch(outboxRuntime, /Promise\.all\(.*outbox/s);
+  const chatPage = await readFile(chatPagePath, "utf8");
+  assert.match(chatPage, /Queue admission is a local/);
+  assert.match(chatPage, /outbox runtime is the sole generic-text sender/);
+  assert.match(chatPage, /no legacy payload is silently emitted/);
+  assert.doesNotMatch(chatPage, /sealAndSendMessage/);
+  assert.doesNotMatch(chatPage, /sealAndSendApplicationTextMessage/);
   assert.match(transport, /confirmContactPresenceFromLiveTraffic\(knownContactId\)/);
   assert.match(transport, /case "frame_sent"/);
   assert.match(transport, /outbound frame: \$\{event\.frameType\}/);
@@ -719,6 +799,7 @@ void test("PWA delivery receipts stay signed application controls and relay ACK 
   const receiptControl = await readFile(deliveryReceiptControlPath, "utf8");
   const relayTransport = await readFile(useRelayTransportPath, "utf8");
   const conversations = await readFile(conversationsSlicePath, "utf8");
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
 
   assert.match(receiptControl, /deliveryReceiptControlKind = "branch\.pwa\.receipt\/0\.draft"/);
   assert.match(receiptControl, /maximumTTLms: deliveryReceiptControlTTLms/);
@@ -731,6 +812,9 @@ void test("PWA delivery receipts stay signed application controls and relay ACK 
   assert.match(relayTransport, /case "peer_receipt"[\s\S]{0,220}return;/);
   assert.match(conversations, /next === "delivered"/);
   assert.match(conversations, /next === "read"/);
+  const messageLog = await readFile(messageLogPath, "utf8");
+  assert.match(messageLog, /pwa-chat-delivery-check is-\$\{state\}/);
+  assert.match(styles, /\.pwa-chat-delivery-check\.is-read \{[\s\S]*color: #20ca46 !important/);
 });
 
 void test("PWA contact presence is a bounded background encrypted ping-pong runtime, not a relay status or message", async () => {
@@ -818,6 +902,7 @@ void test("PWA typing uses the shared signed control runtime and remains volatil
   const presence = await readFile(contactPresencePath, "utf8");
   const chatListSidebar = await readFile(chatListSidebarPath, "utf8");
   const composer = await readFile(resolve(process.cwd(), "src/app/MessageComposer.tsx"), "utf8");
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
 
   assert.match(typingControl, /branch\.pwa\.typing\/0\.draft/);
   assert.match(typingControl, /createApplicationControlRegistry/);
@@ -847,6 +932,8 @@ void test("PWA typing uses the shared signed control runtime and remains volatil
   assert.match(presence, /Contact online \(encrypted pong\)/);
   assert.match(chatListSidebar, /function ContactPreview/);
   assert.match(chatListSidebar, /<ContactTyping contactId=\{contactId\} variant="list" \/>/);
+  assert.match(styles, /\.pwa-contact-typing \{[\s\S]*color: var\(--pwa-muted\);[\s\S]*font-size: 0\.72rem;/);
+  assert.doesNotMatch(styles, /\.pwa-contact-typing\.is-list \{[^}]+(?:color:|font-size:|font-weight:|text-shadow:)/);
   assert.match(chatPage, /hasAttachedRelaySession\(\)/);
   assert.match(presence, /hasAttachedRelaySession\(\)/);
 });
@@ -1075,7 +1162,7 @@ void test("PWA dispatches registered generic text bytes before explicit beta JSO
     body: "canonical generic text"
   });
   const genericResult = classifyIncomingMessage({ plaintext: generic, senderPeerId, knownContactId: "contact-alice" });
-  assert.deepEqual(genericResult, { kind: "known_contact_message", contactId: "contact-alice", body: "canonical generic text" });
+  assert.deepEqual(genericResult, { kind: "known_contact_message", contactId: "contact-alice", body: "canonical generic text", applicationMessageId: "AgICAgICAgICAgICAgICAg" });
 
   const unknown = encodeApplicationPayload({
     version: applicationPayloadVersion,
@@ -1194,14 +1281,17 @@ void test("the real static build does not let esbuild's antd-reset companion clo
   execFileSync("node", [buildScriptPath], { cwd: process.cwd(), stdio: "pipe" });
   const distPwaCss = await readFile(resolve(process.cwd(), "dist/pwa.css"), "utf8");
   const distPwaAppCss = await readFile(resolve(process.cwd(), "dist/pwa-app.css"), "utf8");
+  const distIndex = await readFile(resolve(process.cwd(), "dist/index.html"), "utf8");
 
   assert.match(distPwaCss, /\.pwa-shell/);
   assert.match(distPwaCss, /--pwa-bg/);
   assert.doesNotMatch(distPwaAppCss, /\.pwa-shell/);
   assert.notEqual(distPwaAppCss, distPwaCss);
+  assert.match(distIndex, /\/pwa\/pwa\.css\?v=0\.1\.0-beta\.\d+/);
+  assert.doesNotMatch(distIndex, /__BRANCH_PWA_ASSET_VERSION__/);
 });
 
-void test("contacts, messages, read state, and inbound requests persist through one shared IndexedDB database", async () => {
+void test("contacts, messages, read state, inbound requests, and local receipt work persist through one shared IndexedDB database", async () => {
   const database = await readFile(databasePath, "utf8");
   const contactsStore = await readFile(contactsStorePath, "utf8");
   const messagesStore = await readFile(messagesStorePath, "utf8");
@@ -1217,15 +1307,22 @@ void test("contacts, messages, read state, and inbound requests persist through 
   const lastOpenedChatStore = await readFile(lastOpenedChatStorePath, "utf8");
   const app = await readFile(appPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 5/);
+  assert.match(database, /const DATABASE_VERSION = 11/);
   assert.match(database, /IDENTITY_STORE/);
   assert.match(database, /CONTACTS_STORE/);
   assert.match(database, /MESSAGES_STORE/);
   assert.match(database, /READ_STATE_STORE/);
+  assert.match(database, /READ_RECEIPT_OUTBOX_STORE/);
+  assert.match(database, /MESSAGE_DELIVERY_TARGETS_STORE/);
   assert.match(database, /MESSAGE_REQUESTS_STORE/);
   assert.match(database, /RECEIPT_POLICY_STORE/);
   assert.match(database, /CONTACT_DISCOVERY_STORE/);
+  assert.match(database, /CONTACT_FOLDERS_STORE/);
+  assert.match(database, /CONTACT_FOLDER_ASSIGNMENTS_STORE/);
+  assert.match(database, /createIndex\("byFolderId", "folderId"\)/);
   assert.match(contactsStore, /openDatabase/);
+  assert.match(await readFile(contactFoldersStorePath, "utf8"), /loadStoredContactFolders/);
+  assert.match(await readFile(contactFoldersStorePath, "utf8"), /deleteStoredContactFolder/);
   assert.match(messagesStore, /openDatabase/);
   assert.match(readStateStore, /openDatabase/);
   assert.match(messageRequestsStore, /openDatabase/);
@@ -1235,6 +1332,8 @@ void test("contacts, messages, read state, and inbound requests persist through 
   assert.match(bootstrap, /await removeLegacyDemoState\(\)/);
   assert.match(bootstrap, /loadStoredMessageRequests/);
   assert.match(bootstrap, /loadStoredLastOpenedChat/);
+  assert.match(bootstrap, /loadStoredContactFolders/);
+  assert.match(bootstrap, /hydrateContactFolders/);
   assert.match(bootstrap, /contacts\.some\(\(contact\) => contact\.contactId === lastOpenedChatId\)/);
   assert.match(bootstrap, /clearStoredLastOpenedChat/);
   assert.match(bootstrap, /setConversationsLoaded/);
@@ -1251,6 +1350,9 @@ void test("contacts, messages, read state, and inbound requests persist through 
   assert.match(contactsSlice, /deleteStoredReadState/);
   assert.match(contactsSlice, /saveStoredLastOpenedChat/);
   assert.match(contactsSlice, /clearStoredLastOpenedChat/);
+  assert.match(contactsSlice, /clearContactFolderAssignment/);
+  assert.match(await readFile(contactFoldersSlicePath, "utf8"), /maxContactFolders/);
+  assert.doesNotMatch(await readFile(contactFoldersSlicePath, "utf8"), /WebSocket|fetch\(/);
   assert.match(messagesStore, /index\("byContactId"\)\.openCursor\(IDBKeyRange\.only\(contactId\)\)/);
   assert.match(readStateStore, /deleteStoredReadState/);
   assert.match(await readFile(receiptPolicyStorePath, "utf8"), /openDatabase/);
@@ -1262,6 +1364,22 @@ void test("contacts, messages, read state, and inbound requests persist through 
   assert.match(legacyDemoCleanup, /db\.transaction\(\[CONTACTS_STORE, MESSAGES_STORE, READ_STATE_STORE\], "readwrite"\)/);
   assert.match(legacyDemoCleanup, /"demo-ribbon-bearer"/);
   assert.match(legacyDemoCleanup, /"echo"/);
+});
+
+void test("contact folders are absent until created, then use a local All/New dropdown and contact context action", async () => {
+  const sidebar = await readFile(chatListSidebarPath, "utf8");
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+
+  assert.match(sidebar, /contactFolders\.folders\.length > 0/);
+  assert.match(sidebar, /label: "All"/);
+  assert.match(sidebar, /label: "New folder"/);
+  assert.match(sidebar, /pwa-contact-list-controls/);
+  assert.match(sidebar, /trigger=\{\["contextMenu"\]\}/);
+  assert.match(sidebar, /label: "Add to folder"/);
+  assert.match(sidebar, /filterChatListByFolder/);
+  assert.doesNotMatch(sidebar, /Unfiled/);
+  assert.match(styles, /\.pwa-contact-list-controls/);
+  assert.match(styles, /\.pwa-contact-folder-filter/);
 });
 
 void test("removing a real contact is explicit and clears only local PWA state", async () => {

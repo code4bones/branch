@@ -10,7 +10,7 @@ import {
 import { fixedAckRequested, fixedPathEpoch, fixedStreamId } from "./payload-aad-defaults.js";
 import { encodeChatTextApplicationPayload } from "./application-payload.js";
 import { encodeBetaPwaMessagePayload, encodeBetaPwaPresencePing, encodeBetaPwaPresencePong } from "./message-payload.js";
-import { clearDelivery, getRelaySessionClient, trackDelivery } from "./relay-session.js";
+import { armBestEffortPendingAbandonment, clearDelivery, getRelaySessionClient, trackDelivery } from "./relay-session.js";
 
 const liveRouteIDs = new WeakMap<object, Map<string, string>>();
 const maxLiveRoutesPerAttachment = 64;
@@ -23,6 +23,9 @@ export interface SealAndSendOptions {
   readonly recipientPeerId: string;
   readonly recipientHpkePublicKey: string;
   readonly contactId: string;
+  // May differ from deliveryId only for a device-local retry of one generic
+  // application message.
+  readonly messageId?: string;
   readonly onRelayOutcomeTimeout: () => void;
   readonly plaintext: string;
 }
@@ -49,7 +52,7 @@ export async function sealAndSendMessage(options: SealAndSendOptions): Promise<s
       replyHpkePublicKey: options.senderHpkePublicKey,
       senderDisplayName: options.senderDisplayName
     }),
-    track: { contactId: options.contactId, onTimeout: options.onRelayOutcomeTimeout }
+    track: { contactId: options.contactId, messageId: options.messageId ?? deliveryId, onTimeout: options.onRelayOutcomeTimeout }
   });
   return deliveryId;
 }
@@ -57,7 +60,7 @@ export async function sealAndSendMessage(options: SealAndSendOptions): Promise<s
 // Sends the registered generic text kind as exact deterministic-CBOR bytes
 // inside the existing HPKE boundary. Its application message id is deliberately
 // independent of the live relay delivery id.
-export async function sealAndSendApplicationTextMessage(options: Omit<SealAndSendOptions, "senderHpkePublicKey" | "senderDisplayName">): Promise<string> {
+export async function sealAndSendApplicationTextMessage(options: Omit<SealAndSendOptions, "senderHpkePublicKey" | "senderDisplayName"> & { readonly applicationMessageId?: string }): Promise<string> {
   const deliveryId = options.deliveryId ?? createDeliveryID();
   await sealAndSendPayload({
     senderPeerId: options.senderPeerId,
@@ -65,10 +68,10 @@ export async function sealAndSendApplicationTextMessage(options: Omit<SealAndSen
     recipientHpkePublicKey: options.recipientHpkePublicKey,
     deliveryId,
     plaintext: encodeChatTextApplicationPayload({
-      messageId: createDeliveryID(),
+      messageId: options.applicationMessageId ?? deliveryId,
       body: options.plaintext
     }),
-    track: { contactId: options.contactId, onTimeout: options.onRelayOutcomeTimeout }
+    track: { contactId: options.contactId, messageId: options.messageId ?? deliveryId, onTimeout: options.onRelayOutcomeTimeout }
   });
   return deliveryId;
 }
@@ -128,7 +131,7 @@ interface SealPayloadOptions {
   readonly recipientHpkePublicKey: string;
   readonly deliveryId: string;
   readonly plaintext: string | Uint8Array;
-  readonly track?: { readonly contactId: string; readonly onTimeout: () => void };
+  readonly track?: { readonly contactId: string; readonly messageId: string; readonly onTimeout: () => void };
 }
 
 async function sealAndSendPayload(options: SealPayloadOptions): Promise<void> {
@@ -163,10 +166,13 @@ async function sealAndSendPayload(options: SealPayloadOptions): Promise<void> {
   const routeId = liveRouteID(client, options.recipientPeerId);
   client.rendezvous(options.recipientPeerId, { routeId });
   if (options.track !== undefined) {
-    trackDelivery(options.deliveryId, options.track.contactId, options.track.onTimeout);
+    trackDelivery(options.deliveryId, options.track.contactId, options.track.messageId, options.track.onTimeout);
   }
   try {
     client.sendSealedEnvelope(sealed, { deliveryId: options.deliveryId, routeId, originRouteId, ackRequested: fixedAckRequested });
+    if (options.track === undefined) {
+      armBestEffortPendingAbandonment(client, options.deliveryId);
+    }
   } catch (cause) {
     clearDelivery(options.deliveryId);
     throw cause;

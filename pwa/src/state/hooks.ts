@@ -6,6 +6,7 @@ import { useAppStoreApi } from "./StoreProvider.js";
 import { downloadVerifiedCompletedAttachment, type CompletedAttachmentDownloadResult } from "../app/transient-attachment-presentation.js";
 import type { RouteStatus } from "./slices/connection-slice.js";
 import type { ContactSummary } from "./slices/contacts-slice.js";
+import type { ContactFolder } from "./contact-folders-model.js";
 import type { ContactDiscoveryAvailability, ContactDiscoveryRow } from "./slices/contact-discovery-slice.js";
 import type { ContactPresence } from "./slices/contact-presence-slice.js";
 import type { MessageDeliveryState, MessageSummary } from "./slices/conversations-slice.js";
@@ -70,6 +71,37 @@ export function useContacts(): ContactsControls {
   return { contacts, selectedContactId, upsertContact, forgetContact, selectContact };
 }
 
+export interface ContactFoldersControls {
+  readonly folders: readonly ContactFolder[];
+  readonly folderIdByContactId: Readonly<Record<string, string>>;
+  readonly create: (name: string) => string | null;
+  readonly rename: (folderId: string, name: string) => boolean;
+  readonly remove: (folderId: string) => void;
+  readonly assign: (contactId: string, folderId: string | null) => boolean;
+}
+
+// Folder IDs are generated only in this UI adapter. The state model remains
+// deterministic and contains no browser-global dependency.
+export function useContactFolders(): ContactFoldersControls {
+  const folders = useAppStore((state) => state.contactFolders);
+  const folderIdByContactId = useAppStore((state) => state.contactFolderIdByContactId);
+  const createContactFolder = useAppStore((state) => state.createContactFolder);
+  const renameContactFolder = useAppStore((state) => state.renameContactFolder);
+  const deleteContactFolder = useAppStore((state) => state.deleteContactFolder);
+  const assignContactFolder = useAppStore((state) => state.assignContactFolder);
+  return {
+    folders,
+    folderIdByContactId,
+    create: (name) => {
+      const folderId = crypto.randomUUID();
+      return createContactFolder(folderId, name) ? folderId : null;
+    },
+    rename: renameContactFolder,
+    remove: deleteContactFolder,
+    assign: assignContactFolder
+  };
+}
+
 export interface ContactDiscoveryControls {
   readonly rows: readonly ContactDiscoveryRow[];
   readonly availability: ContactDiscoveryAvailability;
@@ -131,6 +163,7 @@ export interface ConversationControls {
   readonly appendMessage: (message: MessageSummary) => void;
   readonly retryUnavailableMessage: (contactId: string, previousMessageId: string, replacement: MessageSummary) => boolean;
   readonly setMessageDeliveryState: (contactId: string, messageId: string, deliveryState: MessageDeliveryState) => void;
+  readonly deleteMessagesLocally: (contactId: string, messageIds: readonly string[]) => readonly MessageSummary[];
 }
 
 export function useConversation(contactId: string | null): ConversationControls {
@@ -138,7 +171,33 @@ export function useConversation(contactId: string | null): ConversationControls 
   const appendMessage = useAppStore((state) => state.appendMessage);
   const retryUnavailableMessage = useAppStore((state) => state.retryUnavailableMessage);
   const setMessageDeliveryState = useAppStore((state) => state.setMessageDeliveryState);
-  return { messages, appendMessage, retryUnavailableMessage, setMessageDeliveryState };
+  const deleteMessagesLocally = useAppStore((state) => state.deleteMessagesLocally);
+  return { messages, appendMessage, retryUnavailableMessage, setMessageDeliveryState, deleteMessagesLocally };
+}
+
+export interface MessageActionsControls {
+  readonly menuMessageId: string | null;
+  readonly selectedMessageIds: readonly string[];
+  readonly forwardSourceMessageIds: readonly string[];
+  readonly openMessageMenu: (contactId: string, messageId: string) => void;
+  readonly closeMessageMenu: () => void;
+  readonly toggleMessageSelection: (contactId: string, messageId: string) => void;
+  readonly clearMessageSelection: () => void;
+  readonly setForwardSources: (contactId: string, messageIds: readonly string[]) => void;
+  readonly clearForwardSources: () => void;
+}
+
+export function useMessageActions(): MessageActionsControls {
+  const menuMessageId = useAppStore((state) => state.menuMessageId);
+  const selectedMessageIds = useAppStore((state) => state.selectedMessageIds);
+  const forwardSourceMessageIds = useAppStore((state) => state.forwardSourceMessageIds);
+  const openMessageMenu = useAppStore((state) => state.openMessageMenu);
+  const closeMessageMenu = useAppStore((state) => state.closeMessageMenu);
+  const toggleMessageSelection = useAppStore((state) => state.toggleMessageSelection);
+  const clearMessageSelection = useAppStore((state) => state.clearMessageSelection);
+  const setForwardSources = useAppStore((state) => state.setForwardSources);
+  const clearForwardSources = useAppStore((state) => state.clearForwardSources);
+  return { menuMessageId, selectedMessageIds, forwardSourceMessageIds, openMessageMenu, closeMessageMenu, toggleMessageSelection, clearMessageSelection, setForwardSources, clearForwardSources };
 }
 
 export interface ReceiptPolicyControls {

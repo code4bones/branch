@@ -81,6 +81,9 @@ export type SameRelayTransportEvent =
   | { readonly type: "envelope_sent"; readonly deliveryId: string; readonly routeId: string; readonly originRouteId: string }
   | { readonly type: "relay_ack"; readonly deliveryId: string; readonly ackType: "relay.accepted" | "relay.forwarded"; readonly durable: false }
   | { readonly type: "peer_receipt"; readonly deliveryId: string; readonly durable: false }
+  // A local lifecycle result only. It has no relay frame and never means the
+  // peer, relay, or any durable queue observed a delivery outcome.
+  | { readonly type: "pending_abandoned"; readonly deliveryId: string }
   | { readonly type: "peer_unavailable"; readonly retryable: boolean; readonly pendingCount: number }
   | { readonly type: "envelope_received"; readonly deliveryId: string; readonly ciphertext: string; readonly routeId: string; readonly originRouteId: string; readonly senderPeerId: string | null }
   | { readonly type: "pending_retried"; readonly count: number }
@@ -462,6 +465,17 @@ export class SameRelayTransportClient {
     if (this.pending.delete(deliveryId)) {
       this.emit({ type: "peer_receipt", deliveryId, durable: false });
     }
+  }
+
+  // Releases one caller-expired live attempt. This is deliberately not a
+  // retry/cancel protocol frame: it only drops this tab's volatile copy so an
+  // absent terminal ACK cannot consume the bounded pending window forever.
+  abandonPendingEnvelope(deliveryId: string): boolean {
+    if (!this.pending.delete(deliveryId)) {
+      return false;
+    }
+    this.emit({ type: "pending_abandoned", deliveryId });
+    return true;
   }
 
   retryPending(): void {

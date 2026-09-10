@@ -5,6 +5,9 @@ import { deleteStoredContact, saveStoredContact } from "../../storage/contacts-s
 import { deleteStoredMessagesForContact } from "../../storage/messages-store.js";
 import { deleteStoredReadState } from "../../storage/read-state-store.js";
 import { clearStoredLastOpenedChat, saveStoredLastOpenedChat } from "../../storage/last-opened-chat-store.js";
+import { deleteStoredOutboxForContact } from "../../storage/message-outbox-store.js";
+import { deleteStoredReadReceiptsForContact } from "../../storage/read-receipt-outbox-store.js";
+import { deleteStoredMessageDeliveryTargetsForContact } from "../../storage/message-delivery-target-store.js";
 
 export interface ContactSummary {
   readonly contactId: string;
@@ -44,6 +47,9 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
     if (peerId !== null) {
       get().clearCompletedAttachmentProjection(peerId);
     }
+    // Folder membership is a separate local UI projection. It must disappear
+    // with the local contact, without adding a field to the contact record.
+    get().clearContactFolderAssignment(contactId);
     const wasSelected = get().selectedContactId === contactId;
     set((state) => {
       const { [contactId]: removedMessages, ...messagesByContactId } = state.messagesByContactId;
@@ -55,6 +61,8 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
       return {
         contacts: state.contacts.filter((existing) => existing.contactId !== contactId),
         selectedContactId: state.selectedContactId === contactId ? null : state.selectedContactId,
+        outbox: state.outbox.filter((entry) => entry.contactId !== contactId),
+        readReceiptOutbox: state.readReceiptOutbox.filter((entry) => entry.contactId !== contactId),
         messagesByContactId,
         lastReadAtByContactId,
         typingExpiresAtByContactId
@@ -63,7 +71,10 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
     void Promise.all([
       deleteStoredContact(contactId),
       deleteStoredMessagesForContact(contactId),
-      deleteStoredReadState(contactId)
+      deleteStoredReadState(contactId),
+      deleteStoredOutboxForContact(contactId),
+      deleteStoredReadReceiptsForContact(contactId),
+      deleteStoredMessageDeliveryTargetsForContact(contactId)
     ]).catch(() => {
       // Best-effort persistence; the contact and local conversation are
       // already absent from this session even when IndexedDB is unavailable.

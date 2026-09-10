@@ -11,11 +11,20 @@ import { sendPresencePong } from "./seal-and-send.js";
 import { receiveTypingControl } from "./typing-control.js";
 import { consumePendingContactDiscovery, startContactDiscoveryRuntime, stopContactDiscoveryRuntime } from "./contact-discovery-runtime.js";
 import { startContactPresenceRuntime, stopContactPresenceRuntime } from "./contact-presence-runtime.js";
+import {
+  advanceMessageOutboxDrainAfterRelayForwarded,
+  restartMessageOutboxDrainAfterPresencePong,
+  renewQueuedTextCapabilityAfterPresencePong,
+  startMessageOutboxRuntime,
+  stopMessageOutboxRuntime
+} from "./message-outbox-runtime.js";
+import { startReadReceiptRuntime, stopReadReceiptRuntime } from "./read-receipt-runtime.js";
 import { receiveContactCard, respondToContactProbe } from "./contact-card-control.js";
 import {
   attachRelaySession,
+  clearPendingAbandonment,
   clearDelivery,
-  contactIdForDelivery,
+  messageForDelivery,
   disconnectRelaySession,
   getRelaySessionClient,
   hasAttachedRelaySession,
@@ -26,6 +35,8 @@ import {
 import { getLocalIdentityKeys } from "../identity/identity-keys.js";
 import type { AppStoreApi } from "../state/store.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
+import { claimStoredReceivedApplicationMessage } from "../storage/received-application-messages-store.js";
+import { deleteStoredMessageDeliveryTarget, findStoredMessageDeliveryTarget } from "../storage/message-delivery-target-store.js";
 
 const reconnectBaseDelayMs = 1_000;
 const reconnectMaxDelayMs = 8_000;
@@ -75,6 +86,8 @@ export function useRelayTransport(): void {
       stopHeartbeat();
       stopContactDiscoveryRuntime();
       stopContactPresenceRuntime();
+      stopMessageOutboxRuntime();
+      stopReadReceiptRuntime();
       clearAttachmentTransferController();
       disconnectRelaySession();
       lifecycle.currentKey = null;
@@ -103,7 +116,7 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
   if (lifecycle.currentKey !== null) {
     clearAttachmentTransferController();
     for (const delivery of takeTrackedDeliveries()) {
-      storeApi.getState().setMessageDeliveryState(delivery.contactId, delivery.deliveryId, "unavailable");
+      storeApi.getState().setMessageDeliveryState(delivery.contactId, delivery.messageId, "unavailable");
     }
     lifecycle.currentKey = null;
   }
@@ -140,6 +153,8 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
       startHeartbeat(attachedClient);
       startContactDiscoveryRuntime(storeApi, attachedClient);
       startContactPresenceRuntime(storeApi, attachedClient);
+      startMessageOutboxRuntime(storeApi, attachedClient);
+      startReadReceiptRuntime(storeApi, attachedClient);
       // Install the tab-local file bridge at the same successful attachment
       // boundary as the other live adapters. Waiting for an unrelated inbound
       // payload made File intermittently appear unavailable after reload.
@@ -258,19 +273,28 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
       state.recordTransportTrace(`outbound frame: ${event.frameType}`);
       return;
     case "relay_ack": {
+      clearPendingAbandonment(event.deliveryId);
       if (event.ackType === "relay.forwarded") {
         notifyLiveForwardedAck(event.deliveryId);
       }
-      const contactId = contactIdForDelivery(event.deliveryId);
-      if (contactId !== undefined) {
-        state.setMessageDeliveryState(contactId, event.deliveryId, "relayed");
+      const message = messageForDelivery(event.deliveryId);
+      if (message !== undefined) {
+        state.setMessageDeliveryState(message.contactId, message.messageId, "relayed");
         clearDelivery(event.deliveryId);
+      }
+      if (event.ackType === "relay.forwarded") {
+        advanceMessageOutboxDrainAfterRelayForwarded(event.deliveryId);
       }
       return;
     }
     case "peer_receipt": {
       // A relay ACK alone cannot prove peer presentation or decryption. The
       // beta client has no authenticated peer-receipt construction yet.
+      clearPendingAbandonment(event.deliveryId);
+      return;
+    }
+    case "pending_abandoned": {
+      clearPendingAbandonment(event.deliveryId);
       return;
     }
     case "peer_unavailable": {
@@ -306,6 +330,7 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
       stopHeartbeat();
       stopContactDiscoveryRuntime();
       stopContactPresenceRuntime();
+      stopMessageOutboxRuntime();
       clearAttachmentTransferController();
       state.recordTransportTrace(disconnectTraceDetail(event));
       state.clearAllContactTyping();
@@ -315,7 +340,7 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
       // the UI attached after relay-session has already cleared the client.
       lifecycle.connectingKey = null;
       for (const delivery of takeTrackedDeliveries()) {
-        state.setMessageDeliveryState(delivery.contactId, delivery.deliveryId, "unavailable");
+        state.setMessageDeliveryState(delivery.contactId, delivery.messageId, "unavailable");
       }
       disconnectRelaySession();
       state.setAttachStatus("error", "disconnected from relay");
@@ -427,7 +452,29 @@ async function handleIncomingEnvelope(
     if (receipt.handled) {
       state.recordTransportTrace(`delivery receipt: ${receipt.outcome ?? "rejected"}`);
       if (receipt.outcome === "accepted" && receipt.receipt !== undefined && knownContactId !== null) {
-        state.setMessageDeliveryState(knownContactId, receipt.receipt.targetDeliveryId, receipt.receipt.kind);
+        // A retry seals the same application message into a fresh live
+        // delivery id. Resolve the local outbox by that latest outer id while
+        // retaining compatibility with pre-outbox messages where both IDs are
+        // identical.
+        const outboxEntry = state.outbox.find((entry) => (
+          entry.contactId === knownContactId && entry.lastDeliveryId === receipt.receipt?.targetDeliveryId
+        ));
+        const storedTarget = outboxEntry === undefined
+          ? await findStoredMessageDeliveryTarget(knownContactId, receipt.receipt.targetDeliveryId)
+          : null;
+        const messageId = outboxEntry?.messageId ?? storedTarget?.messageId ?? receipt.receipt.targetDeliveryId;
+        state.setMessageDeliveryState(knownContactId, messageId, receipt.receipt.kind);
+        if (receipt.receipt.kind === "delivered") {
+          // Keep only the bounded device-local outer-id correlation: a later
+          // signed Read targets the same outer delivery after this Delivered
+          // control has already made resend inappropriate.
+          state.markOutboxMessageDelivered(messageId, Date.now());
+        } else {
+          state.settleOutboxMessage(messageId);
+          if (storedTarget !== null || outboxEntry !== undefined) {
+            void deleteStoredMessageDeliveryTarget(messageId).catch(() => {});
+          }
+        }
       }
       return;
     }
@@ -445,19 +492,25 @@ async function handleIncomingEnvelope(
     }
     const disposition = classifyIncomingMessage({ plaintext, senderPeerId, knownContactId });
     if (disposition.kind === "known_contact_message") {
-      state.recordTransportTrace("incoming envelope: message");
-      // A visible message conclusively ends the sender's current typing
-      // projection. This is local UI state only; delayed controls still have
-      // their own short expiry and never alter message delivery.
-      state.clearContactTyping(disposition.contactId);
-      state.appendMessage({
-        messageId: deliveryId,
-        contactId: disposition.contactId,
-        direction: "incoming",
-        body: disposition.body,
-        sentAt: Date.now(),
-        deliveryState: "received"
-      });
+      const firstPresentation = disposition.applicationMessageId === null
+        || await claimStoredReceivedApplicationMessage(disposition.applicationMessageId, Date.now());
+      if (firstPresentation) {
+        state.recordTransportTrace("incoming envelope: message");
+        // A visible message conclusively ends the sender's current typing
+        // projection. This is local UI state only; delayed controls still have
+        // their own short expiry and never alter message delivery.
+        state.clearContactTyping(disposition.contactId);
+        state.appendMessage({
+          messageId: deliveryId,
+          contactId: disposition.contactId,
+          direction: "incoming",
+          body: disposition.body,
+          sentAt: Date.now(),
+          deliveryState: "received"
+        });
+      } else {
+        state.recordTransportTrace("incoming envelope: duplicate message");
+      }
       if (knownContact !== null && knownContact.hpkePublicKey !== null) {
         void sendDeliveryReceipt({
           kind: "delivered",
@@ -494,6 +547,11 @@ async function handleIncomingEnvelope(
     if (disposition.kind === "known_contact_presence_pong") {
       state.recordTransportTrace("incoming envelope: presence_pong");
       state.acceptContactPresencePong(disposition.contactId, disposition.pingId);
+      restartMessageOutboxDrainAfterPresencePong(disposition.contactId);
+      // Presence is deliberately not capability evidence. A queued generic
+      // text can however use this verified live moment to renew the existing
+      // signed capability exchange after a peer restart.
+      renewQueuedTextCapabilityAfterPresencePong(storeApi, disposition.contactId);
       return;
     }
     if (disposition.kind === "message_request") {

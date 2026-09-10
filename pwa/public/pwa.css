@@ -137,9 +137,25 @@ body {
   background: #eb7770;
 }
 
-.pwa-sidebar-search {
-  width: auto;
+.pwa-contact-list-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 8px 6px;
+}
+
+.pwa-sidebar-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pwa-contact-folder-filter {
+  flex: 0 0 auto;
+  border-radius: 22px;
+  color: var(--pwa-ink);
+  background: #292f37;
+  border-color: transparent;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 15%);
 }
 
 .pwa-sidebar-search .ant-input,
@@ -547,6 +563,7 @@ body {
 .pwa-chat {
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
 }
@@ -673,6 +690,10 @@ body {
   overflow-wrap: anywhere;
 }
 
+.pwa-chat-message.is-selected {
+  background: #21698f;
+}
+
 .pwa-chat-message.is-outgoing {
   align-self: flex-end;
   background: var(--pwa-outgoing);
@@ -705,6 +726,50 @@ body {
   font-size: 0.7rem;
 }
 
+.pwa-chat-bulk-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 16px 8px;
+}
+
+.pwa-chat-bulk-actions-measure {
+  position: absolute;
+  inset-inline: 16px;
+  width: auto;
+  margin: 0;
+  visibility: hidden;
+  pointer-events: none;
+  flex-wrap: nowrap;
+}
+
+.pwa-chat-bulk-actions-bottom {
+  margin: 8px 16px 10px;
+}
+
+.pwa-chat-bulk-item {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--pwa-line);
+  border-radius: 999px;
+  background: var(--pwa-panel);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 12%);
+}
+
+.pwa-chat-bulk-selection-count {
+  padding: 3px 9px;
+  color: var(--pwa-muted);
+  font-size: 0.78rem;
+}
+
+.pwa-chat-bulk-action.ant-btn {
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+
 .pwa-chat-delivery-status {
   display: inline-flex;
   align-items: center;
@@ -716,14 +781,19 @@ body {
   color: var(--pwa-muted);
 }
 
-.pwa-chat-delivery-status.is-relayed,
-.pwa-chat-delivery-status.is-delivered,
-.pwa-chat-delivery-status.is-received {
-  color: #b7c4d2;
+.pwa-chat-delivery-check.is-relayed {
+  color: #9ba7b4 !important;
 }
 
-.pwa-chat-delivery-status.is-read {
-  color: var(--pwa-cyan);
+.pwa-chat-delivery-check.is-delivered,
+.pwa-chat-delivery-check.is-received {
+  color: #b7c4d2 !important;
+}
+
+.pwa-chat-delivery-check.is-read {
+  /* Keep read distinct from the two muted-gray delivered checks even when a
+     theme's general accent variable is intentionally dark. */
+  color: #20ca46 !important;
 }
 
 .pwa-chat-delivery-status.is-unavailable {
@@ -749,7 +819,7 @@ body {
 }
 
 .pwa-chat-delivery-double-check .anticon + .anticon {
-  margin-left: -0.3em;
+  margin-left: -0.2em;
 }
 
 .pwa-chat-day-divider {
@@ -828,8 +898,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--pwa-cyan);
-  font-size: 0.85rem;
 }
 
 .pwa-chat-composer {
@@ -962,6 +1030,20 @@ body {
   flex-direction: column;
 }
 
+.pwa-settings-list > div.pwa-settings-profile-migration {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.pwa-settings-profile-migration dd,
+.pwa-settings-profile-migration .ant-space {
+  width: 100%;
+}
+
+.pwa-settings-profile-migration .ant-space > .ant-space-item {
+  max-width: 560px;
+}
+
 .pwa-settings-trace-row dd {
   width: 100%;
 }
@@ -1005,4 +1087,5 @@ body {
   .pwa-chat-message {
     max-width: 86%;
   }
+
 }

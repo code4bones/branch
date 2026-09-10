@@ -8,6 +8,9 @@ import { loadStoredReadState } from "./read-state-store.js";
 import { loadStoredReadReceiptPolicy } from "./receipt-policy-store.js";
 import { loadStoredContactDiscoveries } from "./contact-discovery-store.js";
 import { loadStoredContactDiscoveryPolicy } from "./contact-discovery-policy-store.js";
+import { loadStoredContactFolders } from "./contact-folders-store.js";
+import { loadStoredOutbox } from "./message-outbox-store.js";
+import { loadStoredReadReceiptOutbox } from "./read-receipt-outbox-store.js";
 import { clearStoredLastOpenedChat, loadStoredLastOpenedChat } from "./last-opened-chat-store.js";
 import { groupMessagesByContactId } from "../state/slices/conversations-slice.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
@@ -22,7 +25,7 @@ export function useConversationsBootstrap(): void {
   useEffect(() => {
     void (async () => {
       await removeLegacyDemoState();
-      const [contacts, messages, readState, messageRequests, sendReadReceipts, contactDiscoveries, allowContactDiscovery, lastOpenedChatId] = await Promise.all([
+      const [contacts, messages, readState, messageRequests, sendReadReceipts, contactDiscoveries, allowContactDiscovery, lastOpenedChatId, contactFolderState, outbox, readReceiptOutbox] = await Promise.all([
         loadStoredContacts(),
         loadStoredMessages(),
         loadStoredReadState(),
@@ -30,7 +33,10 @@ export function useConversationsBootstrap(): void {
         loadStoredReadReceiptPolicy(),
         loadStoredContactDiscoveries(),
         loadStoredContactDiscoveryPolicy(),
-        loadStoredLastOpenedChat()
+        loadStoredLastOpenedChat(),
+        loadStoredContactFolders(),
+        loadStoredOutbox(),
+        loadStoredReadReceiptOutbox()
       ]);
       const selectedContactId = lastOpenedChatId !== null && contacts.some((contact) => contact.contactId === lastOpenedChatId)
         ? lastOpenedChatId
@@ -49,6 +55,11 @@ export function useConversationsBootstrap(): void {
         sendReadReceipts,
         allowContactDiscovery
       });
+      // Folder metadata is a separate device-local UI projection. Hydration
+      // binds assignments only to the contacts loaded from this same origin.
+      storeApi.getState().hydrateContactFolders(contactFolderState.folders, contactFolderState.assignments);
+      storeApi.getState().hydrateOutbox(outbox);
+      storeApi.getState().hydrateReadReceiptOutbox(readReceiptOutbox);
 
       storeApi.getState().setConversationsLoaded();
     })().catch(() => {

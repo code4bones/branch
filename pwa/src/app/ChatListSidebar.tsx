@@ -1,5 +1,6 @@
-import { CopyOutlined, InboxOutlined, PaperClipOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
-import { Badge, Button, Empty, Input, List, Modal, Space, Table, Tooltip, Typography } from "antd";
+import { CopyOutlined, FolderAddOutlined, FolderOutlined, InboxOutlined, PaperClipOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
+import { Badge, Button, Dropdown, Empty, Input, List, Modal, Select, Space, Table, Tooltip, Typography } from "antd";
+import type { MenuProps } from "antd";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -9,7 +10,8 @@ import { formatChatListTimestamp } from "./format-time.js";
 import { chatPath, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
 import { useBranchID } from "../identity/use-branch-id.js";
-import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useIdentity, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
+import { useChatList, useContactDiscoveries, useContactFolders, useContactPresence, useContactTyping, useContacts, useIdentity, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus, type ChatListEntry } from "../state/hooks.js";
+import { filterChatListByFolder } from "../state/contact-folder-filter.js";
 import { parseBranchID } from "@code4bones/branch-core";
 
 export function ChatListSidebar(): React.JSX.Element {
@@ -20,15 +22,40 @@ export function ChatListSidebar(): React.JSX.Element {
   const transport = useTransportStatus();
   const messageRequests = useIncomingMessageRequests();
   const contactDiscovery = useContactDiscoveries();
+  const contactFolders = useContactFolders();
   const [query, setQuery] = useState("");
   const [addContactOpen, setAddContactOpen] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
 
   const needle = query.trim().toLowerCase();
+  const activeFolderId = selectedFolderId !== null && contactFolders.folders.some((folder) => folder.folderId === selectedFolderId)
+    ? selectedFolderId
+    : null;
+  const folderFiltered = filterChatListByFolder(chatList, activeFolderId, contactFolders.folderIdByContactId);
   const filtered = needle === ""
-    ? chatList
-    : chatList.filter((entry) => entry.contact.displayName.toLowerCase().includes(needle));
+    ? folderFiltered
+    : folderFiltered.filter((entry) => entry.contact.displayName.toLowerCase().includes(needle));
   const localDisplayName = identity.identity?.displayName ?? "B.R.A.N.C.H.";
   const branchID = useBranchID(identity.identity?.peerId ?? null);
+  const folderMenu: MenuProps = {
+    items: [
+      { key: "all", icon: <FolderOutlined />, label: "All" },
+      ...contactFolders.folders.map((folder) => ({ key: folder.folderId, icon: <FolderOutlined />, label: folder.name })),
+      { type: "divider" },
+      { key: "new", icon: <FolderAddOutlined />, label: "New folder" }
+    ],
+    onClick: ({ key }) => {
+      if (key === "new") {
+        setNewFolderOpen(true);
+      } else {
+        setSelectedFolderId(key === "all" ? null : key);
+      }
+    }
+  };
+  const folderLabel = activeFolderId === null
+    ? "All"
+    : contactFolders.folders.find((folder) => folder.folderId === activeFolderId)?.name ?? "All";
 
   const copyBranchID = (): void => {
     if (branchID !== null) {
@@ -76,13 +103,22 @@ export function ChatListSidebar(): React.JSX.Element {
           <Badge count={messageRequests.requests.length} />
         </div>
       )}
-      <Input.Search
-        allowClear
-        className="pwa-sidebar-search"
-        onChange={(event) => { setQuery(event.currentTarget.value); }}
-        placeholder="Search"
-        value={query}
-      />
+      <div className="pwa-contact-list-controls">
+        {contactFolders.folders.length > 0 && (
+          <Dropdown menu={folderMenu} trigger={["click"]}>
+            <Button aria-label="Contact folder" className="pwa-contact-folder-filter" icon={<FolderOutlined />}>
+              {folderLabel}
+            </Button>
+          </Dropdown>
+        )}
+        <Input.Search
+          allowClear
+          className="pwa-sidebar-search"
+          onChange={(event) => { setQuery(event.currentTarget.value); }}
+          placeholder="Search"
+          value={query}
+        />
+      </div>
       <div className="pwa-chat-list-container">
         {filtered.length === 0 ? (
           chatList.length === 0 ? (
@@ -96,36 +132,109 @@ export function ChatListSidebar(): React.JSX.Element {
           <List
             className="pwa-chat-list"
             dataSource={[...filtered]}
-            renderItem={(entry) => (
-              <List.Item
-                className={entry.contact.contactId === activeContactId ? "is-active" : ""}
-                key={entry.contact.contactId}
-                onClick={() => { void navigate(chatPath(entry.contact.contactId)); }}
-              >
-                <ChatAvatar name={entry.contact.displayName} size={48} />
-                <div className="pwa-chat-list-text">
-                  <div className="pwa-chat-list-row">
-                    <span className="pwa-chat-list-contact-name">
-                      <span className="pwa-chat-list-name">{entry.contact.displayName}</span>
-                      <ContactOnlineBadge contactId={entry.contact.contactId} />
-                      {entry.contact.peerId !== null && <IncomingAttachmentBadge peerId={entry.contact.peerId} />}
-                    </span>
-                    {entry.lastMessage !== null && (
-                      <span className="pwa-chat-list-time">{formatChatListTimestamp(entry.lastMessage.sentAt)}</span>
-                    )}
-                  </div>
-                  <div className="pwa-chat-list-row">
-                    <ContactPreview contactId={entry.contact.contactId} fallback={entry.lastMessage?.body ?? "No messages yet"} />
-                    {entry.unreadCount > 0 && <Badge count={entry.unreadCount} />}
-                  </div>
-                </div>
-              </List.Item>
-            )}
+            renderItem={(entry) => <ChatListItem activeContactId={activeContactId} entry={entry} navigateToChat={(contactId) => { void navigate(chatPath(contactId)); }} />}
+            split={false}
           />
         )}
       </div>
       <AddContactModal onClose={() => { setAddContactOpen(false); }} open={addContactOpen} />
+      <NewContactFolderModal onClose={() => { setNewFolderOpen(false); }} onCreated={(folderId) => { setSelectedFolderId(folderId); }} open={newFolderOpen} />
     </aside>
+  );
+}
+
+function ChatListItem({ activeContactId, entry, navigateToChat }: { readonly activeContactId: string | undefined; readonly entry: ChatListEntry; readonly navigateToChat: (contactId: string) => void }): React.JSX.Element {
+  const [addToFolderOpen, setAddToFolderOpen] = useState(false);
+  const contactMenu: MenuProps = {
+    items: [{ key: "add-to-folder", icon: <FolderAddOutlined />, label: "Add to folder" }],
+    onClick: () => { setAddToFolderOpen(true); }
+  };
+  return (
+    <>
+      <Dropdown menu={contactMenu} trigger={["contextMenu"]}>
+        <List.Item
+          className={entry.contact.contactId === activeContactId ? "is-active" : ""}
+          key={entry.contact.contactId}
+          onClick={() => { navigateToChat(entry.contact.contactId); }}
+        >
+          <ChatAvatar name={entry.contact.displayName} size={48} />
+          <div className="pwa-chat-list-text">
+            <div className="pwa-chat-list-row">
+              <span className="pwa-chat-list-contact-name">
+                <span className="pwa-chat-list-name">{entry.contact.displayName}</span>
+                <ContactOnlineBadge contactId={entry.contact.contactId} />
+                {entry.contact.peerId !== null && <IncomingAttachmentBadge peerId={entry.contact.peerId} />}
+              </span>
+              {entry.lastMessage !== null && <span className="pwa-chat-list-time">{formatChatListTimestamp(entry.lastMessage.sentAt)}</span>}
+            </div>
+            <div className="pwa-chat-list-row">
+              <ContactPreview contactId={entry.contact.contactId} fallback={entry.lastMessage?.body ?? "No messages yet"} />
+              {entry.unreadCount > 0 && <Badge count={entry.unreadCount} />}
+            </div>
+          </div>
+        </List.Item>
+      </Dropdown>
+      <AddContactToFolderModal contactId={entry.contact.contactId} onClose={() => { setAddToFolderOpen(false); }} open={addToFolderOpen} />
+    </>
+  );
+}
+
+function NewContactFolderModal({ open, onClose, onCreated }: { readonly open: boolean; readonly onClose: () => void; readonly onCreated: (folderId: string) => void }): React.JSX.Element {
+  const folders = useContactFolders();
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const create = (): void => {
+    const folderId = folders.create(name);
+    if (folderId === null) {
+      setError("Choose a unique folder name of up to 48 characters.");
+      return;
+    }
+    setName(""); setError(null); onCreated(folderId); onClose();
+  };
+  return (
+    <Modal okText="Create" onCancel={onClose} onOk={create} open={open} title="New folder">
+      <Input autoFocus onChange={(event) => { setName(event.currentTarget.value); }} onPressEnter={create} placeholder="Folder name" value={name} />
+      {error !== null && <Typography.Text type="danger">{error}</Typography.Text>}
+    </Modal>
+  );
+}
+
+function AddContactToFolderModal({ contactId, open, onClose }: { readonly contactId: string; readonly open: boolean; readonly onClose: () => void }): React.JSX.Element {
+  const folders = useContactFolders();
+  const [folderId, setFolderId] = useState<string | null>(folders.folderIdByContactId[contactId] ?? null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const assign = (): void => {
+    const nextFolderId = newFolderName.trim() === "" ? folderId : folders.create(newFolderName);
+    if (nextFolderId === null) {
+      setError("Choose a folder or enter a unique name of up to 48 characters.");
+      return;
+    }
+    if (!folders.assign(contactId, nextFolderId)) {
+      setError("That folder is no longer available.");
+      return;
+    }
+    setNewFolderName(""); setError(null); onClose();
+  };
+  return (
+    <Modal okText="Add" onCancel={onClose} onOk={assign} open={open} title="Add to folder">
+      <Space direction="vertical" style={{ width: "100%" }}>
+        {folders.folders.length > 0 && (
+          <Select
+            onChange={(value: string) => { setFolderId(value); setNewFolderName(""); }}
+            options={folders.folders.map((folder) => ({ label: folder.name, value: folder.folderId }))}
+            placeholder="Choose a folder"
+            value={newFolderName === "" ? folderId : null}
+          />
+        )}
+        <Input
+          onChange={(event) => { setNewFolderName(event.currentTarget.value); }}
+          placeholder={folders.folders.length === 0 ? "Create a folder" : "Or create a new folder"}
+          value={newFolderName}
+        />
+        {error !== null && <Typography.Text type="danger">{error}</Typography.Text>}
+      </Space>
+    </Modal>
   );
 }
 
