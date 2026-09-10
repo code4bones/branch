@@ -738,13 +738,15 @@ void test("PWA contact presence is a bounded background encrypted ping-pong runt
   assert.match(component, /probeContactPresence/);
   assert.doesNotMatch(component, /setInterval|setTimeout|sendPresencePing/);
   assert.match(runtime, /presenceRenewIntervalMs = 20_000/);
-  assert.match(runtime, /presencePingTimeoutMs = 6_000/);
+  assert.match(runtime, /presencePingTimeoutMs = 8_000/);
+  assert.match(runtime, /presenceAvailableTtlMs = 60_000/);
   assert.match(runtime, /startContactPresenceRuntime/);
   assert.match(runtime, /stopContactPresenceRuntime/);
   assert.match(runtime, /setTimeout/);
   assert.doesNotMatch(runtime, /setInterval|IndexedDB|saveStored|fetch\(/);
-  assert.match(runtime, /await probeContactPresence/);
+  assert.match(runtime, /await Promise\.all\(contacts\.map/);
   assert.match(runtime, /maxContactsExaminedPerCycle = 64/);
+  assert.match(runtime, /maxBackgroundProbesPerCycle = 4/);
   assert.match(transport, /startContactPresenceRuntime\(storeApi, attachedClient\)/);
   assert.match(transport, /stopContactPresenceRuntime\(\)/);
   assert.match(component, /Contact online \(encrypted pong\)/);

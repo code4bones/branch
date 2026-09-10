@@ -6,15 +6,19 @@ import type { ContactSummary } from "../state/slices/contacts-slice.js";
 import type { AppStoreApi } from "../state/store.js";
 
 export const presenceRenewIntervalMs = 20_000;
-export const presencePingTimeoutMs = 6_000;
-export const presenceAvailableTtlMs = 30_000;
+export const presencePingTimeoutMs = 8_000;
+// Three ordinary renewal opportunities fit inside this local projection. A
+// single delayed or lost best-effort control must not make a recently proven
+// live contact visibly flap to unknown.
+export const presenceAvailableTtlMs = 60_000;
 
 // One local runtime owns the only timer and sends at most one probe after the
 // preceding sealing/send attempt settles. The scan and cadence are bounded so
 // a large local contact list cannot become a relay polling queue.
-const backgroundProbeGapMs = 350;
+const backgroundProbeBatchGapMs = 1_000;
 const backgroundIdleDelayMs = 1_000;
 const maxContactsExaminedPerCycle = 64;
+const maxBackgroundProbesPerCycle = 4;
 
 interface PresenceRuntime {
   readonly storeApi: AppStoreApi;
@@ -96,23 +100,27 @@ async function run(runtime: PresenceRuntime): Promise<void> {
   const state = runtime.storeApi.getState();
   if (state.identity === null || state.attachStatus !== "attached") return;
   if (state.contacts.length === 0) return;
-  const contact = nextEligibleContact(state.contacts, state.contactPresenceById, runtime, now);
-  if (contact !== null) {
-    await probeContactPresence(runtime.storeApi, contact.contactId);
-    schedule(runtime, backgroundProbeGapMs);
+  const contacts = nextEligibleContacts(state.contacts, state.contactPresenceById, runtime, now);
+  if (contacts.length > 0) {
+    // Bounded parallelism makes the initial contact-list projection prompt,
+    // while awaiting the whole batch preserves one non-overlapping timer
+    // lifecycle and avoids an accumulating timer/request backlog.
+    await Promise.all(contacts.map(async (contact) => probeContactPresence(runtime.storeApi, contact.contactId)));
+    schedule(runtime, backgroundProbeBatchGapMs);
     return;
   }
   schedule(runtime, backgroundIdleDelayMs);
 }
 
-function nextEligibleContact(
+function nextEligibleContacts(
   contacts: readonly ContactSummary[],
   presenceById: Readonly<Record<string, { readonly lastProbeAt: number | null; readonly pendingPingId: string | null }>>,
   runtime: PresenceRuntime,
   now: number
-): ContactSummary | null {
-  if (contacts.length === 0) return null;
+): readonly ContactSummary[] {
+  if (contacts.length === 0) return [];
   const examined = Math.min(contacts.length, maxContactsExaminedPerCycle);
+  const selected: ContactSummary[] = [];
   for (let offset = 0; offset < examined; offset += 1) {
     const index = (runtime.cursor + offset) % contacts.length;
     const contact = contacts[index];
@@ -121,11 +129,14 @@ function nextEligibleContact(
     const presence = presenceById[contact.contactId];
     if (presence?.pendingPingId !== null && presence?.pendingPingId !== undefined) continue;
     if (presence?.lastProbeAt !== null && presence?.lastProbeAt !== undefined && now - presence.lastProbeAt < presenceRenewIntervalMs) continue;
-    runtime.cursor = (index + 1) % contacts.length;
-    return contact;
+    selected.push(contact);
+    if (selected.length === maxBackgroundProbesPerCycle) {
+      runtime.cursor = (index + 1) % contacts.length;
+      return selected;
+    }
   }
   runtime.cursor = (runtime.cursor + examined) % contacts.length;
-  return null;
+  return selected;
 }
 
 function expireStalePresence(storeApi: AppStoreApi, now: number): void {
