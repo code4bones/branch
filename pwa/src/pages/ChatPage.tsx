@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { DeleteOutlined, EditOutlined } from "@ant-design/icons";
-import { Button, Empty, Input, Modal, Popconfirm, Space, Tag, Tooltip } from "antd";
+import { DeleteOutlined, EditOutlined, SettingOutlined } from "@ant-design/icons";
+import { Button, Dropdown, Empty, Input, Modal, Tag, Tooltip } from "antd";
+import type { MenuProps } from "antd";
 
 import { ChatAvatar } from "../app/ChatAvatar.js";
 import { ContactPresence } from "../app/ContactPresence.js";
@@ -36,6 +37,7 @@ export function ChatPage(): React.JSX.Element {
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const [displayName, setDisplayName] = useState("");
 
   useMarkContactRead(resolvedContactId);
@@ -111,6 +113,22 @@ export function ChatPage(): React.JSX.Element {
     }
     contacts.forgetContact(contact.contactId);
     void navigate(CHATS_PATH);
+  };
+
+  const contactActions: MenuProps = {
+    items: [
+      { key: "rename", icon: <EditOutlined />, label: "Rename contact" },
+      { key: "remove", danger: true, icon: <DeleteOutlined />, label: "Remove contact" }
+    ],
+    onClick: ({ key }) => {
+      if (key === "rename") {
+        openRename();
+        return;
+      }
+      if (key === "remove") {
+        setRemoveOpen(true);
+      }
+    }
   };
 
   const handleSend = (): void => {
@@ -231,23 +249,11 @@ export function ChatPage(): React.JSX.Element {
           !isReachable
             ? <Tag>demo contact</Tag>
             : (
-              <Space size={0}>
-                <Tooltip title="Rename contact">
-                  <Button aria-label="Rename contact" icon={<EditOutlined />} onClick={openRename} type="text" />
+              <Dropdown menu={contactActions} placement="bottomRight" trigger={["click"]}>
+                <Tooltip title="Contact settings">
+                  <Button aria-label="Contact settings" icon={<SettingOutlined />} type="text" />
                 </Tooltip>
-                <Popconfirm
-                  cancelText="Cancel"
-                  description="This deletes the contact and its local chat history from this device."
-                  okButtonProps={{ danger: true }}
-                  okText="Remove"
-                  onConfirm={forgetContact}
-                  title="Remove contact?"
-                >
-                  <Tooltip title="Remove contact">
-                    <Button aria-label="Remove contact" danger icon={<DeleteOutlined />} type="text" />
-                  </Tooltip>
-                </Popconfirm>
-              </Space>
+              </Dropdown>
             )
         }
         subtitle={isReachable ? <ContactPresence contact={contact} /> : "Demo contact"}
@@ -280,6 +286,17 @@ export function ChatPage(): React.JSX.Element {
         title="Rename contact"
       >
         <Input autoFocus onChange={(event) => { setDisplayName(event.currentTarget.value); }} value={displayName} />
+      </Modal>
+      <Modal
+        cancelText="Cancel"
+        okButtonProps={{ danger: true }}
+        okText="Remove"
+        onCancel={() => { setRemoveOpen(false); }}
+        onOk={forgetContact}
+        open={removeOpen}
+        title="Remove contact?"
+      >
+        This deletes the contact and its local chat history from this device.
       </Modal>
     </section>
   );

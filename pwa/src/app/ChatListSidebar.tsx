@@ -32,7 +32,6 @@ export function ChatListSidebar(): React.JSX.Element {
     <aside className="pwa-sidebar" aria-label="Chats">
       <div className="pwa-sidebar-header">
         <div className="pwa-sidebar-title">
-          <Typography.Title level={4}>Chats</Typography.Title>
           <Typography.Text className="pwa-release-version" type="secondary">v{pwaReleaseVersion}</Typography.Text>
           <Tooltip title={transport.attachMessage}>
             <span className={`pwa-attach-dot is-${transport.attachStatus}`} aria-label={`Relay: ${transport.attachStatus}`} />

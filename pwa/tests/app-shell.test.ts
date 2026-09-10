@@ -1192,11 +1192,14 @@ void test("removing a real contact is explicit and clears only local PWA state",
   const chatPage = await readFile(chatPagePath, "utf8");
   const contactsSlice = await readFile(contactsSlicePath, "utf8");
 
-  assert.match(chatPage, /Popconfirm/);
+  assert.match(chatPage, /Dropdown/);
+  assert.match(chatPage, /SettingOutlined/);
   assert.match(chatPage, /DeleteOutlined/);
-  assert.match(chatPage, /aria-label="Remove contact"/);
+  assert.match(chatPage, /key: "remove"/);
+  assert.match(chatPage, /setRemoveOpen\(true\)/);
   assert.match(chatPage, /contacts\.forgetContact\(contact\.contactId\)/);
   assert.match(chatPage, /local chat history from this device/);
+  assert.doesNotMatch(chatPage, /Popconfirm/);
   assert.match(contactsSlice, /messagesByContactId/);
   assert.match(contactsSlice, /lastReadAtByContactId/);
   assert.doesNotMatch(contactsSlice, /WebSocket|fetch\(/);
