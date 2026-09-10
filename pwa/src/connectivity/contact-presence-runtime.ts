@@ -15,10 +15,9 @@ export const presenceAvailableTtlMs = 60_000;
 // One local runtime owns the only timer and sends at most one probe after the
 // preceding sealing/send attempt settles. The scan and cadence are bounded so
 // a large local contact list cannot become a relay polling queue.
-const backgroundProbeBatchGapMs = 1_000;
+const backgroundProbeGapMs = 350;
 const backgroundIdleDelayMs = 1_000;
 const maxContactsExaminedPerCycle = 64;
-const maxBackgroundProbesPerCycle = 4;
 
 interface PresenceRuntime {
   readonly storeApi: AppStoreApi;
@@ -100,27 +99,26 @@ async function run(runtime: PresenceRuntime): Promise<void> {
   const state = runtime.storeApi.getState();
   if (state.identity === null || state.attachStatus !== "attached") return;
   if (state.contacts.length === 0) return;
-  const contacts = nextEligibleContacts(state.contacts, state.contactPresenceById, runtime, now);
-  if (contacts.length > 0) {
-    // Bounded parallelism makes the initial contact-list projection prompt,
-    // while awaiting the whole batch preserves one non-overlapping timer
-    // lifecycle and avoids an accumulating timer/request backlog.
-    await Promise.all(contacts.map(async (contact) => probeContactPresence(runtime.storeApi, contact.contactId)));
-    schedule(runtime, backgroundProbeBatchGapMs);
+  const contact = nextEligibleContact(state.contacts, state.contactPresenceById, runtime, now);
+  if (contact !== null) {
+    // SameRelayTransportClient owns one ordered live WSS frame sequence. A
+    // presence runtime must therefore await this one probe before scheduling
+    // the next; parallel RENDEZVOUS/ENVELOPE emission can invalidate it.
+    await probeContactPresence(runtime.storeApi, contact.contactId);
+    schedule(runtime, backgroundProbeGapMs);
     return;
   }
   schedule(runtime, backgroundIdleDelayMs);
 }
 
-function nextEligibleContacts(
+function nextEligibleContact(
   contacts: readonly ContactSummary[],
   presenceById: Readonly<Record<string, { readonly lastProbeAt: number | null; readonly pendingPingId: string | null }>>,
   runtime: PresenceRuntime,
   now: number
-): readonly ContactSummary[] {
-  if (contacts.length === 0) return [];
+): ContactSummary | null {
+  if (contacts.length === 0) return null;
   const examined = Math.min(contacts.length, maxContactsExaminedPerCycle);
-  const selected: ContactSummary[] = [];
   for (let offset = 0; offset < examined; offset += 1) {
     const index = (runtime.cursor + offset) % contacts.length;
     const contact = contacts[index];
@@ -129,14 +127,11 @@ function nextEligibleContacts(
     const presence = presenceById[contact.contactId];
     if (presence?.pendingPingId !== null && presence?.pendingPingId !== undefined) continue;
     if (presence?.lastProbeAt !== null && presence?.lastProbeAt !== undefined && now - presence.lastProbeAt < presenceRenewIntervalMs) continue;
-    selected.push(contact);
-    if (selected.length === maxBackgroundProbesPerCycle) {
-      runtime.cursor = (index + 1) % contacts.length;
-      return selected;
-    }
+    runtime.cursor = (index + 1) % contacts.length;
+    return contact;
   }
   runtime.cursor = (runtime.cursor + examined) % contacts.length;
-  return selected;
+  return null;
 }
 
 function expireStalePresence(storeApi: AppStoreApi, now: number): void {
