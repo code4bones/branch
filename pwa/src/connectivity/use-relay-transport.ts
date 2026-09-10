@@ -10,6 +10,7 @@ import { orderedAttachmentRoutes } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
 import { receiveTypingControl } from "./typing-control.js";
 import { consumePendingContactDiscovery, startContactDiscoveryRuntime, stopContactDiscoveryRuntime } from "./contact-discovery-runtime.js";
+import { startContactPresenceRuntime, stopContactPresenceRuntime } from "./contact-presence-runtime.js";
 import { receiveContactCard, respondToContactProbe } from "./contact-card-control.js";
 import {
   attachRelaySession,
@@ -73,6 +74,7 @@ export function useRelayTransport(): void {
       clearReconnectTimer(lifecycle);
       stopHeartbeat();
       stopContactDiscoveryRuntime();
+      stopContactPresenceRuntime();
       clearAttachmentTransferController();
       disconnectRelaySession();
       lifecycle.currentKey = null;
@@ -137,6 +139,7 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
       storeApi.getState().setAttachStatus("attached", `Attached to relay ${String(index + 1)} of ${String(attachmentRoutes.length)}`);
       startHeartbeat(attachedClient);
       startContactDiscoveryRuntime(storeApi, attachedClient);
+      startContactPresenceRuntime(storeApi, attachedClient);
       // Install the tab-local file bridge at the same successful attachment
       // boundary as the other live adapters. Waiting for an unrelated inbound
       // payload made File intermittently appear unavailable after reload.
@@ -302,6 +305,7 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
     case "disconnected":
       stopHeartbeat();
       stopContactDiscoveryRuntime();
+      stopContactPresenceRuntime();
       clearAttachmentTransferController();
       state.recordTransportTrace(disconnectTraceDetail(event));
       state.clearAllContactTyping();

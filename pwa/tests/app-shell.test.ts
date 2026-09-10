@@ -111,6 +111,7 @@ const messageRequestsSlicePath = resolve(process.cwd(), "src/state/slices/messag
 const messageRequestsPagePath = resolve(process.cwd(), "src/pages/MessageRequestsPage.tsx");
 const contactPresencePath = resolve(process.cwd(), "src/app/ContactPresence.tsx");
 const contactPresenceSlicePath = resolve(process.cwd(), "src/state/slices/contact-presence-slice.ts");
+const contactPresenceRuntimePath = resolve(process.cwd(), "src/connectivity/contact-presence-runtime.ts");
 const messageLogPath = resolve(process.cwd(), "src/app/MessageLog.tsx");
 const messageComposerPath = resolve(process.cwd(), "src/app/MessageComposer.tsx");
 const typingControlPath = resolve(process.cwd(), "src/connectivity/typing-control.ts");
@@ -480,6 +481,7 @@ void test("PWA accepts only a matching pong into bounded in-memory contact prese
   store.getState().beginContactPresencePing("contact-1", pingId);
   const checking = store.getState().contactPresenceById["contact-1"];
   assert.equal(checking?.status, "checking");
+  assert.notEqual(checking.lastProbeAt, null);
   store.getState().acceptContactPresencePong("contact-1", Buffer.alloc(16, 22).toString("base64url"));
   assert.equal(store.getState().contactPresenceById["contact-1"]?.status, "checking");
   store.getState().acceptContactPresencePong("contact-1", pingId);
@@ -721,16 +723,26 @@ void test("PWA delivery receipts stay signed application controls and relay ACK 
   assert.match(conversations, /next === "read"/);
 });
 
-void test("PWA contact presence is an in-memory encrypted ping-pong result, not a relay status or message", async () => {
+void test("PWA contact presence is a bounded background encrypted ping-pong runtime, not a relay status or message", async () => {
   const component = await readFile(contactPresencePath, "utf8");
+  const runtime = await readFile(contactPresenceRuntimePath, "utf8");
   const slice = await readFile(contactPresenceSlicePath, "utf8");
   const sealAndSend = await readFile(sealAndSendPath, "utf8");
+  const transport = await readFile(useRelayTransportPath, "utf8");
   const chatListSidebar = await readFile(chatListSidebarPath, "utf8");
 
-  assert.match(component, /sendPresencePing/);
-  assert.match(component, /presenceRenewIntervalMs = 20_000/);
-  assert.match(component, /presencePingTimeoutMs = 6_000/);
-  assert.match(component, /expireContactPresencePing/);
+  assert.match(component, /probeContactPresence/);
+  assert.doesNotMatch(component, /setInterval|setTimeout|sendPresencePing/);
+  assert.match(runtime, /presenceRenewIntervalMs = 20_000/);
+  assert.match(runtime, /presencePingTimeoutMs = 6_000/);
+  assert.match(runtime, /startContactPresenceRuntime/);
+  assert.match(runtime, /stopContactPresenceRuntime/);
+  assert.match(runtime, /setTimeout/);
+  assert.doesNotMatch(runtime, /setInterval|IndexedDB|saveStored|fetch\(/);
+  assert.match(runtime, /await probeContactPresence/);
+  assert.match(runtime, /maxContactsExaminedPerCycle = 64/);
+  assert.match(transport, /startContactPresenceRuntime\(storeApi, attachedClient\)/);
+  assert.match(transport, /stopContactPresenceRuntime\(\)/);
   assert.match(component, /Contact online \(encrypted pong\)/);
   assert.match(component, /const status = presenceState\.status/);
   assert.doesNotMatch(component, /const status = canPing \? presenceState\.status : "unknown"/);
@@ -738,6 +750,7 @@ void test("PWA contact presence is an in-memory encrypted ping-pong result, not 
   assert.match(slice, /maxContactPresenceEntries = 64/);
   assert.match(slice, /acceptContactPresencePong/);
   assert.match(slice, /expireContactPresencePing/);
+  assert.match(slice, /lastProbeAt/);
   assert.doesNotMatch(slice, /storage|IndexedDB|saveStored|fetch\(|WebSocket/);
   assert.match(sealAndSend, /sendPresencePing/);
   assert.match(sealAndSend, /sendPresencePong/);

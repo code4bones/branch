@@ -1,79 +1,20 @@
 import { ReloadOutlined } from "@ant-design/icons";
 import { Badge, Button, Tooltip } from "antd";
-import { useCallback, useEffect } from "react";
 
-import { sendPresencePing } from "../connectivity/seal-and-send.js";
+import { probeContactPresence } from "../connectivity/contact-presence-runtime.js";
 import { hasAttachedRelaySession } from "../connectivity/relay-session.js";
 import type { ContactSummary } from "../state/slices/contacts-slice.js";
 import { useContactPresence, useContactTyping, useIdentity, useTransportStatus } from "../state/hooks.js";
+import { useAppStoreApi } from "../state/StoreProvider.js";
 import { ContactTyping } from "./ContactTyping.js";
 
-const presenceRenewIntervalMs = 20_000;
-const presencePingTimeoutMs = 6_000;
-const presenceAvailableTtlMs = 30_000;
-
 export function ContactPresence({ contact }: { readonly contact: ContactSummary }): React.JSX.Element | null {
+  const storeApi = useAppStoreApi();
   const identity = useIdentity();
   const transport = useTransportStatus();
-  const {
-    presence: presenceState,
-    beginContactPresencePing,
-    expireContactPresencePing,
-    expireContactPresence
-  } = useContactPresence(contact.contactId);
+  const { presence: presenceState } = useContactPresence(contact.contactId);
   const { expiresAt } = useContactTyping(contact.contactId);
   const canPing = transport.attachStatus === "attached" && identity.identity !== null && contact.peerId !== null && contact.hpkePublicKey !== null && hasAttachedRelaySession();
-
-  const ping = useCallback((): void => {
-    const localIdentity = identity.identity;
-    const peerId = contact.peerId;
-    const hpkePublicKey = contact.hpkePublicKey;
-    if (localIdentity === null || peerId === null || hpkePublicKey === null || !hasAttachedRelaySession()) {
-      return;
-    }
-    void sendPresencePing({
-      senderPeerId: localIdentity.peerId,
-      recipientPeerId: peerId,
-      recipientHpkePublicKey: hpkePublicKey
-    }).then((pingId) => {
-      beginContactPresencePing(contact.contactId, pingId);
-    }).catch(() => {
-      // No relay queue exists for presence controls. The previous result is
-      // allowed to expire naturally rather than being relabelled offline.
-    });
-  }, [beginContactPresencePing, contact.contactId, contact.hpkePublicKey, contact.peerId, identity.identity, transport.attachStatus]);
-
-  useEffect(() => {
-    if (!canPing) {
-      return undefined;
-    }
-    ping();
-    const timer = setInterval(ping, presenceRenewIntervalMs);
-    return () => { clearInterval(timer); };
-  }, [canPing, ping]);
-
-  useEffect(() => {
-    const pingId = presenceState.pendingPingId;
-    if (pingId === null) {
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      expireContactPresencePing(contact.contactId, pingId);
-    }, presencePingTimeoutMs);
-    return () => { clearTimeout(timer); };
-  }, [contact.contactId, expireContactPresencePing, presenceState.pendingPingId]);
-
-  useEffect(() => {
-    if (presenceState.status === "unknown") {
-      return undefined;
-    }
-    const ttl = presenceState.status === "checking" ? presencePingTimeoutMs : presenceAvailableTtlMs;
-    const delay = Math.max(0, ttl - (Date.now() - presenceState.updatedAt));
-    const timer = setTimeout(() => {
-      expireContactPresence(contact.contactId, presenceState.updatedAt);
-    }, delay);
-    return () => { clearTimeout(timer); };
-  }, [contact.contactId, expireContactPresence, presenceState.status, presenceState.updatedAt]);
 
   if (contact.peerId === null || contact.hpkePublicKey === null) {
     return null;
@@ -102,7 +43,7 @@ export function ContactPresence({ contact }: { readonly contact: ContactSummary 
           disabled={!canPing}
           icon={<ReloadOutlined />}
           loading={status === "checking"}
-          onClick={ping}
+          onClick={() => { void probeContactPresence(storeApi, contact.contactId); }}
           size="small"
           type="text"
         />

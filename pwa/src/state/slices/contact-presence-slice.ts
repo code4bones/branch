@@ -9,13 +9,16 @@ export type ContactPresenceStatus = "unknown" | "checking" | "available";
 export interface ContactPresence {
   readonly status: ContactPresenceStatus;
   readonly updatedAt: number;
+  // This is only a local scheduling timestamp. It is never a presence claim,
+  // stored contact field, relay input, or message metadata.
+  readonly lastProbeAt: number | null;
   readonly pendingPingId: string | null;
 }
 
 export interface ContactPresenceSlice {
   readonly contactPresenceById: Readonly<Record<string, ContactPresence>>;
-  readonly beginContactPresencePing: (contactId: string, pingId: string) => void;
-  readonly acceptContactPresencePong: (contactId: string, pingId: string) => void;
+  readonly beginContactPresencePing: (contactId: string, pingId: string, now?: number) => void;
+  readonly acceptContactPresencePong: (contactId: string, pingId: string, now?: number) => void;
   readonly expireContactPresencePing: (contactId: string, pingId: string) => void;
   readonly expireContactPresence: (contactId: string, updatedAt: number) => void;
 }
@@ -25,8 +28,7 @@ export interface ContactPresenceSlice {
 // user cycles through many contacts in one long-running tab.
 export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactPresenceSlice> = (set) => ({
   contactPresenceById: {},
-  beginContactPresencePing: (contactId, pingId) => {
-    const updatedAt = Date.now();
+  beginContactPresencePing: (contactId, pingId, now = Date.now()) => {
     set((state) => {
       const current = state.contactPresenceById[contactId];
       const isStillAvailable = current?.status === "available";
@@ -38,14 +40,15 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
           // refreshes it, while a missed pong simply clears this probe.
           [contactId]: {
             status: isStillAvailable ? "available" : "checking",
-            updatedAt: isStillAvailable ? current.updatedAt : updatedAt,
+            updatedAt: isStillAvailable ? current.updatedAt : now,
+            lastProbeAt: now,
             pendingPingId: pingId
           }
         })
       };
     });
   },
-  acceptContactPresencePong: (contactId, pingId) => {
+  acceptContactPresencePong: (contactId, pingId, now = Date.now()) => {
     set((state) => {
       const current = state.contactPresenceById[contactId];
       if (current?.pendingPingId !== pingId) {
@@ -54,7 +57,7 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
       return {
         contactPresenceById: {
           ...state.contactPresenceById,
-          [contactId]: { status: "available", updatedAt: Date.now(), pendingPingId: null }
+          [contactId]: { ...current, status: "available", updatedAt: now, pendingPingId: null }
         }
       };
     });
@@ -68,7 +71,9 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
       return {
         contactPresenceById: {
           ...state.contactPresenceById,
-          [contactId]: { ...current, pendingPingId: null }
+          [contactId]: current.status === "checking"
+            ? { ...current, status: "unknown", updatedAt: Date.now(), pendingPingId: null }
+            : { ...current, pendingPingId: null }
         }
       };
     });
@@ -82,7 +87,7 @@ export const createContactPresenceSlice: StateCreator<AppStore, [], [], ContactP
       return {
         contactPresenceById: {
           ...state.contactPresenceById,
-          [contactId]: { status: "unknown", updatedAt: Date.now(), pendingPingId: null }
+          [contactId]: { ...current, status: "unknown", updatedAt: Date.now(), pendingPingId: null }
         }
       };
     });

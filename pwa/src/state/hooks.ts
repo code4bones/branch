@@ -104,21 +104,15 @@ export function useContactDiscoveries(): ContactDiscoveryControls {
   };
 }
 
-const unknownContactPresence: ContactPresence = { status: "unknown", updatedAt: 0, pendingPingId: null };
+const unknownContactPresence: ContactPresence = { status: "unknown", updatedAt: 0, lastProbeAt: null, pendingPingId: null };
 
 export interface ContactPresenceControls {
   readonly presence: ContactPresence;
-  readonly beginContactPresencePing: (contactId: string, pingId: string) => void;
-  readonly expireContactPresencePing: (contactId: string, pingId: string) => void;
-  readonly expireContactPresence: (contactId: string, updatedAt: number) => void;
 }
 
 export function useContactPresence(contactId: string): ContactPresenceControls {
   const presence = useAppStore((state) => state.contactPresenceById[contactId] ?? unknownContactPresence);
-  const beginContactPresencePing = useAppStore((state) => state.beginContactPresencePing);
-  const expireContactPresencePing = useAppStore((state) => state.expireContactPresencePing);
-  const expireContactPresence = useAppStore((state) => state.expireContactPresence);
-  return { presence, beginContactPresencePing, expireContactPresencePing, expireContactPresence };
+  return { presence };
 }
 
 export interface ContactTypingControls {
