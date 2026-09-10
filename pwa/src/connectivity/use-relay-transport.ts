@@ -408,6 +408,13 @@ async function handleIncomingEnvelope(
       state.recordTransportTrace(`attachment: inbound ${attachment.kind}`);
       return;
     }
+    // Do not turn arbitrary unknown application bytes into a telemetry
+    // surface. These three outcomes can arise only after attachment routing
+    // reached a concrete local admission decision and are safe, bounded
+    // diagnostics for a missing consent card.
+    if (attachment.reason === "invalid_signature" || attachment.reason === "unknown_peer" || attachment.reason === "busy") {
+      state.recordTransportTrace(`attachment: ignored ${attachment.reason}`);
+    }
     const disposition = classifyIncomingMessage({ plaintext, senderPeerId, knownContactId });
     if (disposition.kind === "known_contact_message") {
       state.recordTransportTrace("incoming envelope: message");

@@ -1,4 +1,4 @@
-import { InboxOutlined, RadarChartOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
+import { InboxOutlined, PaperClipOutlined, RadarChartOutlined, SettingOutlined, UserAddOutlined } from "@ant-design/icons";
 import { Badge, Button, Empty, Input, List, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -8,7 +8,7 @@ import { ContactTyping } from "./ContactTyping.js";
 import { formatChatListTimestamp } from "./format-time.js";
 import { chatPath, ECHO_PATH, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
-import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useEchoPreview, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
+import { useChatList, useContactDiscoveries, useContactPresence, useContactTyping, useContacts, useEchoPreview, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus } from "../state/hooks.js";
 import { parseBranchID } from "@code4bones/branch-core";
 
 export function ChatListSidebar(): React.JSX.Element {
@@ -100,6 +100,7 @@ export function ChatListSidebar(): React.JSX.Element {
                   <span className="pwa-chat-list-contact-name">
                     <span className="pwa-chat-list-name">{entry.contact.displayName}</span>
                     <ContactOnlineBadge contactId={entry.contact.contactId} />
+                    {entry.contact.peerId !== null && <IncomingAttachmentBadge peerId={entry.contact.peerId} />}
                   </span>
                   {entry.lastMessage !== null && (
                     <span className="pwa-chat-list-time">{formatChatListTimestamp(entry.lastMessage.sentAt)}</span>
@@ -135,6 +136,23 @@ function ContactOnlineBadge({ contactId }: { readonly contactId: string }): Reac
     <Tooltip title="Online (encrypted pong)">
       <span aria-label="Online (encrypted pong)" className="pwa-contact-online-badge" role="img">
         <Badge status="success" />
+      </span>
+    </Tooltip>
+  );
+}
+
+// An offer is live, consent-gated metadata, not a chat message. Keep it
+// discoverable even when its chat is not the currently open detail pane;
+// selecting the chat is still required before the user can accept or reject.
+function IncomingAttachmentBadge({ peerId }: { readonly peerId: string }): React.JSX.Element | null {
+  const { offer } = useInboundAttachmentOffer(peerId);
+  if (offer === null) {
+    return null;
+  }
+  return (
+    <Tooltip title="Incoming file offer — open this chat">
+      <span aria-label="Incoming file offer" className="pwa-incoming-attachment-badge" role="img">
+        <Badge dot><PaperClipOutlined /></Badge>
       </span>
     </Tooltip>
   );

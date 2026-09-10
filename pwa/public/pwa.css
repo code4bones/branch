@@ -183,6 +183,14 @@ body {
   height: 8px;
 }
 
+.pwa-incoming-attachment-badge {
+  color: #57d2c6;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1;
+}
+
 .pwa-echo-pinned {
   display: flex;
   align-items: center;
