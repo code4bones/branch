@@ -48,6 +48,7 @@ import {
 } from "../src/connectivity/message-payload.js";
 import { createAppStore } from "../src/state/store.js";
 import { groupMessagesByContactId, orderConversationMessages } from "../src/state/slices/conversations-slice.js";
+import { autoPresentedIncomingMessage } from "../src/app/MessageLog.js";
 import { orderedAttachmentRoutes } from "../src/connectivity/relay-route-selection.js";
 
 const indexHtmlPath = resolve(process.cwd(), "public/index.html");
@@ -86,6 +87,8 @@ const databasePath = resolve(process.cwd(), "src/storage/database.ts");
 const contactsStorePath = resolve(process.cwd(), "src/storage/contacts-store.ts");
 const messagesStorePath = resolve(process.cwd(), "src/storage/messages-store.ts");
 const readStateStorePath = resolve(process.cwd(), "src/storage/read-state-store.ts");
+const receiptPolicyStorePath = resolve(process.cwd(), "src/storage/receipt-policy-store.ts");
+const receiptPolicySlicePath = resolve(process.cwd(), "src/state/slices/receipt-policy-slice.ts");
 const conversationsBootstrapPath = resolve(process.cwd(), "src/storage/use-conversations-bootstrap.ts");
 const contactsSlicePath = resolve(process.cwd(), "src/state/slices/contacts-slice.ts");
 const conversationsSlicePath = resolve(process.cwd(), "src/state/slices/conversations-slice.ts");
@@ -105,6 +108,7 @@ const contactPresencePath = resolve(process.cwd(), "src/app/ContactPresence.tsx"
 const contactPresenceSlicePath = resolve(process.cwd(), "src/state/slices/contact-presence-slice.ts");
 const messageLogPath = resolve(process.cwd(), "src/app/MessageLog.tsx");
 const typingControlPath = resolve(process.cwd(), "src/connectivity/typing-control.ts");
+const deliveryReceiptControlPath = resolve(process.cwd(), "src/connectivity/delivery-receipt-control.ts");
 const contactTypingSlicePath = resolve(process.cwd(), "src/state/slices/contact-typing-slice.ts");
 const relayRouteSelectionPath = resolve(process.cwd(), "src/connectivity/relay-route-selection.ts");
 const pwaReleasePath = resolve(process.cwd(), "src/app/pwa-release.ts");
@@ -504,6 +508,103 @@ void test("PWA conversation ordering is chronological and stable across hydratio
   assert.deepEqual(store.getState().messagesByContactId["contact-1"]?.map((message) => message.messageId), ["a", "b", "z"]);
 });
 
+void test("outgoing delivery state advances monotonically while a valid receipt may supersede local unavailability", () => {
+  const store = createAppStore();
+  const outgoing = {
+    messageId: "outgoing-1",
+    contactId: "contact-1",
+    direction: "outgoing" as const,
+    body: "hello",
+    sentAt: 1,
+    deliveryState: "pending" as const
+  };
+  const incoming = {
+    messageId: "incoming-1",
+    contactId: "contact-1",
+    direction: "incoming" as const,
+    body: "hello back",
+    sentAt: 2,
+    deliveryState: "received" as const
+  };
+  store.getState().appendMessage(outgoing);
+  store.getState().appendMessage(incoming);
+
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-1", "read");
+  assert.equal(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "outgoing-1")?.deliveryState, "pending");
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-1", "relayed");
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-1", "delivered");
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-1", "read");
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-1", "relayed");
+  assert.equal(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "outgoing-1")?.deliveryState, "read");
+
+  store.getState().setMessageDeliveryState("contact-1", "incoming-1", "delivered");
+  assert.equal(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "incoming-1")?.deliveryState, "received");
+
+  const unavailable = { ...outgoing, messageId: "outgoing-2" };
+  store.getState().appendMessage(unavailable);
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-2", "unavailable");
+  store.getState().setMessageDeliveryState("contact-1", "outgoing-2", "delivered");
+  assert.equal(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "outgoing-2")?.deliveryState, "delivered");
+});
+
+void test("only a new incoming message auto-presented at the bottom is reported to read-receipt UI", () => {
+  const incoming = {
+    messageId: "incoming-1",
+    contactId: "contact-1",
+    direction: "incoming" as const,
+    body: "hello",
+    sentAt: 1,
+    deliveryState: "received" as const
+  };
+  assert.equal(autoPresentedIncomingMessage({
+    newest: incoming,
+    previousNewestId: null,
+    openedDifferentConversation: false,
+    wasAtBottom: true
+  })?.messageId, incoming.messageId);
+  assert.equal(autoPresentedIncomingMessage({
+    newest: incoming,
+    previousNewestId: incoming.messageId,
+    openedDifferentConversation: false,
+    wasAtBottom: true
+  }), null);
+  assert.equal(autoPresentedIncomingMessage({
+    newest: incoming,
+    previousNewestId: null,
+    openedDifferentConversation: false,
+    wasAtBottom: false
+  }), null);
+  assert.equal(autoPresentedIncomingMessage({
+    newest: { ...incoming, direction: "outgoing" },
+    previousNewestId: null,
+    openedDifferentConversation: true,
+    wasAtBottom: true
+  }), null);
+});
+
+void test("read-receipt policy defaults off and has a dedicated user-owned persistence boundary", async () => {
+  const store = createAppStore();
+  assert.equal(store.getState().sendReadReceipts, false);
+  store.getState().setSendReadReceipts(true);
+  assert.equal(store.getState().sendReadReceipts, true);
+
+  const database = await readFile(databasePath, "utf8");
+  const policyStore = await readFile(receiptPolicyStorePath, "utf8");
+  const policySlice = await readFile(receiptPolicySlicePath, "utf8");
+  const settings = await readFile(settingsPagePath, "utf8");
+  const hooks = await readFile(hooksPath, "utf8");
+
+  assert.match(database, /const DATABASE_VERSION = 4/);
+  assert.match(database, /RECEIPT_POLICY_STORE/);
+  assert.match(policyStore, /loadStoredReadReceiptPolicy/);
+  assert.match(policyStore, /saveStoredReadReceiptPolicy/);
+  assert.match(policySlice, /sendReadReceipts: false/);
+  assert.match(policySlice, /saveStoredReadReceiptPolicy/);
+  assert.match(settings, /Send read receipts/);
+  assert.match(settings, /best-effort encrypted Read receipt only after a message is shown/);
+  assert.match(hooks, /export function useReceiptPolicy/);
+});
+
 void test("PWA bounds local message requests and promotes an accepted request into a reply-capable contact", () => {
   const store = createAppStore();
   const senderPeerId = Buffer.alloc(32, 11).toString("base64url");
@@ -548,6 +649,24 @@ void test("PWA transport keeps relay forwarding distinct from unknown-sender pre
   assert.match(requestsSlice, /acceptMessageRequest/);
   assert.match(requestsPage, /Accept/);
   assert.match(app, /MessageRequestsPage/);
+});
+
+void test("PWA delivery receipts stay signed application controls and relay ACK remains only Relayed", async () => {
+  const receiptControl = await readFile(deliveryReceiptControlPath, "utf8");
+  const relayTransport = await readFile(useRelayTransportPath, "utf8");
+  const conversations = await readFile(conversationsSlicePath, "utf8");
+
+  assert.match(receiptControl, /deliveryReceiptControlKind = "branch\.pwa\.receipt\/0\.draft"/);
+  assert.match(receiptControl, /maximumTTLms: deliveryReceiptControlTTLms/);
+  assert.match(receiptControl, /authentication: "ed25519"/);
+  assert.match(receiptControl, /rejectUnknownEntries\(map, \["receipt_kind", "target_delivery_id"\]\)/);
+  assert.match(receiptControl, /envelope\.senderPeerId !== options\.senderPeerId/);
+  assert.match(receiptControl, /sendApplicationControl/);
+  assert.match(relayTransport, /receiveDeliveryReceipt/);
+  assert.match(relayTransport, /sendDeliveryReceipt/);
+  assert.match(relayTransport, /case "peer_receipt"[\s\S]{0,220}return;/);
+  assert.match(conversations, /next === "delivered"/);
+  assert.match(conversations, /next === "read"/);
 });
 
 void test("PWA contact presence is an in-memory encrypted ping-pong result, not a relay status or message", async () => {
@@ -926,12 +1045,13 @@ void test("contacts, messages, read state, and inbound requests persist through 
   const hydrationSlice = await readFile(hydrationSlicePath, "utf8");
   const requireIdentity = await readFile(requireIdentityPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 3/);
+  assert.match(database, /const DATABASE_VERSION = 4/);
   assert.match(database, /IDENTITY_STORE/);
   assert.match(database, /CONTACTS_STORE/);
   assert.match(database, /MESSAGES_STORE/);
   assert.match(database, /READ_STATE_STORE/);
   assert.match(database, /MESSAGE_REQUESTS_STORE/);
+  assert.match(database, /RECEIPT_POLICY_STORE/);
   assert.match(contactsStore, /openDatabase/);
   assert.match(messagesStore, /openDatabase/);
   assert.match(readStateStore, /openDatabase/);
@@ -948,6 +1068,7 @@ void test("contacts, messages, read state, and inbound requests persist through 
   assert.match(contactsSlice, /deleteStoredReadState/);
   assert.match(messagesStore, /index\("byContactId"\)\.openCursor\(IDBKeyRange\.only\(contactId\)\)/);
   assert.match(readStateStore, /deleteStoredReadState/);
+  assert.match(await readFile(receiptPolicyStorePath, "utf8"), /openDatabase/);
   assert.match(conversationsSlice, /saveStoredMessage/);
   assert.match(readStateSlice, /saveStoredReadState/);
   assert.match(hydrationSlice, /conversationsLoaded: false/);

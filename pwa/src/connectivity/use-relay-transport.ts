@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { openIncomingEnvelope } from "./open-envelope.js";
 import { receiveApplicationCapabilities } from "./application-capabilities-control.js";
 import { attachmentTransferController, clearAttachmentTransferController } from "./attachment-runtime.js";
+import { receiveDeliveryReceipt, sendDeliveryReceipt } from "./delivery-receipt-control.js";
 import { classifyIncomingMessage } from "./incoming-message.js";
 import { orderedAttachmentRoutes } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
@@ -14,6 +15,7 @@ import {
   contactIdForDelivery,
   disconnectRelaySession,
   getRelaySessionClient,
+  hasAttachedRelaySession,
   notifyLiveForwardedAck,
   reserveIncomingDelivery,
   takeTrackedDeliveries
@@ -357,6 +359,19 @@ async function handleIncomingEnvelope(
       state.recordTransportTrace(`application capabilities: ${applicationCapabilities.outcome ?? "rejected"}`);
       return;
     }
+    const receipt = await receiveDeliveryReceipt({
+      plaintext,
+      localPeerId: state.identity.peerId,
+      senderPeerId,
+      knownContactId
+    });
+    if (receipt.handled) {
+      state.recordTransportTrace(`delivery receipt: ${receipt.outcome ?? "rejected"}`);
+      if (receipt.outcome === "accepted" && receipt.receipt !== undefined && knownContactId !== null) {
+        state.setMessageDeliveryState(knownContactId, receipt.receipt.targetDeliveryId, receipt.receipt.kind);
+      }
+      return;
+    }
     const attachment = await attachmentTransferController(storeApi).receive(senderPeerId, plaintext);
     if (attachment.status === "handled") {
       state.recordTransportTrace(`attachment: inbound ${attachment.kind}`);
@@ -377,6 +392,22 @@ async function handleIncomingEnvelope(
         sentAt: Date.now(),
         deliveryState: "received"
       });
+      if (knownContact !== null && knownContact.hpkePublicKey !== null) {
+        void sendDeliveryReceipt({
+          kind: "delivered",
+          targetDeliveryId: deliveryId,
+          senderPeerId: state.identity.peerId,
+          recipientPeerId: senderPeerId,
+          recipientHpkePublicKey: knownContact.hpkePublicKey,
+          attached: hasAttachedRelaySession()
+        }).then((result) => {
+          state.recordTransportTrace(`delivery receipt: delivered_${result}`);
+        }).catch(() => {
+          // A receipt is one best-effort live control; it has no retry queue
+          // and its failure creates no negative claim about the message.
+          state.recordTransportTrace("delivery receipt: delivered_failed");
+        });
+      }
       return;
     }
     if (disposition.kind === "known_contact_presence_ping") {

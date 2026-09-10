@@ -11,11 +11,13 @@ import { InboundAttachmentOffer } from "../app/InboundAttachmentOffer.js";
 import { MessageComposer } from "../app/MessageComposer.js";
 import { MessageLog } from "../app/MessageLog.js";
 import { peerSupportsChatText, sendApplicationCapabilities } from "../connectivity/application-capabilities-control.js";
+import { sendDeliveryReceipt } from "../connectivity/delivery-receipt-control.js";
 import { getRelaySessionClient, hasAttachedRelaySession } from "../connectivity/relay-session.js";
 import { createDeliveryID, sealAndSendApplicationTextMessage, sealAndSendMessage } from "../connectivity/seal-and-send.js";
 import { sendTypingControl } from "../connectivity/typing-control.js";
 import { CHATS_PATH } from "../app/paths.js";
-import { useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useTransportStatus } from "../state/hooks.js";
+import { useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
+import type { MessageSummary } from "../state/slices/conversations-slice.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 
 export function ChatPage(): React.JSX.Element {
@@ -26,6 +28,7 @@ export function ChatPage(): React.JSX.Element {
   const conversation = useConversation(resolvedContactId);
   const identity = useIdentity();
   const transport = useTransportStatus();
+  const receiptPolicy = useReceiptPolicy();
   const storeApi = useAppStoreApi();
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
@@ -165,6 +168,26 @@ export function ChatPage(): React.JSX.Element {
     });
   };
 
+  const handleIncomingMessageAutoPresented = (message: MessageSummary): void => {
+    if (!receiptPolicy.sendReadReceipts || identity.identity === null || peerId === null || hpkePublicKey === null || message.direction !== "incoming") {
+      return;
+    }
+    void sendDeliveryReceipt({
+      kind: "read",
+      targetDeliveryId: message.messageId,
+      senderPeerId: identity.identity.peerId,
+      recipientPeerId: peerId,
+      recipientHpkePublicKey: hpkePublicKey,
+      attached: hasAttachedRelaySession()
+    }).then((result) => {
+      storeApi.getState().recordTransportTrace(`delivery receipt: read_${result}`);
+    }).catch(() => {
+      // Read is a best-effort live control. It is never queued or retried
+      // merely because a visible message's relay path is no longer live.
+      storeApi.getState().recordTransportTrace("delivery receipt: read_failed");
+    });
+  };
+
   return (
     <section className="pwa-chat" aria-label={`Chat with ${contact.displayName}`}>
       <DetailHeader
@@ -197,7 +220,7 @@ export function ChatPage(): React.JSX.Element {
       />
       {isReachable && <ContactRouteLookup peerId={peerId} />}
       <InboundAttachmentOffer offer={inboundAttachmentOffer.offer} onDecision={(decision) => { void inboundAttachmentOffer.respond(decision); }} />
-      <MessageLog contactId={contact.contactId} emptyDescription="No messages yet." messages={conversation.messages} />
+      <MessageLog contactId={contact.contactId} emptyDescription="No messages yet." messages={conversation.messages} onIncomingMessageAutoPresented={handleIncomingMessageAutoPresented} />
       {sendError !== null && <div className="pwa-chat-error">{sendError}</div>}
       <MessageComposer
         onChange={setDraft}

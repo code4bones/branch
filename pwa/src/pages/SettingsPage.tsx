@@ -1,17 +1,18 @@
 import { CopyOutlined, SaveOutlined } from "@ant-design/icons";
-import { Button, Input, Segmented, Space, Tag, Typography } from "antd";
+import { Button, Input, Segmented, Space, Switch, Tag, Typography } from "antd";
 import { useState } from "react";
 
 import { DetailHeader } from "../app/DetailHeader.js";
 import { pwaReleaseVersion } from "../app/pwa-release.js";
 import { useBranchID } from "../identity/use-branch-id.js";
 import { updateLocalIdentityDisplayName } from "../identity/create-local-identity.js";
-import { useIdentity, useThemeControls, useTransportStatus } from "../state/hooks.js";
+import { useIdentity, useReceiptPolicy, useThemeControls, useTransportStatus } from "../state/hooks.js";
 import type { ThemeMode } from "../state/slices/ui-slice.js";
 
 export function SettingsPage(): React.JSX.Element {
   const identity = useIdentity();
   const themeControls = useThemeControls();
+  const receiptPolicy = useReceiptPolicy();
   const transport = useTransportStatus();
   const branchID = useBranchID(identity.identity?.peerId ?? null);
   const [copied, setCopied] = useState(false);
@@ -132,6 +133,23 @@ export function SettingsPage(): React.JSX.Element {
               options={["dark", "light"]}
               value={themeControls.mode}
             />
+          </dd>
+        </div>
+        <div>
+          <dt>Read receipts</dt>
+          <dd>
+            <Space direction="vertical" size={2}>
+              <Switch
+                aria-label="Send read receipts"
+                checked={receiptPolicy.sendReadReceipts}
+                checkedChildren="On"
+                onChange={receiptPolicy.setSendReadReceipts}
+                unCheckedChildren="Off"
+              />
+              <Typography.Text type="secondary">
+                Send a best-effort encrypted Read receipt only after a message is shown in this active chat.
+              </Typography.Text>
+            </Space>
           </dd>
         </div>
       </dl>

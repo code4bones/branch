@@ -499,6 +499,34 @@ presence compatibility payloads cannot establish Delivered or Read. Controls
 are best-effort live traffic only: relays never retain, replay, index, or use
 them to create a mailbox or store-and-forward path.
 
+D-BRANCH-060 fixes the receipt descriptor for D-BRANCH-055. A receipt is a
+signed `branch.application-control/0.draft` envelope whose `kind` is
+`branch.pwa.receipt/0.draft`, authenticated with the existing
+`branch.application-control.signature/0.draft` domain. Its deterministic-CBOR
+body is the closed map `{receipt_kind, target_delivery_id}`: `receipt_kind` is
+exactly `delivered` or `read`, and `target_delivery_id` is exactly 16 bytes.
+The body is at most 64 bytes; unknown fields and non-canonical encodings are
+rejected before signature effects. A recipient binds the envelope sender to the
+route sender that supplied its HPKE AAD as well as to its known-contact key.
+Consequently the signature binds the random control id, receipt kind, target
+delivery id, issue/expiry, and sender/recipient peer ids; no relay field or
+unsigned beta payload can substitute for any of those values. The descriptor
+allows a maximum five-minute TTL and the receiver deduplicates accepted control
+ids only in a bounded, volatile expiry window.
+
+A valid `delivered` receipt may advance only an existing outgoing target already
+labelled Relayed or Unavailable to Delivered. A valid `read` receipt may advance only a target
+already Delivered or Read. A valid receipt targeting an `Unavailable` outgoing
+message may still advance it to Delivered (and then Read): Unavailable records
+a local failed live attempt, whereas a valid receipt is positive endpoint
+evidence. A transport ACK can never downgrade or upgrade a receipt state. A
+client emits Delivered only after it has opened and semantically
+validated the target message; it emits Read only after that inbound message is
+rendered in the active conversation and only under its local read-receipt
+policy. Receipt absence, expiry, rejection, or a failed live send is Unknown,
+not an offline, unread, or delivery claim. A client never queues or retries a
+receipt after its live send fails.
+
 ### Extensible application payload and attachment boundary
 
 D-BRANCH-057 introduces the pre-publication, endpoint-only

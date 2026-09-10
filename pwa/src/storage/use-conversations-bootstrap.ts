@@ -4,6 +4,7 @@ import { loadStoredContacts, saveStoredContact } from "./contacts-store.js";
 import { loadStoredMessages, saveStoredMessage } from "./messages-store.js";
 import { loadStoredMessageRequests } from "./message-requests-store.js";
 import { loadStoredReadState } from "./read-state-store.js";
+import { loadStoredReadReceiptPolicy } from "./receipt-policy-store.js";
 import { demoContacts, demoMessages } from "../state/demo-seed.js";
 import { groupMessagesByContactId } from "../state/slices/conversations-slice.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
@@ -19,11 +20,12 @@ export function useConversationsBootstrap(): void {
 
   useEffect(() => {
     void (async () => {
-      const [contacts, messages, readState, messageRequests] = await Promise.all([
+      const [contacts, messages, readState, messageRequests, sendReadReceipts] = await Promise.all([
         loadStoredContacts(),
         loadStoredMessages(),
         loadStoredReadState(),
-        loadStoredMessageRequests()
+        loadStoredMessageRequests(),
+        loadStoredReadReceiptPolicy()
       ]);
 
       if (contacts.length === 0 && messages.length === 0) {
@@ -39,6 +41,10 @@ export function useConversationsBootstrap(): void {
           incomingMessageRequests: messageRequests
         });
       }
+
+      // The first-run seed branch above still needs to hydrate the explicit
+      // local policy (which defaults false when no stored value exists).
+      storeApi.setState({ sendReadReceipts });
 
       storeApi.getState().setConversationsLoaded();
     })().catch(() => {

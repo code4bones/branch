@@ -10,6 +10,7 @@ import { createInboundAttachmentOffersSlice, type InboundAttachmentOffersSlice }
 import { createIdentitySlice, type IdentitySlice } from "./slices/identity-slice.js";
 import { createMessageRequestsSlice, type MessageRequestsSlice } from "./slices/message-requests-slice.js";
 import { createReadStateSlice, type ReadStateSlice } from "./slices/read-state-slice.js";
+import { createReceiptPolicySlice, type ReceiptPolicySlice } from "./slices/receipt-policy-slice.js";
 import { createTransportSlice, type TransportSlice } from "./slices/transport-slice.js";
 import { createUiSlice, type UiSlice } from "./slices/ui-slice.js";
 
@@ -25,6 +26,7 @@ export type AppStore = UiSlice &
   InboundAttachmentOffersSlice &
   MessageRequestsSlice &
   ReadStateSlice &
+  ReceiptPolicySlice &
   ConnectionSlice &
   TransportSlice &
   HydrationSlice;
@@ -42,6 +44,7 @@ export function createAppStore(): AppStoreApi {
     ...createInboundAttachmentOffersSlice(...creator),
     ...createMessageRequestsSlice(...creator),
     ...createReadStateSlice(...creator),
+    ...createReceiptPolicySlice(...creator),
     ...createConnectionSlice(...creator),
     ...createTransportSlice(...creator),
     ...createHydrationSlice(...creator)

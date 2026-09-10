@@ -108,6 +108,19 @@ export function useConversation(contactId: string | null): ConversationControls 
   return { messages, appendMessage, setMessageDeliveryState };
 }
 
+export interface ReceiptPolicyControls {
+  readonly sendReadReceipts: boolean;
+  readonly setSendReadReceipts: (enabled: boolean) => void;
+}
+
+// This preference is deliberately local and opt-in. Receipt-control adapters
+// may read it, but changing it never sends a network message by itself.
+export function useReceiptPolicy(): ReceiptPolicyControls {
+  const sendReadReceipts = useAppStore((state) => state.sendReadReceipts);
+  const setSendReadReceipts = useAppStore((state) => state.setSendReadReceipts);
+  return { sendReadReceipts, setSendReadReceipts };
+}
+
 export interface InboundAttachmentOfferControls {
   readonly offer: InboundAttachmentOffer | null;
   readonly respond: (decision: InboundAttachmentOfferDecision) => Promise<InboundAttachmentOfferResponse>;

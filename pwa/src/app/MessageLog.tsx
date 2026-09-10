@@ -6,10 +6,14 @@ import type { MessageDeliveryState, MessageSummary } from "../state/slices/conve
 
 const bottomThresholdPx = 48;
 
-export function MessageLog({ contactId, messages, emptyDescription }: {
+export function MessageLog({ contactId, messages, emptyDescription, onIncomingMessageAutoPresented }: {
   readonly contactId: string;
   readonly messages: readonly MessageSummary[];
   readonly emptyDescription: string;
+  // This reports only the newest incoming message that this log has actually
+  // auto-scrolled into the active view. It intentionally does not fire for an
+  // unread message while the reader has scrolled away from the bottom.
+  readonly onIncomingMessageAutoPresented?: (message: MessageSummary) => void;
 }): React.JSX.Element {
   const logRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -50,14 +54,23 @@ export function MessageLog({ contactId, messages, emptyDescription }: {
       messages.length > was.count || newest?.messageId !== was.newestId
     );
 
+    const autoPresentedIncoming = autoPresentedIncomingMessage({
+      newest,
+      previousNewestId: was.newestId,
+      openedDifferentConversation,
+      wasAtBottom: stickToBottom.current
+    });
     if (openedDifferentConversation || stickToBottom.current || newest?.direction === "outgoing") {
       scrollToLatest();
+      if (autoPresentedIncoming !== null) {
+        onIncomingMessageAutoPresented?.(autoPresentedIncoming);
+      }
     } else if (receivedNewMessage) {
       setShowLatest(true);
     }
 
     previous.current = { contactId, count: messages.length, newestId: newest?.messageId ?? null };
-  }, [contactId, messages.length, newest?.direction, newest?.messageId, scrollToLatest]);
+  }, [contactId, messages.length, newest, onIncomingMessageAutoPresented, scrollToLatest]);
 
   return (
     <div className="pwa-chat-log-container">
@@ -87,6 +100,21 @@ export function MessageLog({ contactId, messages, emptyDescription }: {
       )}
     </div>
   );
+}
+
+export function autoPresentedIncomingMessage(options: {
+  readonly newest: MessageSummary | null;
+  readonly previousNewestId: string | null;
+  readonly openedDifferentConversation: boolean;
+  readonly wasAtBottom: boolean;
+}): MessageSummary | null {
+  if (options.newest === null || options.newest.direction !== "incoming") {
+    return null;
+  }
+  if (options.newest.messageId === options.previousNewestId) {
+    return null;
+  }
+  return options.openedDifferentConversation || options.wasAtBottom ? options.newest : null;
 }
 
 function ChatBubble({ message }: { readonly message: MessageSummary }): React.JSX.Element {
@@ -138,8 +166,12 @@ function formatDeliveryState(state: MessageDeliveryState): string {
       return "Sending";
     case "relayed":
       return "Relayed";
-    case "received":
+    case "delivered":
       return "Delivered";
+    case "read":
+      return "Read";
+    case "received":
+      return "Received (legacy)";
     case "unavailable":
       return "Unavailable";
   }
