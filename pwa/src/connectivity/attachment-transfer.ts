@@ -57,6 +57,10 @@ export interface AttachmentControllerEvent {
   readonly peerId: string;
   readonly direction: AttachmentDirection;
   readonly reason: AttachmentControllerReason;
+  // Presentation metadata is exposed only with a terminal live transfer
+  // event. It is never logged by the controller runtime or persisted here.
+  readonly fileName?: string;
+  readonly byteCount?: number;
 }
 
 /**
@@ -525,16 +529,18 @@ export class AttachmentTransferController {
   #endInbound(peerId: string, reason: AttachmentControllerReason): void {
     const inbound = this.#inbound.get(peerId);
     if (inbound === undefined) return;
+    const manifest = inbound.transfer.manifest;
     this.#ports.timers.cancel(inbound.expiry);
     inbound.transfer.abort();
     inbound.registry.expire(this.#ports.now());
     this.#inbound.delete(peerId);
-    this.#emit("attachment.transfer.ended", peerId, "inbound", reason);
+    this.#emit("attachment.transfer.ended", peerId, "inbound", reason, manifest);
   }
 
   #endOutbound(peerId: string, reason: AttachmentControllerReason): void {
     const outbound = this.#outbound.get(peerId);
     if (outbound === undefined) return;
+    const manifest = outbound.transfer.manifest;
     this.#ports.timers.cancel(outbound.expiry);
     this.#ports.timers.cancel(outbound.manifestForwardTimeout);
     this.#manifestDeliveryToOutbound.delete(outbound.manifestDeliveryId);
@@ -546,7 +552,7 @@ export class AttachmentTransferController {
     outbound.transfer.abort();
     outbound.registry.expire(this.#ports.now());
     this.#outbound.delete(peerId);
-    this.#emit("attachment.transfer.ended", peerId, "outbound", reason);
+    this.#emit("attachment.transfer.ended", peerId, "outbound", reason, manifest);
   }
 
   #offerRejected(peerId: string, reason: Extract<AttachmentOfferResult, { readonly status: "rejected" }> ["reason"]): AttachmentOfferResult {
@@ -554,8 +560,9 @@ export class AttachmentTransferController {
     return { status: "rejected", reason };
   }
 
-  #emit(event: AttachmentControllerEvent["event"], peerId: string, direction: AttachmentDirection, reason: AttachmentControllerReason): void {
-    try { this.#ports.onEvent?.({ event, peerId, direction, reason }); } catch { /* Diagnostics must not affect transit. */ }
+  #emit(event: AttachmentControllerEvent["event"], peerId: string, direction: AttachmentDirection, reason: AttachmentControllerReason, manifest?: AttachmentManifest): void {
+    const metadata = manifest === undefined ? {} : { fileName: manifest.fileName, byteCount: manifest.byteCount };
+    try { this.#ports.onEvent?.({ event, peerId, direction, reason, ...metadata }); } catch { /* Diagnostics must not affect transit. */ }
   }
 
   #randomToken(length: number): string {

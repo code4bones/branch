@@ -554,13 +554,13 @@ void test("outgoing delivery state advances monotonically while a valid receipt 
   assert.equal(store.getState().messagesByContactId["contact-1"]?.find((message) => message.messageId === "outgoing-2")?.deliveryState, "delivered");
 });
 
-void test("a file acceptance service event is local chat state, never an unread remote message", async () => {
+void test("a completed file service bubble includes only local terminal metadata", async () => {
   const store = createAppStore();
   store.getState().appendMessage({
     messageId: "attachment-accepted",
     contactId: "contact-1",
     direction: "service",
-    body: "File transfer accepted.",
+    body: "File received: report.pdf (1.5 KiB)",
     sentAt: 1,
     deliveryState: "received"
   });
@@ -568,7 +568,9 @@ void test("a file acceptance service event is local chat state, never an unread 
 
   assert.equal(store.getState().messagesByContactId["contact-1"]?.[0]?.direction, "service");
   assert.match(attachmentRuntime, /direction: "service"/);
-  assert.match(attachmentRuntime, /File transfer accepted\./);
+  assert.match(attachmentRuntime, /File sent/);
+  assert.match(attachmentRuntime, /File received/);
+  assert.match(attachmentRuntime, /formatAttachmentByteCount/);
 });
 
 void test("only a new incoming message auto-presented at the bottom is reported to read-receipt UI", () => {

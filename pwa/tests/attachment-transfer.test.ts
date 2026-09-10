@@ -223,6 +223,8 @@ void test("only accepted, full-digest-verified inbound bytes reach the one-shot 
   assert.equal(required(fixture.completed[0]).offer.peerId, peerId);
   assert.equal(required(fixture.completed[0]).offer.manifest.transferId, manifest.transferId);
   assert.deepEqual(required(fixture.completed[0]).bytes, bytes);
+  assert.equal(fixture.events.at(-1)?.fileName, "received.bin");
+  assert.equal(fixture.events.at(-1)?.byteCount, bytes.byteLength);
   assert.deepEqual(await fixture.controller.accept(peerId), { status: "rejected", reason: "busy" });
 });
 

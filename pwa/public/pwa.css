@@ -612,11 +612,8 @@ body {
 
 .pwa-chat-message.is-service {
   align-self: center;
-  background: transparent;
-  border: 1px solid var(--pwa-border);
+  background: var(--pwa-panel-strong);
   color: var(--pwa-muted);
-  font-size: 12px;
-  padding: 5px 10px;
 }
 
 .pwa-chat-message-body {

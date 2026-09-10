@@ -91,17 +91,17 @@ export function attachmentTransferController(storeApi: AppStoreApi): AttachmentT
       // capability values, chunk bytes, or cryptographic material.
       storeApi.getState().recordTransportTrace(`attachment: ${event.event} ${event.direction} ${event.reason}`);
       notifyAttachmentSendProgress(storeApi, event);
-      if (event.event === "attachment.transfer.accepted") {
+      if (event.event === "attachment.transfer.ended" && event.reason === "accepted" && event.fileName !== undefined && event.byteCount !== undefined) {
         const contact = storeApi.getState().contacts.find((candidate) => candidate.peerId === event.peerId);
         if (contact !== undefined) {
-          // Both endpoints independently record this after their authenticated
-          // accept path succeeds. It is a local service event, not a claim
-          // that the recipient has downloaded or retained the file.
+          // Sender records only all-chunks-forwarded; receiver records only
+          // whole-file SHA-256 success. These are local service bubbles, not
+          // a new payload or a claim that the recipient retained the file.
           storeApi.getState().appendMessage({
             messageId: crypto.randomUUID(),
             contactId: contact.contactId,
             direction: "service",
-            body: "File transfer accepted.",
+            body: `${event.direction === "outbound" ? "File sent" : "File received"}: ${event.fileName} (${formatAttachmentByteCount(event.byteCount)})`,
             sentAt: Date.now(),
             deliveryState: "received"
           });
@@ -139,6 +139,12 @@ export function attachmentTransferController(storeApi: AppStoreApi): AttachmentT
   active = { storeApi, controller: created, clearSendBridge };
   setLiveForwardedAckListener((deliveryId) => { created.onRelayForwarded(deliveryId); });
   return created;
+}
+
+function formatAttachmentByteCount(byteCount: number): string {
+  if (byteCount < 1024) return `${String(byteCount)} B`;
+  if (byteCount < 1024 * 1024) return `${(byteCount / 1024).toFixed(1)} KiB`;
+  return `${(byteCount / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 export function clearAttachmentTransferController(): void {
