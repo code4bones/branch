@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
-import { SameRelayTransportClient, type SameRelayPendingEnvelope } from "../src/connectivity/same-relay.js";
+import { SameRelayTransportClient, makeVersionOffer, type SameRelayPendingEnvelope } from "../src/connectivity/same-relay.js";
+import { contactDiscoveryLiveExtension } from "../src/protocol/v0/relay-attachment.js";
 
 void test("relay.forwarded releases only its live pending envelope before the ACK event", () => {
   const first = pending(1);
@@ -36,6 +37,32 @@ void test("client pending state has the explicit reference-relay live ceiling", 
   assert.equal(clientWithPending(maximum).pendingCount, 32);
   assert.throws(() => clientWithPending([...maximum, pending(33)]), /live pending envelope limit exceeded/);
   assert.throws(() => clientWithPending([], 0), /invalid live pending envelope limit/);
+});
+
+void test("contact discovery remains an explicit negotiated live extension", () => {
+  assert.deepEqual(makeVersionOffer().extensions, [contactDiscoveryLiveExtension]);
+  const client = clientWithPending([]);
+  const events: string[] = [];
+  client.addEventListener((event) => { events.push(event.type); });
+  const internals = client as unknown as {
+    ready: { sessionId: string; routeId: string; presenceTtlSeconds: number; heartbeatIntervalSeconds: number };
+    contactDiscoveryEnabled: boolean;
+    processReadyFrame(record: Record<string, unknown>): void;
+  };
+  internals.ready = { sessionId: token(12), routeId: Buffer.alloc(16, 13).toString("base64url"), presenceTtlSeconds: 30, heartbeatIntervalSeconds: 10 };
+  internals.contactDiscoveryEnabled = true;
+  const expiresAt = Date.now() + 60_000;
+  internals.processReadyFrame({
+    type: "CONTACT_PROBE",
+    session_id: token(12),
+    request_id: Buffer.alloc(16, 14).toString("base64url"),
+    branch_id: token(15),
+    requester_peer_id: token(16),
+    requester_hpke_public_key: token(17),
+    issued_at: Date.now(),
+    expires_at: expiresAt
+  });
+  assert.deepEqual(events, ["contact_probe"]);
 });
 
 function clientWithPending(pendingEnvelopes: readonly SameRelayPendingEnvelope[], maxPendingEnvelopes?: number): SameRelayTransportClient {

@@ -6,19 +6,25 @@ import assert from "node:assert/strict";
 import {
   applicationCapabilitiesControlKind,
   applicationControlSigningBytes,
+  applicationControlWireVersion,
   applicationPayloadVersion,
   betaHpkeCiphertextBytesForPlaintext,
+  branchIDFromPublicKey,
   createBetaPayloadKeyPair,
   decodeBase64URL,
+  decodeApplicationControl,
+  decodeContactCard,
   decodeDraftRelayAttachmentFrameText,
   developmentProfileMultihash,
   encodeApplicationControl,
+  encodeContactCard,
   encodeApplicationPayload,
   encodeBase64URL,
   makeBetaPayloadAAD,
   maxDraftRelayCiphertextBytes,
   prepareOutboundApplicationControl,
   protocolID,
+  contactCardControlKind,
   sealBetaPayload,
   SameRelayTransportClient,
   type ApplicationControlDescriptor
@@ -36,6 +42,7 @@ import {
 } from "../src/connectivity/application-capabilities-control.js";
 import { classifyIncomingMessage } from "../src/connectivity/incoming-message.js";
 import { receiveTypingControl, typingControlKind, typingControlPayloadPrefix, typingControlTTLms } from "../src/connectivity/typing-control.js";
+import { receiveContactCard } from "../src/connectivity/contact-card-control.js";
 import {
   betaPwaMessageType,
   betaPwaPresencePingType,
@@ -859,6 +866,57 @@ void test("PWA typing receiver accepts a signed control for its known contact", 
     ciphertext: sealedPayload,
     ack_requested: true
   })).type, "ENVELOPE");
+});
+
+void test("a contact card is accepted only when its signed relay sender binds its BranchID", async () => {
+  const [senderPair, recipientPair] = await Promise.all([
+    crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]),
+    crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])
+  ]);
+  assert.ok("publicKey" in senderPair && "privateKey" in senderPair);
+  assert.ok("publicKey" in recipientPair && "privateKey" in recipientPair);
+  const senderPeerId = encodeBase64URL(new Uint8Array(await crypto.subtle.exportKey("raw", senderPair.publicKey)));
+  const recipientPeerId = encodeBase64URL(new Uint8Array(await crypto.subtle.exportKey("raw", recipientPair.publicKey)));
+  const now = Date.now();
+  const body = encodeContactCard({
+    requestId: Buffer.alloc(16, 80).toString("base64url"),
+    branchId: await branchIDFromPublicKey(decodeBase64URL(senderPeerId)),
+    peerId: senderPeerId,
+    hpkePublicKey: Buffer.alloc(32, 81).toString("base64url"),
+    displayName: "Alice"
+  });
+  assert.equal(decodeContactCard(body).displayName, "Alice");
+  const unsigned = {
+    version: applicationControlWireVersion,
+    kind: contactCardControlKind,
+    controlId: Buffer.alloc(16, 79).toString("base64url"),
+    issuedAt: now,
+    expiresAt: now + 60_000,
+    senderPeerId,
+    recipientPeerId,
+    body
+  };
+  const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", senderPair.privateKey, new Uint8Array(applicationControlSigningBytes(unsigned)).buffer));
+  const senderPublicKey = await crypto.subtle.importKey("raw", new Uint8Array(decodeBase64URL(senderPeerId)).buffer, "Ed25519", false, ["verify"]);
+  assert.equal(await crypto.subtle.verify("Ed25519", senderPublicKey, new Uint8Array(signature).buffer, new Uint8Array(applicationControlSigningBytes(unsigned)).buffer), true);
+  const wire = encodeApplicationControl({ ...unsigned, signature });
+  const decoded = decodeApplicationControl(wire);
+  assert.equal(decoded.kind, contactCardControlKind);
+  assert.equal(await crypto.subtle.verify("Ed25519", senderPublicKey, new Uint8Array(decoded.signature).buffer, new Uint8Array(applicationControlSigningBytes(decoded)).buffer), true);
+  const card = await receiveContactCard({
+    plaintext: wire,
+    localPeerId: recipientPeerId,
+    senderPeerId
+  });
+  assert.equal(card?.displayName, "Alice");
+  assert.equal(card.peerId, senderPeerId);
+
+  const altered = await receiveContactCard({
+    plaintext: encodeApplicationControl({ ...unsigned, senderPeerId: recipientPeerId, signature }),
+    localPeerId: recipientPeerId,
+    senderPeerId
+  });
+  assert.equal(altered, null);
 });
 
 void test("incoming envelope opens only when the delivered origin route is bound into canonical HPKE AAD", async () => {

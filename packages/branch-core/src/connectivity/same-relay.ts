@@ -3,6 +3,7 @@ import { protocolID } from "../protocol/v0/envelope.js";
 import { developmentProfileMultihash } from "../protocol/v0/profile.js";
 import {
   decodeDraftRelayAttachmentFrameText,
+  contactDiscoveryLiveExtension,
   maxDraftRelayAttachmentFrameBytes,
   relayProofDomain,
   type RelayFrameType
@@ -73,6 +74,8 @@ export type SameRelayTransportEvent =
   | { readonly type: "presence_announced"; readonly peerId: string; readonly sequence: number }
   | { readonly type: "heartbeat_sent"; readonly sequence: number }
   | { readonly type: "lookup_requested"; readonly peerId: string; readonly sequence: number }
+  | { readonly type: "contact_lookup_requested"; readonly requestId: string; readonly branchId: string; readonly expiresAt: number }
+  | { readonly type: "contact_probe"; readonly requestId: string; readonly branchId: string; readonly requesterPeerId: string; readonly requesterHpkePublicKey: string; readonly expiresAt: number }
   | { readonly type: "rendezvous_ready"; readonly peerId: string; readonly routeId: string; readonly sequence: number; readonly routeHintCount: number }
   | { readonly type: "envelope_sent"; readonly deliveryId: string; readonly routeId: string; readonly originRouteId: string }
   | { readonly type: "relay_ack"; readonly deliveryId: string; readonly ackType: "relay.accepted" | "relay.forwarded"; readonly durable: false }
@@ -96,7 +99,7 @@ interface VersionOffer {
   readonly profile_multihash: typeof developmentProfileMultihash;
   readonly capabilities: readonly [typeof relayForwardLiveCapability];
   readonly required_capabilities: readonly [];
-  readonly extensions: readonly [];
+  readonly extensions: readonly [typeof contactDiscoveryLiveExtension];
   readonly required_extensions: readonly [];
 }
 
@@ -152,6 +155,7 @@ export class SameRelayTransportClient {
   private readonly deferred: DeferredFrame[] = [];
   private socket: BrowserRelaySocket | null = null;
   private ready: ReadyState | null = null;
+  private contactDiscoveryEnabled = false;
   private sequence = 0;
 
   constructor(options: SameRelayTransportOptions) {
@@ -232,6 +236,13 @@ export class SameRelayTransportClient {
     return this.pending.size;
   }
 
+  // Optional negotiated extension. A false value means that this particular
+  // live relay session cannot provide contact discovery; it is never inferred
+  // from a relay URL or a client preference.
+  get supportsContactDiscovery(): boolean {
+    return this.ready !== null && this.contactDiscoveryEnabled;
+  }
+
   exportPendingEnvelopes(): readonly SameRelayPendingEnvelope[] {
     return Array.from(this.pending.values(), (pending) => ({ ...pending }));
   }
@@ -277,6 +288,7 @@ export class SameRelayTransportClient {
       throw new Error("relay challenge issued in the future");
     }
     const selected = readObject(challenge, "selected");
+    this.contactDiscoveryEnabled = hasExtension(selected, contactDiscoveryLiveExtension);
     const transcriptHash = await this.computeTranscriptHash(
       helloRaw,
       selected,
@@ -359,6 +371,40 @@ export class SameRelayTransportClient {
     this.emit({ type: "lookup_requested", peerId, sequence });
   }
 
+  announceContactDiscovery(discoverable: boolean): void {
+    this.requireContactDiscovery();
+    this.sendReadyFrame({
+      type: "CONTACT_ANNOUNCE",
+      session_id: this.requireReady().sessionId,
+      discoverable,
+      sequence: this.nextSequence()
+    });
+  }
+
+  lookupContact(branchId: string, requesterHpkePublicKey: string): { readonly requestId: string; readonly expiresAt: number } {
+    this.requireContactDiscovery();
+    if (decodeBase64URL(branchId).byteLength !== 32) {
+      throw new Error("invalid BranchID");
+    }
+    if (decodeBase64URL(requesterHpkePublicKey).byteLength !== 32) {
+      throw new Error("invalid requester HPKE public key");
+    }
+    const requestId = this.randomToken(16);
+    const issuedAt = this.now() * 1_000;
+    const expiresAt = issuedAt + 60_000;
+    this.sendReadyFrame({
+      type: "CONTACT_LOOKUP",
+      session_id: this.requireReady().sessionId,
+      request_id: requestId,
+      branch_id: branchId,
+      requester_hpke_public_key: requesterHpkePublicKey,
+      issued_at: issuedAt,
+      expires_at: expiresAt
+    });
+    this.emit({ type: "contact_lookup_requested", requestId, branchId, expiresAt });
+    return { requestId, expiresAt };
+  }
+
   // A same-route/same-peer repeat is intentionally idempotent at the relay.
   // Adapters call this immediately before a live ENVELOPE so a peer that
   // refreshed its WebSocket can be rebound without retaining any route state.
@@ -424,6 +470,7 @@ export class SameRelayTransportClient {
   disconnect(): void {
     const socket = this.socket;
     this.ready = null;
+    this.contactDiscoveryEnabled = false;
     this.socket = null;
     this.rejectDeferredFrames(new Error("relay socket closed"));
     if (socket !== null) {
@@ -524,6 +571,26 @@ export class SameRelayTransportClient {
         });
         return;
       }
+      case "CONTACT_PROBE": {
+        if (!this.contactDiscoveryEnabled || readString(record, "session_id") !== this.requireReady().sessionId) {
+          this.emit({ type: "error", message: "contact_probe_rejected" });
+          return;
+        }
+        const expiresAt = readNumber(record, "expires_at");
+        if (expiresAt <= this.now() * 1_000) {
+          this.emit({ type: "error", message: "contact_probe_expired" });
+          return;
+        }
+        this.emit({
+          type: "contact_probe",
+          requestId: readString(record, "request_id"),
+          branchId: readString(record, "branch_id"),
+          requesterPeerId: readString(record, "requester_peer_id"),
+          requesterHpkePublicKey: readString(record, "requester_hpke_public_key"),
+          expiresAt
+        });
+        return;
+      }
       case "ERROR": {
         const code = readString(record, "code");
         if (code === "peer_unavailable" || code === "route_unavailable") {
@@ -620,6 +687,13 @@ export class SameRelayTransportClient {
     return this.ready;
   }
 
+  private requireContactDiscovery(): void {
+    this.requireReady();
+    if (!this.contactDiscoveryEnabled) {
+      throw new Error("contact discovery extension is not negotiated");
+    }
+  }
+
   private nextSequence(): number {
     this.sequence += 1;
     return this.sequence;
@@ -690,9 +764,14 @@ export function makeVersionOffer(): VersionOffer {
     profile_multihash: developmentProfileMultihash,
     capabilities: [relayForwardLiveCapability],
     required_capabilities: [],
-    extensions: [],
+    extensions: [contactDiscoveryLiveExtension],
     required_extensions: []
   };
+}
+
+function hasExtension(offer: Record<string, unknown>, extension: string): boolean {
+  const extensions = offer.extensions;
+  return Array.isArray(extensions) && extensions.some((candidate) => candidate === extension);
 }
 
 export function parseRelayEndpointDescriptor(value: string | null): { readonly transport: "wss"; readonly uri: string } | null {

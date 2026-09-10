@@ -6,16 +6,16 @@ import { DetailHeader } from "../app/DetailHeader.js";
 import { pwaReleaseVersion } from "../app/pwa-release.js";
 import { useBranchID } from "../identity/use-branch-id.js";
 import { updateLocalIdentityDisplayName } from "../identity/create-local-identity.js";
-import { useIdentity, useReceiptPolicy, useThemeControls, useTransportStatus } from "../state/hooks.js";
+import { useContactDiscoveryPolicy, useIdentity, useReceiptPolicy, useThemeControls, useTransportStatus } from "../state/hooks.js";
 import type { ThemeMode } from "../state/slices/ui-slice.js";
 
 export function SettingsPage(): React.JSX.Element {
   const identity = useIdentity();
   const themeControls = useThemeControls();
   const receiptPolicy = useReceiptPolicy();
+  const contactDiscoveryPolicy = useContactDiscoveryPolicy();
   const transport = useTransportStatus();
   const branchID = useBranchID(identity.identity?.peerId ?? null);
-  const [copied, setCopied] = useState(false);
   const [branchIdCopied, setBranchIdCopied] = useState(false);
   const [displayName, setDisplayName] = useState(identity.identity?.displayName ?? "");
   const [savingDisplayName, setSavingDisplayName] = useState(false);
@@ -28,21 +28,6 @@ export function SettingsPage(): React.JSX.Element {
     void navigator.clipboard.writeText(branchID).then(() => {
       setBranchIdCopied(true);
       setTimeout(() => { setBranchIdCopied(false); }, 2000);
-    });
-  };
-
-  const handleCopyInvite = (): void => {
-    if (identity.identity === null) {
-      return;
-    }
-    const invite = JSON.stringify({
-      peerId: identity.identity.peerId,
-      hpkePublicKey: identity.identity.hpkePublicKey,
-      displayName: identity.identity.displayName
-    });
-    void navigator.clipboard.writeText(invite).then(() => {
-      setCopied(true);
-      setTimeout(() => { setCopied(false); }, 2000);
     });
   };
 
@@ -118,14 +103,6 @@ export function SettingsPage(): React.JSX.Element {
           <dd>{identity.identity?.hpkePublicKey ?? "not created"}</dd>
         </div>
         <div>
-          <dt>Share with a contact</dt>
-          <dd>
-            <Button icon={<CopyOutlined />} onClick={handleCopyInvite}>
-              {copied ? "Copied" : "Copy connection info"}
-            </Button>
-          </dd>
-        </div>
-        <div>
           <dt>Theme</dt>
           <dd>
             <Segmented
@@ -148,6 +125,23 @@ export function SettingsPage(): React.JSX.Element {
               />
               <Typography.Text type="secondary">
                 Send a best-effort encrypted Read receipt only after a message is shown in this active chat.
+              </Typography.Text>
+            </Space>
+          </dd>
+        </div>
+        <div>
+          <dt>Allow contact discovery</dt>
+          <dd>
+            <Space direction="vertical" size={2}>
+              <Switch
+                aria-label="Allow contact discovery"
+                checked={contactDiscoveryPolicy.allowContactDiscovery}
+                checkedChildren="On"
+                onChange={contactDiscoveryPolicy.setAllowContactDiscovery}
+                unCheckedChildren="Off"
+              />
+              <Typography.Text type="secondary">
+                Let a live relay forward a one-time encrypted contact-card probe for this BranchID. The relay retains neither lookup nor card.
               </Typography.Text>
             </Space>
           </dd>

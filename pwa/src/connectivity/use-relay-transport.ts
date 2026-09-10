@@ -9,6 +9,8 @@ import { classifyIncomingMessage } from "./incoming-message.js";
 import { orderedAttachmentRoutes } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
 import { receiveTypingControl } from "./typing-control.js";
+import { consumePendingContactDiscovery, startContactDiscoveryRuntime, stopContactDiscoveryRuntime } from "./contact-discovery-runtime.js";
+import { receiveContactCard, respondToContactProbe } from "./contact-card-control.js";
 import {
   attachRelaySession,
   clearDelivery,
@@ -72,6 +74,7 @@ export function useRelayTransport(): void {
       lifecycle.stopped = true;
       clearReconnectTimer(lifecycle);
       stopHeartbeat();
+      stopContactDiscoveryRuntime();
       clearAttachmentTransferController();
       disconnectRelaySession();
       lifecycle.currentKey = null;
@@ -135,6 +138,7 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
       storeApi.getState().recordTransportTrace(`attached: candidate ${String(index + 1)} of ${String(attachmentRoutes.length)}`);
       storeApi.getState().setAttachStatus("attached", `Attached to relay ${String(index + 1)} of ${String(attachmentRoutes.length)}`);
       startHeartbeat(attachedClient);
+      startContactDiscoveryRuntime(storeApi, attachedClient);
       return;
     } catch (cause) {
       if (!isActiveAttachmentAttempt(lifecycle, attachKey)) {
@@ -227,6 +231,22 @@ function isLifecycleStopped(lifecycle: AttachmentLifecycle): boolean {
 function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle, event: SameRelayTransportEvent): void {
   const state = storeApi.getState();
   switch (event.type) {
+    case "contact_probe": {
+      if (state.identity === null || state.identity.displayName === null || !state.allowContactDiscovery) return;
+      void respondToContactProbe({
+        requestId: event.requestId,
+        branchId: event.branchId,
+        requesterPeerId: event.requesterPeerId,
+        requesterHpkePublicKey: event.requesterHpkePublicKey,
+        expiresAt: event.expiresAt,
+        localPeerId: state.identity.peerId,
+        localHpkePublicKey: state.identity.hpkePublicKey,
+        displayName: state.identity.displayName
+      }).then((sent) => { state.recordTransportTrace(`contact probe: ${sent ? "responded" : "ignored"}`); }).catch(() => {
+        state.recordTransportTrace("contact probe: response_failed");
+      });
+      return;
+    }
     case "frame_sent":
       // The core has validated this frame. Retain only its bounded type, never
       // payload or route material, to correlate a remote policy close.
@@ -279,6 +299,7 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
     }
     case "disconnected":
       stopHeartbeat();
+      stopContactDiscoveryRuntime();
       clearAttachmentTransferController();
       state.recordTransportTrace(disconnectTraceDetail(event));
       state.clearAllContactTyping();
@@ -336,6 +357,16 @@ async function handleIncomingEnvelope(
     state.recordTransportTrace("incoming envelope: opened");
     const knownContact = state.contacts.find((candidate) => candidate.peerId === senderPeerId) ?? null;
     const knownContactId = knownContact?.contactId ?? null;
+    const card = await receiveContactCard({ plaintext, localPeerId: state.identity.peerId, senderPeerId });
+    if (card !== null) {
+      if (consumePendingContactDiscovery(card.requestId, card.branchId)) {
+        state.resolveContactDiscovery(card.branchId, { displayName: card.displayName, peerId: card.peerId, hpkePublicKey: card.hpkePublicKey }, Date.now());
+        state.recordTransportTrace("contact card: accepted");
+      } else {
+        state.recordTransportTrace("contact card: uncorrelated");
+      }
+      return;
+    }
     const typing = await receiveTypingControl({
       plaintext,
       localPeerId: state.identity.peerId,

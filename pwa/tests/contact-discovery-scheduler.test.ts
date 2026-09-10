@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { ContactDiscoveryScheduler } from "../src/connectivity/contact-discovery-scheduler.js";
 
-test("contact discovery schedules again only after the previous attempt settles", async () => {
+void test("contact discovery schedules again only after the previous attempt settles", async () => {
   const scheduler = new ContactDiscoveryScheduler();
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });
@@ -19,7 +19,7 @@ test("contact discovery schedules again only after the previous attempt settles"
   scheduler.stop();
 });
 
-test("stopping invalidates a late completion before it can schedule another attempt", async () => {
+void test("stopping invalidates a late completion before it can schedule another attempt", async () => {
   const scheduler = new ContactDiscoveryScheduler();
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });

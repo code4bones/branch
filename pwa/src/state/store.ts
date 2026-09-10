@@ -3,6 +3,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { createConnectionSlice, type ConnectionSlice } from "./slices/connection-slice.js";
 import { createContactPresenceSlice, type ContactPresenceSlice } from "./slices/contact-presence-slice.js";
 import { createContactDiscoverySlice, type ContactDiscoverySlice } from "./slices/contact-discovery-slice.js";
+import { createContactDiscoveryPolicySlice, type ContactDiscoveryPolicySlice } from "./slices/contact-discovery-policy-slice.js";
 import { createContactTypingSlice, type ContactTypingSlice } from "./slices/contact-typing-slice.js";
 import { createContactsSlice, type ContactsSlice } from "./slices/contacts-slice.js";
 import { createConversationsSlice, type ConversationsSlice } from "./slices/conversations-slice.js";
@@ -23,6 +24,7 @@ export type AppStore = UiSlice &
   IdentitySlice &
   ContactsSlice &
   ContactDiscoverySlice &
+  ContactDiscoveryPolicySlice &
   ContactPresenceSlice &
   ContactTypingSlice &
   ConversationsSlice &
@@ -43,6 +45,7 @@ export function createAppStore(): AppStoreApi {
     ...createIdentitySlice(...creator),
     ...createContactsSlice(...creator),
     ...createContactDiscoverySlice(...creator),
+    ...createContactDiscoveryPolicySlice(...creator),
     ...createContactPresenceSlice(...creator),
     ...createContactTypingSlice(...creator),
     ...createConversationsSlice(...creator),

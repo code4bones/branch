@@ -78,6 +78,17 @@ export interface ContactDiscoveryControls {
   readonly remove: (branchId: string) => void;
 }
 
+export interface ContactDiscoveryPolicyControls {
+  readonly allowContactDiscovery: boolean;
+  readonly setAllowContactDiscovery: (enabled: boolean) => void;
+}
+
+export function useContactDiscoveryPolicy(): ContactDiscoveryPolicyControls {
+  const allowContactDiscovery = useAppStore((state) => state.allowContactDiscovery);
+  const setAllowContactDiscovery = useAppStore((state) => state.setAllowContactDiscovery);
+  return { allowContactDiscovery, setAllowContactDiscovery };
+}
+
 export function useContactDiscoveries(): ContactDiscoveryControls {
   const rows = useAppStore((state) => state.contactDiscoveries);
   const upsert = useAppStore((state) => state.upsertContactDiscovery);
@@ -86,7 +97,7 @@ export function useContactDiscoveries(): ContactDiscoveryControls {
   return {
     rows,
     search: (branchId, now = Date.now()) => upsert(branchId, now),
-    retry: (branchId, now = Date.now()) => retryContactDiscovery(branchId, now),
+    retry: (branchId, now = Date.now()) => { retryContactDiscovery(branchId, now); },
     remove
   };
 }
