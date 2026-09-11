@@ -5,6 +5,15 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_tmp="$(mktemp -d)"
 trap 'rm -rf "$test_tmp"' EXIT
 
+nginx_conf="$repo_root/deployments/docker/nginx.conf"
+grep -F -- 'resolver 127.0.0.11 ipv6=off valid=10s;' "$nginx_conf" >/dev/null
+grep -F -- 'resolver_timeout 5s;' "$nginx_conf" >/dev/null
+grep -F -- 'proxy_pass http://$branch_node_upstream:8080/relay/v0;' "$nginx_conf" >/dev/null
+if grep -F -- 'proxy_pass http://branch-node:8080/relay/v0;' "$nginx_conf" >/dev/null; then
+  printf '%s\n' 'relay nginx must not retain a startup-resolved branch-node address' >&2
+  exit 1
+fi
+
 mkdir -p "$test_tmp/bin" "$test_tmp/dist"
 ln -s "$repo_root/deployments" "$test_tmp/deployments"
 printf '#!/bin/sh\nexit 0\n' >"$test_tmp/dist/branch-node-linux-amd64"
