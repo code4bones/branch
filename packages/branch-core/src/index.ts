@@ -32,7 +32,6 @@ export * from "./protocol/v0/identity-contact.js";
 export * from "./protocol/v0/profile.js";
 export * from "./protocol/v0/relay-attachment.js";
 export * from "./protocol/v0/text-carrier.js";
-export * from "./visual/canvas-image.js";
 export * from "./visual/corpus.js";
 export * from "./visual/geometry.js";
 export * from "./visual/ribbon-block.js";

@@ -3,10 +3,17 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import * as branchCore from "../src/index.js";
 import { assertContactCardBranchIDBinding, attachmentManifestSigningBytes, branchIDFromPublicKey, classifyApplicationPayload, createApplicationPayloadRegistry, decodeAttachmentChunk, decodeAttachmentDecision, decodeAttachmentManifest, decodeApplicationPayload, decodeContactCard, encodeAttachmentChunk, encodeAttachmentDecision, encodeAttachmentManifest, encodeApplicationPayload, encodeContactCard, inlineBinaryKind, maxInlineBinaryBytes, type AttachmentManifest } from "../src/index.js";
 import { decodeBase64URL, encodeBase64URL } from "../src/protocol/v0/base64url.js";
 
 const fixtureURL = new URL("../../../../testdata/vectors/protocol-v0/application-payload-vectors.json", import.meta.url);
+
+test("branch-core root barrel excludes browser-only canvas helpers", () => {
+  assert.equal("loadLocalImage" in branchCore, false);
+  assert.equal("imageToData" in branchCore, false);
+  assert.equal("canvasToPngBlob" in branchCore, false);
+});
 
 test("shared application payload vectors are canonical and unknown kinds are inert", async () => {
   const fixture = await vectors();
