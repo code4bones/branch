@@ -450,14 +450,16 @@ export interface ConnectionControls {
 export interface TransportControls {
   readonly attachStatus: AttachStatus;
   readonly attachMessage: string;
+  readonly attachedRelayEndpoint: string | null;
   readonly transportTrace: readonly TransportTraceEntry[];
 }
 
 export function useTransportStatus(): TransportControls {
   const attachStatus = useAppStore((state) => state.attachStatus);
   const attachMessage = useAppStore((state) => state.attachMessage);
+  const attachedRelayEndpoint = useAppStore((state) => state.attachedRelayEndpoint);
   const transportTrace = useAppStore((state) => state.transportTrace);
-  return { attachStatus, attachMessage, transportTrace };
+  return { attachStatus, attachMessage, attachedRelayEndpoint, transportTrace };
 }
 
 export function useConnection(): ConnectionControls {

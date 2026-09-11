@@ -131,6 +131,12 @@ export function SettingsPage(): React.JSX.Element {
               value={connection.selectedRelayKey ?? "auto"}
             />
             <Typography.Text type="secondary">Test pin for this tab only. Routes still require their normal relay proof.</Typography.Text>
+            <Typography.Text type="secondary">
+              This tab: {transport.attachedRelayEndpoint === null ? "no authenticated relay attached" : <code>{transport.attachedRelayEndpoint}</code>}.
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              Contact relay: not disclosed by the current protocol.
+            </Typography.Text>
           </dd>
         </div>
         <div className="pwa-settings-trace-row">

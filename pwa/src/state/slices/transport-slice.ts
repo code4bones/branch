@@ -16,8 +16,15 @@ const maxTransportTraceEntries = 64;
 export interface TransportSlice {
   readonly attachStatus: AttachStatus;
   readonly attachMessage: string;
+  /**
+   * This tab's currently authenticated relay endpoint, for local developer
+   * presentation only. It is deliberately neither trace data nor persisted
+   * application state, and never represents a contact's relay placement.
+   */
+  readonly attachedRelayEndpoint: string | null;
   readonly transportTrace: readonly TransportTraceEntry[];
   readonly setAttachStatus: (status: AttachStatus, message: string) => void;
+  readonly setAttachedRelayEndpoint: (endpoint: string | null) => void;
   readonly recordTransportTrace: (detail: string) => void;
 }
 
@@ -28,8 +35,10 @@ export interface TransportSlice {
 export const createTransportSlice: StateCreator<AppStore, [], [], TransportSlice> = (set) => ({
   attachStatus: "idle",
   attachMessage: "",
+  attachedRelayEndpoint: null,
   transportTrace: [],
   setAttachStatus: (attachStatus, attachMessage) => { set({ attachStatus, attachMessage }); },
+  setAttachedRelayEndpoint: (attachedRelayEndpoint) => { set({ attachedRelayEndpoint }); },
   recordTransportTrace: (detail) => {
     const boundedDetail = detail.replaceAll(/[\r\n\t]+/gu, " ").slice(0, 180);
     set((state) => ({

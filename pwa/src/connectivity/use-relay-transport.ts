@@ -127,6 +127,7 @@ export function useRelayTransport(): void {
       clearLiveRTCSignaling();
       clearLiveRTCDataSenders();
       disconnectRelaySession();
+      storeApi.getState().setAttachedRelayEndpoint(null);
       lifecycle.currentKey = null;
       lifecycle.connectingKey = null;
     };
@@ -160,6 +161,7 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
     for (const delivery of takeTrackedDeliveries()) {
       storeApi.getState().setMessageDeliveryState(delivery.contactId, delivery.messageId, "unavailable");
     }
+    storeApi.getState().setAttachedRelayEndpoint(null);
     lifecycle.currentKey = null;
   }
   clearReconnectTimer(lifecycle);
@@ -204,6 +206,10 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
       lifecycle.connectingKey = null;
       lifecycle.currentKey = attachKey;
       lifecycle.reconnectAttempts = 0;
+      // This came from the route that just passed the normal authenticated
+      // attachment exchange. It is tab-local presentation only: do not put it
+      // in trace, persistence, telemetry, or any contact/topology inference.
+      storeApi.getState().setAttachedRelayEndpoint(route.endpointUri);
       storeApi.getState().recordTransportTrace(`attached: candidate ${String(index + 1)} of ${String(routesToAttach.length)}`);
       storeApi.getState().setAttachStatus("attached", `Attached to relay ${String(index + 1)} of ${String(routesToAttach.length)}`);
       startHeartbeat(attachedClient);
@@ -453,6 +459,7 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
       clearImageRuntime();
       state.recordTransportTrace(disconnectTraceDetail(event));
       state.clearAllContactTyping();
+      state.setAttachedRelayEndpoint(null);
       lifecycle.currentKey = null;
       // A close during the small READY -> attached window must invalidate the
       // in-flight attempt. Otherwise its resolved promise could falsely paint

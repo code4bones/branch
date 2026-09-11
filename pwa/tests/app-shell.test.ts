@@ -1079,17 +1079,27 @@ void test("PWA keeps the compact single-pane UI usable on a 320 by 568 iPhone 5 
   assert.match(styles, /\.pwa-chat-image \{[\s\S]*max-height: 440px;[\s\S]*max-height: min\(58dvh, 440px\);/);
 });
 
-void test("Settings exposes only a volatile choice among already discovered relay routes", async () => {
+void test("Settings exposes an actual local relay attachment without inferring a contact relay", async () => {
   const settings = await readFile(settingsPagePath, "utf8");
   const connection = await readFile(resolve(process.cwd(), "src/state/slices/connection-slice.ts"), "utf8");
   const transport = await readFile(useRelayTransportPath, "utf8");
+  const transportSlice = await readFile(transportSlicePath, "utf8");
+  const database = await readFile(databasePath, "utf8");
   assert.match(settings, /aria-label="Relay for this tab"/);
   assert.match(settings, /connection\.discoveredRoutes\.map/);
   assert.match(settings, /Test pin for this tab only/);
+  assert.match(settings, /This tab:/);
+  assert.match(settings, /Contact relay: not disclosed by the current protocol/);
+  assert.doesNotMatch(settings, /originRouteId/);
   assert.match(connection, /selectedRelayKey: string \| null/);
   assert.match(connection, /relayRouteKey\(route\) === selectedRelayKey/);
   assert.match(transport, /attachmentRoutesForSelection/);
   assert.match(transport, /Selected relay is no longer available; choose Auto in Settings/);
+  assert.match(transport, /setAttachedRelayEndpoint\(route\.endpointUri\)/);
+  assert.match(transport, /setAttachedRelayEndpoint\(null\)/);
+  assert.match(transportSlice, /attachedRelayEndpoint: string \| null/);
+  assert.match(transportSlice, /persisted\s+\*?\s*application state/);
+  assert.doesNotMatch(database, /attachedRelayEndpoint/);
 });
 
 void test("PWA typing receiver accepts a signed control for its known contact", async () => {
