@@ -122,8 +122,7 @@ func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, pee
 		err = client.lookup(ctx, peerID)
 		client.close()
 		if err != nil {
-			router.recordCandidateObservation(candidate, "unreachable", "peer_unavailable", 0, now)
-			router.recordBackoff(candidate, now)
+			router.recordLookupFailure(candidate, err, now)
 			continue
 		}
 		router.clearBackoff(candidate.identityKey)
@@ -139,6 +138,19 @@ func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, pee
 		}, true
 	}
 	return nil, false
+}
+
+// recordLookupFailure keeps an unavailable peer distinct from an unavailable
+// relay. A peer can legitimately announce just after a concurrent lookup; a
+// relay-wide backoff in that case would suppress the next otherwise-valid
+// retry for every peer on the candidate relay.
+func (router *DiscoveredPeerRouter) recordLookupFailure(candidate federationCandidate, err error, now time.Time) {
+	if errors.Is(err, relay.ErrPeerUnavailable) {
+		router.recordCandidateObservation(candidate, "reachable", "peer_unavailable", 0, now)
+		return
+	}
+	router.recordCandidateObservation(candidate, "unreachable", "lookup_failed", 0, now)
+	router.recordBackoff(candidate, now)
 }
 
 // LookupIdentityContact asks only the bounded discovered relay candidates for

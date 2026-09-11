@@ -175,6 +175,46 @@ func TestDiscoveredPeerRouterCapsDistinctRelayIdentities(t *testing.T) {
 	}
 }
 
+func TestDiscoveredPeerRouterDoesNotBackOffReachableRelayForMissingPeer(t *testing.T) {
+	now := time.Date(2026, 9, 11, 17, 0, 0, 0, time.UTC)
+	localIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate local identity: %v", err)
+	}
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewDiscoveredPeerRouter(DiscoveredPeerRouterConfig{
+		Source:   &testBootstrapBeaconSource{},
+		Identity: localIdentity,
+		LocalHub: hub,
+		Now:      func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	candidate := federationCandidate{
+		endpoint:    "wss://relay.example.test:443/relay/v0",
+		identityKey: "candidate",
+		expiresAt:   now.Add(time.Hour),
+	}
+
+	router.recordLookupFailure(candidate, relay.ErrPeerUnavailable, now)
+	if router.backoffActive(candidate.identityKey, now) {
+		t.Fatal("missing peer placed reachable relay into backoff")
+	}
+	observations := router.FederationSnapshot()
+	if len(observations) != 1 || observations[0].State != "reachable" || observations[0].LastReason != "peer_unavailable" {
+		t.Fatalf("missing-peer observation = %+v", observations)
+	}
+
+	router.recordLookupFailure(candidate, context.DeadlineExceeded, now)
+	if !router.backoffActive(candidate.identityKey, now) {
+		t.Fatal("failed relay lookup did not enter backoff")
+	}
+}
+
 func TestDiscoveredFederationObservationsAreBoundedAndExpire(t *testing.T) {
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	hub, err := relay.NewHub(relay.DefaultConfig())
