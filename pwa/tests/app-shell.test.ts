@@ -62,6 +62,7 @@ import {
   makeStoredRelayBootstrapView,
   relayBootstrapRefreshIntervalMs
 } from "../src/discovery/relay-bootstrap-view.js";
+import { browserVerifiedRoutes } from "../src/discovery/find-relay-route.js";
 import { orderRelayAttachmentProbeResults } from "../src/connectivity/relay-session.js";
 
 const indexHtmlPath = resolve(process.cwd(), "public/index.html");
@@ -452,6 +453,16 @@ void test("PWA relay bootstrap view is bounded, expiry-aware, and rejects corrup
   assert.match(discovery, /resolveRelayRouteForForeground/);
   assert.match(discovery, /loadStoredRelayBootstrapView/);
   assert.match(discovery, /saveStoredRelayBootstrapView/);
+});
+
+void test("PWA converts signed beacon Unix-second expiry at the browser clock boundary", () => {
+  const route = browserVerifiedRoutes([{
+    endpointUri: "wss://relay.example.test/relay/v0",
+    relayPublicKey: Buffer.alloc(32, 8).toString("base64url"),
+    profileMultihash: developmentProfileMultihash,
+    expiresAt: 1_789_551_181
+  }]);
+  assert.equal(route[0]?.expiresAt, 1_789_551_181_000);
 });
 
 void test("PWA automatic relay probes rank by measured latency with a deterministic tie and preserve manual pins", async () => {

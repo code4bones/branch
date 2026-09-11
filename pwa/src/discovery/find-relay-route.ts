@@ -9,7 +9,8 @@ import {
 
 import {
   makeStoredRelayBootstrapView,
-  relayRoutesFromBootstrapView
+  relayRoutesFromBootstrapView,
+  type VerifiedRelayBootstrapRoute
 } from "./relay-bootstrap-view.js";
 import { loadStoredRelayBootstrapView, saveStoredRelayBootstrapView } from "../storage/relay-bootstrap-view-store.js";
 
@@ -39,7 +40,10 @@ export async function findRelayRouteViaGitHub(signal?: AbortSignal): Promise<Fin
     page: 1,
     ...(signal === undefined ? {} : { signal })
   });
-  const verifiedRoutes = verifiedRoutesFromBeaconObservations(discovery.observations);
+  // The protocol beacon uses Unix seconds; browser lifecycle/storage clocks
+  // use Date.now() milliseconds. Convert precisely at this adapter boundary
+  // so a valid signed expiry never becomes an immediate local cache miss.
+  const verifiedRoutes = browserVerifiedRoutes(verifiedRoutesFromBeaconObservations(discovery.observations));
   if (verifiedRoutes.length > 0) {
     await saveStoredRelayBootstrapView(makeStoredRelayBootstrapView(verifiedRoutes, Date.now()));
   }
@@ -70,10 +74,20 @@ export async function resolveRelayRouteForForeground(signal?: AbortSignal): Prom
   return { ...discovered, stale: false, cacheUsed: false };
 }
 
-function routeMaterial(routes: readonly VerifiedRelayRouteMaterial[]): readonly RelayRouteMaterial[] {
+export function browserVerifiedRoutes(routes: readonly VerifiedRelayRouteMaterial[]): readonly VerifiedRelayBootstrapRoute[] {
+  return routes.map((route) => ({ ...route, expiresAt: unixSecondsToMilliseconds(route.expiresAt) }));
+}
+
+function routeMaterial(routes: readonly VerifiedRelayBootstrapRoute[]): readonly RelayRouteMaterial[] {
   return routes.map((route): RelayRouteMaterial => {
     const { expiresAt: ignored, ...material } = route;
     void ignored;
     return material;
   });
+}
+
+function unixSecondsToMilliseconds(value: number): number {
+  const milliseconds = value * 1_000;
+  if (!Number.isSafeInteger(milliseconds)) throw new Error("invalid relay beacon expiry");
+  return milliseconds;
 }
