@@ -11,7 +11,11 @@ import type { AppStoreApi } from "../state/store.js";
 // background-sync worker. One attempt is made at a time and each attempt gets
 // a fresh live delivery id while retaining the application id for endpoint
 // deduplication.
-export const outboxRetryInitialDelayMs = 10_000;
+// A first federated lookup can race the receiving relay's just-created live
+// presence. Retry once quickly from this visible endpoint; subsequent attempts
+// retain exponential backoff. This is neither a relay queue nor a discovery
+// poller, and every retry still creates fresh live ciphertext/delivery IDs.
+export const outboxRetryInitialDelayMs = 1_000;
 export const outboxRetryMaximumDelayMs = 60_000;
 export const outboxUnavailableRetryDelayMs = 5_000;
 export const outboxMaximumAgeMs = 7 * 24 * 60 * 60 * 1_000;
@@ -269,7 +273,11 @@ async function run(runtime: OutboxRuntime): Promise<void> {
         plaintext: message.body,
         ...(message.replyToMessageId === undefined ? {} : { replyToMessageId: message.replyToMessageId }),
         onRelayOutcomeTimeout: () => {
-          runtime.storeApi.getState().setMessageDeliveryState(due.contactId, due.messageId, "unavailable");
+          // The relay outcome window expired, but the bounded endpoint-owned
+          // outbox has already scheduled a fresh attempt. Keep the local
+          // bubble pending instead of presenting a terminal-looking error
+          // that can be superseded by the automatic retry.
+          runtime.storeApi.getState().recordTransportTrace("outbox: retry_deferred");
           stopActiveDrain(runtime, deliveryId, due.contactId, due.messageId, outboxRetryDelay(next.attempts));
         }
       });
@@ -277,8 +285,11 @@ async function run(runtime: OutboxRuntime): Promise<void> {
     } catch {
       // The next attempt was persisted before sealing so a reload, route
       // change, or local failure cannot turn this into a hidden live queue.
-      runtime.storeApi.getState().setMessageDeliveryState(due.contactId, due.messageId, "unavailable");
-      runtime.storeApi.getState().recordTransportTrace("outbox: retry_failed");
+      // It remains a pending local composition while this foreground runtime
+      // has a bounded retry scheduled. `unavailable` is reserved for a truly
+      // terminal local outcome, such as maximum-age expiry or explicit user
+      // retry state, not a transient cold-path miss.
+      runtime.storeApi.getState().recordTransportTrace("outbox: retry_deferred");
       stopActiveDrain(runtime, deliveryId, due.contactId, due.messageId, outboxRetryDelay(next.attempts));
     }
   } finally {

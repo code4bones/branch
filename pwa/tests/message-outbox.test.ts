@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { resolve } from "node:path";
 
 import {
   outboxMaximumAgeMs,
@@ -16,6 +18,7 @@ import { maxStoredReceivedApplicationMessages } from "../src/storage/received-ap
 import { createAppStore } from "../src/state/store.js";
 
 void test("message outbox retry delay is bounded exponential backoff", () => {
+  assert.equal(outboxRetryInitialDelayMs, 1_000);
   assert.equal(outboxRetryDelay(1), outboxRetryInitialDelayMs);
   assert.equal(outboxRetryDelay(2), outboxRetryInitialDelayMs * 2);
   assert.equal(outboxRetryDelay(3), outboxRetryInitialDelayMs * 4);
@@ -23,6 +26,14 @@ void test("message outbox retry delay is bounded exponential backoff", () => {
   assert.equal(outboxMaximumAgeMs, 7 * 24 * 60 * 60 * 1_000);
   assert.equal(maxStoredOutboxEntries, 128);
   assert.equal(maxStoredReceivedApplicationMessages, 4096);
+});
+
+void test("cold-path automatic retry remains endpoint-local and pending", async () => {
+  const source = await readFile(resolve(process.cwd(), "src/connectivity/message-outbox-runtime.ts"), "utf8");
+  assert.match(source, /first federated lookup can race/);
+  assert.match(source, /outbox: retry_deferred/);
+  assert.doesNotMatch(source, /onRelayOutcomeTimeout: \(\) => \{\s*runtime\.storeApi\.getState\(\)\.setMessageDeliveryState/s);
+  assert.equal(outboxRetryDelay(1), 1_000);
 });
 
 void test("a queued text asks for capability renewal only while capability is absent", () => {
