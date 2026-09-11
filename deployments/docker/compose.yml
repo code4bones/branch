@@ -53,7 +53,7 @@ services:
       - |
         test -n "$${BRANCH_TURN_AUTH_SECRET}" || { echo "BRANCH_TURN_AUTH_SECRET is required" >&2; exit 64; }
         test -n "$${BRANCH_TURN_REALM}" || { echo "BRANCH_TURN_REALM is required" >&2; exit 64; }
-        set -- --no-cli --no-tls --no-dtls --fingerprint --stale-nonce --no-auth-pings --use-auth-secret --static-auth-secret="$${BRANCH_TURN_AUTH_SECRET}" --realm="$${BRANCH_TURN_REALM}" --min-port=49160 --max-port=49200 --user-quota=4 --total-quota=120 --max-bps=3000000 --no-tcp-relay --no-loopback-peers --no-multicast-peers --log-file=stdout
+        set -- --no-tls --fingerprint --stale-nonce --no-auth-pings --use-auth-secret --static-auth-secret="$${BRANCH_TURN_AUTH_SECRET}" --realm="$${BRANCH_TURN_REALM}" --min-port=49160 --max-port=49200 --user-quota=4 --total-quota=120 --max-bps=3000000 --no-tcp-relay --no-multicast-peers --log-file=stdout
         if [ -n "$${BRANCH_TURN_EXTERNAL_IP}" ]; then set -- "$$@" --external-ip="$${BRANCH_TURN_EXTERNAL_IP}"; fi
         exec turnserver "$$@"
     ports:
