@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { test } from "node:test";
 import {
   decodeApplicationControl,
@@ -125,6 +127,14 @@ void test("chunk transfer verifies manifest signature, capability, digest, magic
     reason: "invalid_signature"
   });
   assert.equal(invalid.completed.length, 0);
+});
+
+void test("PWA image adapter delegates bounded manifest/chunk reassembly to branch core", async () => {
+  const source = await readFile(resolve(process.cwd(), "src/connectivity/image-transfer.ts"), "utf8");
+  assert.match(source, /ImageTransferReassemblyRegistry/);
+  assert.match(source, /this\.#inbound\.receiveChunk/);
+  assert.doesNotMatch(source, /readonly chunks: Map<number, Uint8Array>/);
+  assert.doesNotMatch(source, /chunk\.index - inbound\.nextMissingIndex/);
 });
 
 interface TimerHandle { active: boolean; readonly callback: () => void; }

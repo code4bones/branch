@@ -1,0 +1,25 @@
+{
+  "schema": "branch.image-transfer-reassembly-vectors/0.draft",
+  "notes": [
+    "The one-byte base64url seed is repeated exactly chunk_repeat times to form each exact chunk body.",
+    "Vectors cover endpoint-only reassembly; they contain no wire encoding, relay state, persistence, timer, raster, or Blob behaviour."
+  ],
+  "valid": {
+    "peer_id": "peer-vector",
+    "transfer_id": "EBAQEBAQEBAQEBAQEBAQEA",
+    "manifest_id": "ERERERERERERERERERERERERERERERERERERERERERE",
+    "message_id": "EhISEhISEhISEhISEhISEg",
+    "issued_at": 1700000000000,
+    "expires_at": 1700000900000,
+    "chunk_seed_base64url": "Bw",
+    "chunk_repeat": 256,
+    "chunk_count": 2,
+    "sha256": "FZMwRJYP0jp9qqyc5RNV8fOYlNHD_m3iG1myjOLHfnc"
+  },
+  "hostile": [
+    "conflicting duplicate chunk aborts the transfer",
+    "out-of-range chunk aborts the transfer",
+    "a chunk beyond the bounded reorder window aborts the transfer",
+    "a completed or aborted transfer manifest is replayed only as a bounded local rejection"
+  ]
+}

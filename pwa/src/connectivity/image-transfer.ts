@@ -18,11 +18,11 @@ import {
   imageTransferManifestKind,
   imageTransferManifestSigningBytes,
   imageTransferVersion,
+  ImageTransferReassemblyRegistry,
   maxImageTransferChunkBytes,
   maxImageTransferTTLms,
   sha256Base64URL,
   validateImageManifestForMessage,
-  validateImageTransferChunkForManifest,
   type ImageCapabilities,
   type ImageRoute,
   type ImageTransferManifest,
@@ -33,8 +33,6 @@ import {
 export { imageInlineKind, imageTransferManifestKind, imageTransferChunkKind };
 
 const imageKinds = [imageInlineKind, imageTransferManifestKind, imageTransferChunkKind] as const;
-const maximumInboundTransfers = 16;
-const maximumReorderChunks = 64;
 
 export type ImageTransferReason =
   | "accepted"
@@ -112,16 +110,6 @@ export type ImageIncomingResult =
   | { readonly status: "handled"; readonly kind: typeof imageInlineKind | typeof imageTransferManifestKind | typeof imageTransferChunkKind }
   | { readonly status: "ignored"; readonly reason: "unknown_peer" | "unsupported" | "busy" | "invalid_payload" | "invalid_signature" };
 
-interface InboundTransfer {
-  readonly peerId: string;
-  readonly route: ImageRoute;
-  readonly manifest: ImageTransferManifest;
-  readonly chunks: Map<number, Uint8Array>;
-  readonly expiry: unknown;
-  receivedBytes: number;
-  nextMissingIndex: number;
-}
-
 /**
  * A bounded live image-transfer adapter. It deliberately has no attachment
  * decision method, relay ACK window, retry queue, persistence, or UI import.
@@ -130,7 +118,12 @@ interface InboundTransfer {
  */
 export class ImageTransferController {
   readonly #ports: ImageTransferPorts;
-  readonly #inbound = new Map<string, InboundTransfer>();
+  // Pure chunk identity, ordering, duplicate and digest state lives in core.
+  // This adapter owns only browser-side expiry scheduling and image projection.
+  readonly #inbound = new ImageTransferReassemblyRegistry({ sha256Base64URL });
+  readonly #inboundExpiry = new Map<string, unknown>();
+  readonly #inboundRoutes = new Map<string, ImageRoute>();
+  readonly #inboundSizes = new Map<string, number>();
   readonly #outboundPeers = new Set<string>();
 
   constructor(ports: ImageTransferPorts) {
@@ -204,7 +197,10 @@ export class ImageTransferController {
   }
 
   close(): void {
-    for (const inbound of this.#inbound.values()) this.#ports.timers.cancel(inbound.expiry);
+    for (const expiry of this.#inboundExpiry.values()) this.#ports.timers.cancel(expiry);
+    this.#inboundExpiry.clear();
+    this.#inboundRoutes.clear();
+    this.#inboundSizes.clear();
     this.#inbound.clear();
     this.#outboundPeers.clear();
   }
@@ -268,75 +264,49 @@ export class ImageTransferController {
     validateImageManifestForMessage(manifest, messageId);
     const capabilities = this.#ports.inboundCapabilities(peerId);
     if (capabilities === null || !capabilityAllowsImageTransfer(capabilities, manifest, route)) return { status: "ignored", reason: "unsupported" };
-    if (this.#inbound.has(peerId) || this.#inbound.size >= maximumInboundTransfers) return { status: "ignored", reason: "busy" };
     if (!await this.#verifyManifest(peerId, manifest)) return { status: "ignored", reason: "invalid_signature" };
     const now = this.#ports.now();
     if (now >= manifest.expiresAt) return { status: "ignored", reason: "invalid_payload" };
-    const inbound: InboundTransfer = {
-      peerId,
-      route,
-      manifest,
-      chunks: new Map(),
-      receivedBytes: 0,
-      nextMissingIndex: 0,
-      expiry: this.#ports.timers.schedule(manifest.expiresAt - now, () => { this.#endInbound(peerId, "expired"); })
-    };
-    this.#inbound.set(peerId, inbound);
-    this.#emit("image.transfer.started", peerId, "inbound", "accepted", manifest.byteCount);
+    const opened = this.#inbound.open(peerId, manifest, now);
+    if (opened.status === "busy") return { status: "ignored", reason: "busy" };
+    if (opened.status !== "opened" && opened.status !== "duplicate_manifest") return { status: "ignored", reason: "invalid_payload" };
+    if (opened.status === "opened") {
+      this.#inboundRoutes.set(peerId, route);
+      this.#inboundSizes.set(peerId, manifest.byteCount);
+      this.#scheduleInboundExpiry(peerId, manifest.expiresAt - now);
+      this.#emit("image.transfer.started", peerId, "inbound", "accepted", manifest.byteCount);
+    }
     return { status: "handled", kind: imageTransferManifestKind };
   }
 
   async #receiveChunk(peerId: string, body: Uint8Array): Promise<ImageIncomingResult> {
-    const inbound = this.#inbound.get(peerId);
-    if (inbound === undefined) return { status: "ignored", reason: "unsupported" };
     const chunk = decodeImageTransferChunk(body);
-    try { validateImageTransferChunkForManifest(chunk, inbound.manifest); } catch {
-      this.#endInbound(peerId, "integrity_failed");
-      return { status: "ignored", reason: "invalid_payload" };
-    }
-    if (this.#ports.now() >= inbound.manifest.expiresAt) {
-      this.#endInbound(peerId, "expired");
-      return { status: "ignored", reason: "unsupported" };
-    }
-    const previous = inbound.chunks.get(chunk.index);
-    if (previous !== undefined) {
-      if (!equal(previous, chunk.bytes)) this.#endInbound(peerId, "integrity_failed");
-      return { status: "handled", kind: imageTransferChunkKind };
-    }
-    if (chunk.index - inbound.nextMissingIndex > maximumReorderChunks) {
-      this.#endInbound(peerId, "integrity_failed");
-      return { status: "ignored", reason: "invalid_payload" };
-    }
-    const bytes = copy(chunk.bytes);
-    inbound.chunks.set(chunk.index, bytes);
-    inbound.receivedBytes += bytes.byteLength;
-    while (inbound.chunks.has(inbound.nextMissingIndex)) inbound.nextMissingIndex += 1;
-    if (inbound.chunks.size !== inbound.manifest.chunkCount) return { status: "handled", kind: imageTransferChunkKind };
-    if (inbound.receivedBytes !== inbound.manifest.byteCount) {
-      this.#endInbound(peerId, "integrity_failed");
-      return { status: "ignored", reason: "invalid_payload" };
-    }
-    const complete = new Uint8Array(inbound.manifest.byteCount);
-    let offset = 0;
-    for (let index = 0; index < inbound.manifest.chunkCount; index += 1) {
-      const current = inbound.chunks.get(index);
-      if (current === undefined) {
-        this.#endInbound(peerId, "integrity_failed");
-        return { status: "ignored", reason: "invalid_payload" };
+    const reassembled = await this.#inbound.receiveChunk(peerId, chunk, this.#ports.now());
+    if (reassembled.status === "chunk_stored" || reassembled.status === "duplicate_chunk") return { status: "handled", kind: imageTransferChunkKind };
+    if (reassembled.status !== "completed") {
+      this.#clearInboundExpiry(peerId);
+      this.#inboundRoutes.delete(peerId);
+      this.#inboundSizes.delete(peerId);
+      if (reassembled.status === "expired") {
+        this.#emit("image.transfer.ended", peerId, "inbound", "expired");
+        return { status: "ignored", reason: "unsupported" };
       }
-      complete.set(current, offset);
-      offset += current.byteLength;
-    }
-    const capability = this.#ports.inboundCapabilities(peerId);
-    if (capability === null || !capabilityAllowsImageTransfer(capability, inbound.manifest, inbound.route) ||
-      await sha256Base64URL(complete) !== inbound.manifest.sha256 ||
-      !hasRasterImageMagic(inbound.manifest.mediaType, complete) ||
-      !await this.#verifyRaster({ mediaType: inbound.manifest.mediaType, width: inbound.manifest.width, height: inbound.manifest.height, bytes: complete })) {
-      this.#endInbound(peerId, "integrity_failed");
+      if (reassembled.status === "ignored") return { status: "ignored", reason: "unsupported" };
+      this.#emit("image.transfer.ended", peerId, "inbound", "integrity_failed");
       return { status: "ignored", reason: "invalid_payload" };
     }
-    const manifest = inbound.manifest;
-    this.#dropInbound(peerId);
+    this.#clearInboundExpiry(peerId);
+    const { bytes: complete, manifest } = reassembled;
+    const route = this.#inboundRoutes.get(peerId);
+    this.#inboundRoutes.delete(peerId);
+    this.#inboundSizes.delete(peerId);
+    const capability = this.#ports.inboundCapabilities(peerId);
+    if (route === undefined || capability === null || !capabilityAllowsImageTransfer(capability, manifest, route) ||
+      !hasRasterImageMagic(manifest.mediaType, complete) ||
+      !await this.#verifyRaster({ mediaType: manifest.mediaType, width: manifest.width, height: manifest.height, bytes: complete })) {
+      this.#emit("image.transfer.ended", peerId, "inbound", "integrity_failed", manifest.byteCount);
+      return { status: "ignored", reason: "invalid_payload" };
+    }
     await this.#ports.onImage({ peerId, messageId: manifest.messageId, mediaType: manifest.mediaType, width: manifest.width, height: manifest.height, bytes: complete, ...(manifest.caption === undefined ? {} : { caption: manifest.caption }), ...(manifest.replyToMessageId === undefined ? {} : { replyToMessageId: manifest.replyToMessageId }) });
     this.#emit("image.transfer.ended", peerId, "inbound", "accepted", complete.byteLength);
     return { status: "handled", kind: imageTransferChunkKind };
@@ -358,17 +328,22 @@ export class ImageTransferController {
     await this.#ports.send({ peerId, deliveryId: this.#token(16), plaintext });
   }
 
-  #endInbound(peerId: string, reason: ImageTransferReason): void {
-    const inbound = this.#inbound.get(peerId);
-    if (inbound === undefined) return;
-    this.#dropInbound(peerId);
-    this.#emit("image.transfer.ended", peerId, "inbound", reason, inbound.manifest.byteCount);
+  #scheduleInboundExpiry(peerId: string, delayMs: number): void {
+    this.#clearInboundExpiry(peerId);
+    this.#inboundExpiry.set(peerId, this.#ports.timers.schedule(delayMs, () => {
+      this.#inbound.expire(this.#ports.now());
+      this.#inboundRoutes.delete(peerId);
+      const byteCount = this.#inboundSizes.get(peerId);
+      this.#inboundSizes.delete(peerId);
+      this.#inboundExpiry.delete(peerId);
+      if (byteCount !== undefined) this.#emit("image.transfer.ended", peerId, "inbound", "expired", byteCount);
+    }));
   }
 
-  #dropInbound(peerId: string): void {
-    const inbound = this.#inbound.get(peerId);
-    if (inbound !== undefined) this.#ports.timers.cancel(inbound.expiry);
-    this.#inbound.delete(peerId);
+  #clearInboundExpiry(peerId: string): void {
+    const expiry = this.#inboundExpiry.get(peerId);
+    if (expiry !== undefined) this.#ports.timers.cancel(expiry);
+    this.#inboundExpiry.delete(peerId);
   }
 
   #token(size: number): string {
@@ -388,11 +363,6 @@ function buffer(bytes: Uint8Array): ArrayBuffer {
 
 function copy(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
-}
-
-function equal(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  return left.every((value, index) => value === right[index]);
 }
 
 function imageSizeBucket(byteCount: number): NonNullable<ImageTransferEvent["sizeBucket"]> {
