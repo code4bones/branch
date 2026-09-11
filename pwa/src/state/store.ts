@@ -12,6 +12,7 @@ import { createCompletedAttachmentsSlice, type CompletedAttachmentsSlice } from 
 import { createHydrationSlice, type HydrationSlice } from "./slices/hydration-slice.js";
 import { createInboundAttachmentOffersSlice, type InboundAttachmentOffersSlice } from "./slices/inbound-attachment-offers-slice.js";
 import { createIdentitySlice, type IdentitySlice } from "./slices/identity-slice.js";
+import { createImageMessageProjectionsSlice, type ImageMessageProjectionsSlice } from "./slices/image-message-projections-slice.js";
 import { createMessageRequestsSlice, type MessageRequestsSlice } from "./slices/message-requests-slice.js";
 import { createMessageOutboxSlice, type MessageOutboxSlice } from "./slices/message-outbox-slice.js";
 import { createMessageActionsSlice, type MessageActionsSlice } from "./slices/message-actions-slice.js";
@@ -33,6 +34,7 @@ export type AppStore = UiSlice &
   ContactPresenceSlice &
   ContactTypingSlice &
   ConversationsSlice &
+  ImageMessageProjectionsSlice &
   CompletedAttachmentsSlice &
   InboundAttachmentOffersSlice &
   MessageRequestsSlice &
@@ -58,6 +60,7 @@ export function createAppStore(): AppStoreApi {
     ...createContactPresenceSlice(...creator),
     ...createContactTypingSlice(...creator),
     ...createConversationsSlice(...creator),
+    ...createImageMessageProjectionsSlice(...creator),
     ...createCompletedAttachmentsSlice(...creator),
     ...createInboundAttachmentOffersSlice(...creator),
     ...createMessageRequestsSlice(...creator),

@@ -1,9 +1,20 @@
 import type { RelayRouteMaterial } from "@code4bones/branch-core";
-import { useEffect } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppStore } from "./StoreProvider.js";
 import { useAppStoreApi } from "./StoreProvider.js";
 import { downloadVerifiedCompletedAttachment, type CompletedAttachmentDownloadResult } from "../app/transient-attachment-presentation.js";
+import type { LocalImageMessageProjection } from "../app/image-message.js";
+import { loadStoredImageMessageBlob } from "../storage/image-media-store.js";
+import {
+  conversationTimelinePageEntries,
+  initialConversationTimelineEntries,
+  loadStoredTimelineEntryByApplicationMessageId,
+  loadStoredTimelineEntriesAfter,
+  loadStoredTimelinePage,
+  maxConversationTimelineEntries,
+  type ConversationTimelineEntry
+} from "../storage/messages-store.js";
 import type { RouteStatus } from "./slices/connection-slice.js";
 import type { ContactSummary } from "./slices/contacts-slice.js";
 import type { ContactFolder } from "./contact-folders-model.js";
@@ -175,6 +186,104 @@ export function useConversation(contactId: string | null): ConversationControls 
   return { messages, appendMessage, retryUnavailableMessage, setMessageDeliveryState, deleteMessagesLocally };
 }
 
+export interface ConversationTimelineControls {
+  readonly hasOlder: boolean;
+  readonly loadingOlder: boolean;
+  readonly loadOlder: () => Promise<void>;
+  readonly loadReplyTarget: (messageId: string) => Promise<void>;
+  readonly loadLatest: () => Promise<void>;
+}
+
+/**
+ * Owns the selected chat's bounded device-local history window. Cursor reads
+ * are strictly IndexedDB work: they never ask a peer, carrier, or relay for
+ * older messages.
+ */
+export function useConversationTimeline(contactId: string | null): ConversationTimelineControls {
+  const storeApi = useAppStoreApi();
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  const activeContactRef = useRef<string | null>(contactId);
+  activeContactRef.current = contactId;
+
+  const apply = useCallback((targetContactId: string, entries: readonly ConversationTimelineEntry[], keep: "oldest" | "newest"): void => {
+    const deduplicated = new Map<string, ConversationTimelineEntry>();
+    for (const entry of entries) deduplicated.set(entry.messageId, entry);
+    const ordered = [...deduplicated.values()]
+      .sort((left, right) => left.sentAt - right.sentAt || left.messageId.localeCompare(right.messageId));
+    const bounded = keep === "oldest"
+      ? ordered.slice(0, maxConversationTimelineEntries)
+      : ordered.slice(-maxConversationTimelineEntries);
+    const messages = bounded.flatMap((entry) => entry.kind === "text" ? [entry.message] : []);
+    const images = bounded.flatMap((entry) => entry.kind === "image" ? [entry.image] : []);
+    storeApi.getState().replaceConversationWindow(targetContactId, messages);
+    storeApi.getState().replaceImageMessageProjectionWindow(targetContactId, images);
+  }, [storeApi]);
+
+  const currentEntries = useCallback((targetContactId: string): readonly ConversationTimelineEntry[] => {
+    const state = storeApi.getState();
+    const messages = state.messagesByContactId[targetContactId] ?? emptyMessages;
+    const images = Object.values(state.imageMessageProjectionsById)
+      .filter((projection) => projection.contactId === targetContactId);
+    return [
+      ...messages.map((message): ConversationTimelineEntry => ({ kind: "text", message, messageId: message.messageId, sentAt: message.sentAt })),
+      ...images.map((image): ConversationTimelineEntry => ({ kind: "image", image, messageId: image.messageId, sentAt: image.sentAt }))
+    ];
+  }, [storeApi]);
+
+  const loadLatest = useCallback(async (): Promise<void> => {
+    if (contactId === null) return;
+    const page = await loadStoredTimelinePage(contactId, null, initialConversationTimelineEntries);
+    if (activeContactRef.current !== contactId) return;
+    apply(contactId, page.entries, "newest");
+    setHasOlder(page.hasOlder);
+  }, [apply, contactId]);
+
+  const loadOlder = useCallback(async (): Promise<void> => {
+    if (contactId === null || !hasOlder || loadingOlderRef.current) return;
+    const current = currentEntries(contactId);
+    const oldest = current.slice().sort((left, right) => left.sentAt - right.sentAt || left.messageId.localeCompare(right.messageId))[0];
+    if (oldest === undefined) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const page = await loadStoredTimelinePage(contactId, { sentAt: oldest.sentAt, messageId: oldest.messageId }, conversationTimelinePageEntries);
+      if (activeContactRef.current !== contactId) return;
+      apply(contactId, [...page.entries, ...current], "oldest");
+      setHasOlder(page.hasOlder);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [apply, contactId, currentEntries, hasOlder]);
+
+  const loadReplyTarget = useCallback(async (applicationMessageId: string): Promise<void> => {
+    if (contactId === null) return;
+    const target = await loadStoredTimelineEntryByApplicationMessageId(applicationMessageId);
+    if (target === null) return;
+    const targetContactId = target.kind === "image" ? target.image.contactId : target.message.contactId;
+    if (targetContactId !== contactId) return;
+    const cursor = { sentAt: target.sentAt, messageId: target.messageId };
+    const [older, newer] = await Promise.all([
+      loadStoredTimelinePage(contactId, cursor, Math.floor((initialConversationTimelineEntries - 1) / 2)),
+      loadStoredTimelineEntriesAfter(contactId, cursor, Math.ceil((initialConversationTimelineEntries - 1) / 2))
+    ]);
+    if (activeContactRef.current !== contactId) return;
+    apply(contactId, [...older.entries, target, ...newer], "newest");
+    setHasOlder(older.hasOlder);
+  }, [apply, contactId]);
+
+  useEffect(() => {
+    setHasOlder(false);
+    void loadLatest().catch(() => {
+      if (activeContactRef.current === contactId) setHasOlder(false);
+    });
+  }, [contactId, loadLatest]);
+
+  return { hasOlder, loadingOlder, loadOlder, loadReplyTarget, loadLatest };
+}
+
 export interface MessageActionsControls {
   readonly menuMessageId: string | null;
   readonly selectedMessageIds: readonly string[];
@@ -243,6 +352,33 @@ export function useCompletedAttachment(peerId: string | null): CompletedAttachme
     attachment,
     download: () => peerId === null ? "not_found" : downloadVerifiedCompletedAttachment(storeApi, peerId)
   };
+}
+
+/**
+ * Exposes only verified image metadata. Each visible bubble asks its own local
+ * storage boundary for a Blob URL; the hook never opens every Blob in a chat.
+ */
+export function useLocalImageMessages(contactId: string | null): readonly LocalImageMessageProjection[] {
+  const allProjections = useAppStore((state) => state.imageMessageProjectionsById);
+  const projections = useMemo(() => Object.values(allProjections)
+    .filter((projection) => contactId !== null && projection.contactId === contactId)
+    .sort((left, right) => left.sentAt - right.sentAt || left.messageId.localeCompare(right.messageId)), [allProjections, contactId]);
+  const projectionKey = projections.map((projection) => [projection.messageId, projection.mediaType, projection.byteCount, projection.sentAt, projection.caption ?? "", projection.replyToMessageId ?? ""].join("\u0000")).join("\u0001");
+
+  return useMemo(() => projections.map((projection): LocalImageMessageProjection => ({
+    messageId: projection.messageId,
+    direction: projection.direction,
+    sentAt: projection.sentAt,
+    mediaType: projection.mediaType,
+    width: projection.width,
+    height: projection.height,
+    ...(projection.caption === undefined ? {} : { caption: projection.caption }),
+    ...(projection.replyToMessageId === undefined ? {} : { replyToMessageId: projection.replyToMessageId }),
+    loadObjectUrl: async () => {
+      const blob = await loadStoredImageMessageBlob(projection.messageId);
+      return blob === null || blob.size !== projection.byteCount ? null : URL.createObjectURL(blob);
+    }
+  })), [projectionKey]);
 }
 
 export interface IncomingMessageRequestControls {

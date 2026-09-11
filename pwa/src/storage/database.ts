@@ -4,10 +4,18 @@
 // from different modules is a real way to deadlock IndexedDB upgrades.
 
 const DATABASE_NAME = "branch-pwa";
+// v14 adds an application-message-ID lookup index to the compact timeline.
+// It resolves local reply targets without confusing a presentation message ID
+// with the authenticated application identity.
+// v13 adds a compact mixed text/image timeline index. It keeps the browser
+// from hydrating every local conversation just to render one selected chat.
+// v12 adds the split image-message projection/media stores. Metadata is
+// serializable, while the corresponding Blob bytes never leave the media
+// store for Zustand, diagnostics, or profile export.
 // v11 adds bounded device-local deletion tombstones. They prevent an older
 // asynchronous message write from reviving a locally deleted bubble; neither
 // they nor the deletion action ever leave this browser's DB.
-const DATABASE_VERSION = 11;
+const DATABASE_VERSION = 14;
 
 export const IDENTITY_STORE = "identity";
 export const CONTACTS_STORE = "contacts";
@@ -27,6 +35,13 @@ export const RECEIVED_APPLICATION_MESSAGES_STORE = "receivedApplicationMessages"
 export const READ_RECEIPT_OUTBOX_STORE = "readReceiptOutbox";
 export const MESSAGE_DELIVERY_TARGETS_STORE = "messageDeliveryTargets";
 export const LOCALLY_DELETED_MESSAGES_STORE = "locallyDeletedMessages";
+// Projection metadata and image bytes intentionally use distinct stores. A
+// metadata bootstrap must never read every Blob into the application state.
+export const IMAGE_MESSAGE_PROJECTIONS_STORE = "imageMessageProjections";
+export const IMAGE_MEDIA_STORE = "imageMedia";
+// This contains serializable text summaries or image projection metadata only.
+// Image Blob bytes remain in IMAGE_MEDIA_STORE and never enter this index.
+export const CHAT_TIMELINE_STORE = "chatTimeline";
 
 export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -87,6 +102,80 @@ export function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(LOCALLY_DELETED_MESSAGES_STORE)) {
         const tombstones = db.createObjectStore(LOCALLY_DELETED_MESSAGES_STORE, { keyPath: "messageId" });
         tombstones.createIndex("byDeletedAt", "deletedAt");
+      }
+      if (!db.objectStoreNames.contains(IMAGE_MESSAGE_PROJECTIONS_STORE)) {
+        const projections = db.createObjectStore(IMAGE_MESSAGE_PROJECTIONS_STORE, { keyPath: "messageId" });
+        projections.createIndex("byContactId", "contactId");
+        projections.createIndex("byStoredAt", "storedAt");
+      }
+      if (!db.objectStoreNames.contains(IMAGE_MEDIA_STORE)) {
+        db.createObjectStore(IMAGE_MEDIA_STORE, { keyPath: "messageId" });
+      }
+      let timeline: IDBObjectStore;
+      if (!db.objectStoreNames.contains(CHAT_TIMELINE_STORE)) {
+        timeline = db.createObjectStore(CHAT_TIMELINE_STORE, { keyPath: "messageId" });
+        timeline.createIndex("byContactChronology", ["contactId", "sentAt", "messageId"]);
+        // The upgrade transaction migrates only existing local metadata. It
+        // does not read Blobs, perform transport work, or add a durable queue.
+        const messages = request.transaction?.objectStore(MESSAGES_STORE);
+        const images = request.transaction?.objectStore(IMAGE_MESSAGE_PROJECTIONS_STORE);
+        if (messages !== undefined) {
+          const cursor = messages.openCursor();
+          cursor.onsuccess = () => {
+            const current = cursor.result;
+            if (current === null) return;
+            const value = current.value as { readonly messageId?: unknown; readonly applicationMessageId?: unknown; readonly contactId?: unknown; readonly sentAt?: unknown };
+            if (typeof value.messageId === "string" && typeof value.contactId === "string" && typeof value.sentAt === "number") {
+              const message: unknown = current.value;
+              timeline.put({
+                messageId: value.messageId,
+                applicationMessageId: typeof value.applicationMessageId === "string" ? value.applicationMessageId : value.messageId,
+                contactId: value.contactId,
+                sentAt: value.sentAt,
+                kind: "text",
+                message
+              });
+            }
+            current.continue();
+          };
+        }
+        if (images !== undefined) {
+          const cursor = images.openCursor();
+          cursor.onsuccess = () => {
+            const current = cursor.result;
+            if (current === null) return;
+            const value = current.value as { readonly messageId?: unknown; readonly contactId?: unknown; readonly sentAt?: unknown };
+            if (typeof value.messageId === "string" && typeof value.contactId === "string" && typeof value.sentAt === "number") {
+              const { storedAt: ignored, ...projection } = current.value as Record<string, unknown>;
+              void ignored;
+              timeline.put({ messageId: value.messageId, applicationMessageId: value.messageId, contactId: value.contactId, sentAt: value.sentAt, kind: "image", image: projection });
+            }
+            current.continue();
+          };
+        }
+      } else {
+        timeline = request.transaction?.objectStore(CHAT_TIMELINE_STORE) as IDBObjectStore;
+      }
+      if (!timeline.indexNames.contains("byApplicationMessageId")) {
+        timeline.createIndex("byApplicationMessageId", "applicationMessageId");
+        const cursor = timeline.openCursor();
+        cursor.onsuccess = () => {
+          const current = cursor.result;
+          if (current === null) return;
+          const value = current.value as Record<string, unknown>;
+          const text = value.kind === "text" && typeof value.message === "object" && value.message !== null
+            ? value.message as Record<string, unknown>
+            : null;
+          const applicationMessageId = typeof value.applicationMessageId === "string"
+            ? value.applicationMessageId
+            : typeof text?.applicationMessageId === "string"
+              ? text.applicationMessageId
+              : typeof value.messageId === "string"
+                ? value.messageId
+                : null;
+          if (applicationMessageId !== null) current.update({ ...value, applicationMessageId });
+          current.continue();
+        };
       }
     };
     request.onsuccess = () => { resolve(request.result); };

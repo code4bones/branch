@@ -760,9 +760,12 @@ registered bounded binary controls and payload descriptors first; a valid
 unknown kind is inert. Only a plaintext that is not a valid binary envelope may
 fall through to strict UTF-8 decoding of the former beta JSON message/presence
 and text-wrapped typing compatibility forms. The PWA text descriptor body is
-non-empty strict UTF-8 up to 3000 bytes; its random application `message_id` is
-separate from a relay `delivery_id`. This adapter rule changes neither relay
-frames nor the immutable connectivity profile.
+non-empty strict UTF-8 up to 3000 bytes. New reply-capable senders encode the
+closed JSON record `{body, ?reply_to_message_id}` inside those bytes; `body` is
+non-empty and `reply_to_message_id`, when present, is the base64url form of
+exactly 16 bytes. Older raw UTF-8 text remains receive-compatible. Its random
+application `message_id` is separate from a relay `delivery_id`. This adapter
+rule changes neither relay frames nor the immutable connectivity profile.
 
 For `branch.chat.text/0.draft`, `message_id` is the application identity, not
 an outer relay delivery identity. A device-local endpoint that retries an
@@ -813,6 +816,95 @@ manifest, file, chunk, transfer queue, retry state, or delivery promise, and a
 restart restores none of them. Auto-resume, file hosting, mailbox delivery,
 thumbnail generation, and cross-device transfer are out of scope for this
 draft.
+
+### Auto-rendered raster image messages
+
+D-BRANCH-087 adds the endpoint-only `branch.image-message/0.draft` family for
+ordinary image messages. It does not alter the Connectivity Protocol, version
+or profile negotiation, relay attachment, HPKE AAD, or the existing
+`branch.attachment/0.draft` file-transfer semantics. An image is never an
+external URL, relay metadata, fetch instruction, thumbnail request, or relay
+storage object. Its bytes travel only in the body of existing E2EE application
+payloads inside an HPKE `ENVELOPE`.
+
+The compile-time application payload descriptors are:
+
+- `branch.image.inline/0.draft`, with the nested deterministic-CBOR body
+  `{version, media_type, width, height, bytes, ?caption,
+  ?reply_to_message_id}`. `caption`, when
+  present, is bounded to 1024 UTF-8 bytes and authenticated with the image.
+  It permits only JPEG, PNG, or
+  WebP and at most 2800 image bytes, so its nested body remains below the
+  ordinary 4096-byte application-payload boundary.
+- `branch.image.transfer.manifest/0.draft`, with a nested-body limit of 2048
+  bytes and the signed nested body
+  `{version, transfer_id, manifest_id, message_id, issued_at, expires_at,
+  media_type, width, height, byte_count, chunk_bytes, chunk_count, sha256,
+  signature, ?caption, ?reply_to_message_id}`. This manifest is the ordinary image message while its bytes are
+  in flight. Its `message_id` MUST equal the enclosing application-payload
+  identity, preventing re-projection under a different message identity.
+- `branch.image.transfer.chunk/0.draft`, with the nested deterministic-CBOR
+  body `{version, transfer_id, manifest_id, index, bytes}`. Chunks bind to the
+  signed manifest and are not separately renderable messages.
+
+The transfer manifest and chunks are a separate
+`branch.image-transfer/0.draft` live subprotocol. The manifest signature input
+is `branch.image-transfer.signature/0.draft\0 ||
+deterministic_cbor(unsigned_manifest)`, verified using the known contact
+Ed25519 key. The transfer lasts at most 15 minutes, uses chunks from 256 to
+3072 bytes, has at most 8192 chunks, is at most 4 MiB on a relay route and 16
+MiB on a direct route, and has declared dimensions no greater than 4096×4096
+and 16,777,216 pixels. The recipient rejects conflicting duplicate chunks,
+binding or size mismatches, expiry, digest failures, and media outside the
+closed JPEG/PNG/WebP set. `image/svg+xml`, GIF, animated media, arbitrary
+binary, remote URLs, and unrecognized declared media types have no descriptor
+and are inert.
+
+Automatic image admission is separately gated by the signed
+`branch.image.capabilities/0.draft` application control. Its closed,
+deterministic-CBOR body is `{version, max_inline_bytes, max_relay_bytes,
+max_direct_bytes, max_width, max_height, max_pixels}`; `version` is
+`branch.image-message/0.draft`. The existing application-control signature,
+known-contact binding, replay window, and five-minute maximum TTL apply. This
+is receiver-owned consent: a sender MUST NOT send an image kind until it has a
+current accepted image capability and the chosen image fits every advertised
+byte and dimension/pixel limit for the selected direct or relay path. A
+receiver that issued the current capability automatically admits a valid image
+within those bounds; it sends no `branch.attachment` Accept control and must
+not present file-transfer Accept UX. Absent, expired, invalid, or unsupported
+image capability means unsupported locally, not offline.
+
+Before rendering, an endpoint MUST verify the actual raster magic bytes and
+decoded dimensions against the declared media type and its local capability.
+It then verifies the complete SHA-256 value for transfers. The deterministic
+core intentionally does not decode browser images or allocate browser media;
+the endpoint adapter owns decoding, local re-encoding/metadata stripping,
+bounded user-owned storage, Blob URL lifecycle, and projection only after these
+checks. Unsupported clients preserve the ordinary unknown-kind rule: no render,
+reply, contact creation, or conversation-state mutation.
+
+Image chunks are live best-effort opaque payloads just like all other
+application data. A sender may retain user-owned source bytes locally and
+re-offer only after a later live session and fresh accepted capability. Neither
+an image manifest nor chunks create relay queue, file, thumbnail, retry,
+mailbox, or durable delivery semantics. Relays retain no image bytes or image
+state and a restart restores none of them. Image telemetry, if enabled by an
+endpoint, records only bounded local outcome/size-bucket information and never
+pixels, image hashes, dimensions, Blob URLs, captions, identity material, or
+plaintext bytes.
+
+### Local reply projection
+
+D-BRANCH-089 adds an optional `reply_to_message_id` to ordinary text and image
+message bodies. It is exactly one other 16-byte application `message_id`; it is
+not a delivery ID, relay lookup key, or request to retrieve content. The
+reference is authenticated as part of the existing endpoint payload (and, for
+an image transfer, its signed manifest). A recipient resolves it only against
+its own already-projected text or image history. It may show a compact quoted
+text or local image thumbnail and jump to that original; it MUST use a neutral
+unavailable presentation when the local original is absent. No source body,
+pixels, thumbnail, sender metadata, URL, fetch request, or relay state is
+copied into a reply or emitted automatically.
 
 ### Path migration state machine
 

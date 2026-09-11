@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { openIncomingEnvelope } from "./open-envelope.js";
 import { receiveApplicationCapabilities, sendApplicationCapabilities } from "./application-capabilities-control.js";
 import { attachmentTransferController, clearAttachmentTransferController } from "./attachment-runtime.js";
+import { advertiseImageCapabilities, clearImageRuntime, imageTransferController, receiveImageCapabilities, receiveImagePayload, shouldReplyToImageCapabilities } from "./image-runtime.js";
 import { receiveDeliveryReceipt, sendDeliveryReceipt } from "./delivery-receipt-control.js";
 import { classifyIncomingMessage } from "./incoming-message.js";
 import { orderedAttachmentRoutes } from "./relay-route-selection.js";
@@ -91,6 +92,7 @@ export function useRelayTransport(): void {
       stopMessageOutboxRuntime();
       stopReadReceiptRuntime();
       clearAttachmentTransferController();
+      clearImageRuntime();
       clearLiveRTCSignaling();
       clearLiveRTCDataSenders();
       disconnectRelaySession();
@@ -119,6 +121,7 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
   }
   if (lifecycle.currentKey !== null) {
     clearAttachmentTransferController();
+    clearImageRuntime();
     for (const delivery of takeTrackedDeliveries()) {
       storeApi.getState().setMessageDeliveryState(delivery.contactId, delivery.messageId, "unavailable");
     }
@@ -163,6 +166,7 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
       // boundary as the other live adapters. Waiting for an unrelated inbound
       // payload made File intermittently appear unavailable after reload.
       attachmentTransferController(storeApi);
+      imageTransferController(storeApi);
       return;
     } catch (cause) {
       if (!isActiveAttachmentAttempt(lifecycle, attachKey)) {
@@ -336,6 +340,7 @@ function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecy
       stopContactPresenceRuntime();
       stopMessageOutboxRuntime();
       clearAttachmentTransferController();
+      clearImageRuntime();
       state.recordTransportTrace(disconnectTraceDetail(event));
       state.clearAllContactTyping();
       lifecycle.currentKey = null;
@@ -485,6 +490,18 @@ async function handleIncomingEnvelope(
       state.recordTransportTrace(`rtc signaling: ${rtcSignaling.outcome ?? "rejected"}`);
       return true;
     }
+    const imageCapabilities = await receiveImageCapabilities(storeApi, senderPeerId, plaintext);
+    if (imageCapabilities.handled) {
+      state.recordTransportTrace(`image capabilities: ${imageCapabilities.outcome ?? "rejected"}`);
+      if (imageCapabilities.outcome === "accepted" && knownContact !== null && knownContact.hpkePublicKey !== null && shouldReplyToImageCapabilities(storeApi, senderPeerId)) {
+        void advertiseImageCapabilities(storeApi, senderPeerId).then((result) => {
+          state.recordTransportTrace(`image capabilities: reply_${result}`);
+        }).catch(() => {
+          state.recordTransportTrace("image capabilities: reply_failed");
+        });
+      }
+      return true;
+    }
     const receipt = await receiveDeliveryReceipt({
       plaintext,
       localPeerId: state.identity.peerId,
@@ -525,6 +542,11 @@ async function handleIncomingEnvelope(
       state.recordTransportTrace(`attachment: inbound ${attachment.kind}`);
       return true;
     }
+    const image = await receiveImagePayload(storeApi, senderPeerId, plaintext);
+    if (image.status === "handled") {
+      state.recordTransportTrace(`image: inbound ${image.kind}`);
+      return true;
+    }
     // Do not turn arbitrary unknown application bytes into a telemetry
     // surface. These three outcomes can arise only after attachment routing
     // reached a concrete local admission decision and are safe, bounded
@@ -548,7 +570,9 @@ async function handleIncomingEnvelope(
           direction: "incoming",
           body: disposition.body,
           sentAt: Date.now(),
-          deliveryState: "received"
+          deliveryState: "received",
+          ...(disposition.applicationMessageId === null ? {} : { applicationMessageId: disposition.applicationMessageId }),
+          ...(disposition.replyToMessageId === undefined ? {} : { replyToMessageId: disposition.replyToMessageId })
         });
       } else {
         state.recordTransportTrace("incoming envelope: duplicate message");

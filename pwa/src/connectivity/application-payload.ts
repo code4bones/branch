@@ -1,6 +1,7 @@
 import {
   applicationPayloadVersion,
   chatTextKind,
+  decodeBase64URL,
   encodeApplicationPayload,
   type ApplicationPayloadEnvelope
 } from "@code4bones/branch-core";
@@ -14,8 +15,13 @@ const textEncoder = new TextEncoder();
 export function encodeChatTextApplicationPayload(options: {
   readonly messageId: string;
   readonly body: string;
+  readonly replyToMessageId?: string;
 }): Uint8Array {
-  const body = textEncoder.encode(options.body);
+  if (options.replyToMessageId !== undefined && !isApplicationMessageId(options.replyToMessageId)) {
+    throw new Error("invalid generic chat reply");
+  }
+  const text = JSON.stringify({ body: options.body, ...(options.replyToMessageId === undefined ? {} : { reply_to_message_id: options.replyToMessageId }) });
+  const body = textEncoder.encode(text);
   if (options.body.trim() === "" || body.byteLength > maxBetaPwaMessageBodyBytes) {
     throw new Error("invalid generic chat text");
   }
@@ -26,4 +32,8 @@ export function encodeChatTextApplicationPayload(options: {
     body
   };
   return encodeApplicationPayload(envelope);
+}
+
+function isApplicationMessageId(value: string): boolean {
+  try { return decodeBase64URL(value).byteLength === 16; } catch { return false; }
 }

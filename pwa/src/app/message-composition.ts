@@ -16,6 +16,7 @@ export function composeOutgoingText(options: {
   readonly body: string;
   readonly createdAt: number;
   readonly createId: () => string;
+  readonly replyToMessageId?: string;
 }): OutgoingTextComposition {
   const messageId = options.createId();
   const applicationMessageId = options.createId();
@@ -29,7 +30,9 @@ export function composeOutgoingText(options: {
       direction: "outgoing",
       body: options.body,
       sentAt: options.createdAt,
-      deliveryState: "pending"
+      deliveryState: "pending",
+      applicationMessageId,
+      ...(options.replyToMessageId === undefined ? {} : { replyToMessageId: options.replyToMessageId })
     },
     applicationMessageId
   };

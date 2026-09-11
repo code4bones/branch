@@ -61,7 +61,7 @@ export async function sealAndSendMessage(options: SealAndSendOptions): Promise<s
 // Sends the registered generic text kind as exact deterministic-CBOR bytes
 // inside the existing HPKE boundary. Its application message id is deliberately
 // independent of the live relay delivery id.
-export async function sealAndSendApplicationTextMessage(options: Omit<SealAndSendOptions, "senderHpkePublicKey" | "senderDisplayName"> & { readonly applicationMessageId?: string }): Promise<string> {
+export async function sealAndSendApplicationTextMessage(options: Omit<SealAndSendOptions, "senderHpkePublicKey" | "senderDisplayName"> & { readonly applicationMessageId?: string; readonly replyToMessageId?: string }): Promise<string> {
   const deliveryId = options.deliveryId ?? createDeliveryID();
   await sealAndSendPayload({
     senderPeerId: options.senderPeerId,
@@ -70,7 +70,8 @@ export async function sealAndSendApplicationTextMessage(options: Omit<SealAndSen
     deliveryId,
     plaintext: encodeChatTextApplicationPayload({
       messageId: options.applicationMessageId ?? deliveryId,
-      body: options.plaintext
+      body: options.plaintext,
+      ...(options.replyToMessageId === undefined ? {} : { replyToMessageId: options.replyToMessageId })
     }),
     track: { contactId: options.contactId, messageId: options.messageId ?? deliveryId, onTimeout: options.onRelayOutcomeTimeout }
   });

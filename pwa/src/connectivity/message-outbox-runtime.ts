@@ -267,6 +267,7 @@ async function run(runtime: OutboxRuntime): Promise<void> {
         deliveryId,
         applicationMessageId: due.applicationMessageId,
         plaintext: message.body,
+        ...(message.replyToMessageId === undefined ? {} : { replyToMessageId: message.replyToMessageId }),
         onRelayOutcomeTimeout: () => {
           runtime.storeApi.getState().setMessageDeliveryState(due.contactId, due.messageId, "unavailable");
           stopActiveDrain(runtime, deliveryId, due.contactId, due.messageId, outboxRetryDelay(next.attempts));

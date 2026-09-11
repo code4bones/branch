@@ -1,7 +1,8 @@
 import {
   chatTextKind,
   classifyApplicationPayload,
-  createApplicationPayloadRegistry
+  createApplicationPayloadRegistry,
+  decodeBase64URL
 } from "@code4bones/branch-core";
 
 import {
@@ -13,7 +14,7 @@ import {
 } from "./message-payload.js";
 
 export type IncomingMessageDisposition =
-  | { readonly kind: "known_contact_message"; readonly body: string; readonly contactId: string; readonly applicationMessageId: string | null }
+  | { readonly kind: "known_contact_message"; readonly body: string; readonly contactId: string; readonly applicationMessageId: string | null; readonly replyToMessageId?: string }
   | { readonly kind: "known_contact_presence_ping"; readonly contactId: string; readonly pingId: string }
   | { readonly kind: "known_contact_presence_pong"; readonly contactId: string; readonly pingId: string }
   | { readonly kind: "message_request"; readonly body: string; readonly senderPeerId: string; readonly senderHpkePublicKey: string; readonly senderDisplayName: string }
@@ -42,7 +43,7 @@ export function classifyIncomingMessage(options: {
     const body = decodeChatText(payload.envelope.body);
     return options.knownContactId === null
       ? { kind: "drop_unknown_application" }
-      : { kind: "known_contact_message", contactId: options.knownContactId, body, applicationMessageId: payload.envelope.messageId };
+      : { kind: "known_contact_message", contactId: options.knownContactId, body: body.body, applicationMessageId: payload.envelope.messageId, ...(body.replyToMessageId === undefined ? {} : { replyToMessageId: body.replyToMessageId }) };
   } catch {
     // Only a non-application payload may fall through to the explicit beta
     // compatibility grammar. Canonical CBOR maps are not valid strict UTF-8.
@@ -89,10 +90,23 @@ const applicationPayloadRegistry = createApplicationPayloadRegistry([{
   requiredCapability: chatTextKind
 }]);
 
-function decodeChatText(bytes: Uint8Array): string {
-  const body = textDecoder.decode(bytes);
-  if (body.trim() === "" || bytes.byteLength > maxBetaPwaMessageBodyBytes) {
+function decodeChatText(bytes: Uint8Array): { readonly body: string; readonly replyToMessageId?: string } {
+  const raw = textDecoder.decode(bytes);
+  if (raw.trim() === "" || bytes.byteLength > maxBetaPwaMessageBodyBytes) {
     throw new Error("invalid generic chat text");
   }
-  return body;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value === "object" && value !== null && !Array.isArray(value) && typeof (value as Record<string, unknown>).body === "string") {
+      const record = value as Record<string, unknown>;
+      const textBody = record.body;
+      if (typeof textBody !== "string" || !Object.keys(record).every((key) => key === "body" || key === "reply_to_message_id") || textBody.trim() === "") throw new Error("invalid generic chat text");
+      if (record.reply_to_message_id === undefined) return { body: textBody };
+      if (typeof record.reply_to_message_id !== "string" || !isMessageId(record.reply_to_message_id)) throw new Error("invalid generic chat reply");
+      return { body: textBody, replyToMessageId: record.reply_to_message_id };
+    }
+  } catch (cause) { if (cause instanceof Error && cause.message.startsWith("invalid")) throw cause; }
+  return { body: raw };
 }
+
+function isMessageId(value: string): boolean { try { return decodeBase64URL(value).byteLength === 16; } catch { return false; } }

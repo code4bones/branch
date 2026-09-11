@@ -4,6 +4,7 @@ export * from "./application-control/webrtc.js";
 export * from "./application-payload/runtime.js";
 export * from "./application-payload/attachment.js";
 export * from "./application-payload/capabilities.js";
+export * from "./application-payload/image.js";
 export * from "./application-payload/transfer-state.js";
 export * from "./connectivity/carrier-hopping-poc.js";
 export * from "./connectivity/echo-client.js";

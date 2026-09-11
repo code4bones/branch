@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ChatAvatar } from "./ChatAvatar.js";
 import { ContactTyping } from "./ContactTyping.js";
 import { formatChatListTimestamp } from "./format-time.js";
+import { DeliveryStateIcon } from "./MessageLog.js";
 import { chatPath, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
 import { useBranchID } from "../identity/use-branch-id.js";
@@ -169,7 +170,10 @@ function ChatListItem({ activeContactId, entry, navigateToChat }: { readonly act
             </div>
             <div className="pwa-chat-list-row">
               <ContactPreview contactId={entry.contact.contactId} fallback={entry.lastMessage?.body ?? "No messages yet"} />
-              {entry.unreadCount > 0 && <Badge count={entry.unreadCount} />}
+              <span className="pwa-chat-list-message-meta">
+                {entry.lastMessage?.direction === "outgoing" && <DeliveryStateIcon state={entry.lastMessage.deliveryState} />}
+                {entry.unreadCount > 0 && <Badge count={entry.unreadCount} />}
+              </span>
             </div>
           </div>
         </List.Item>

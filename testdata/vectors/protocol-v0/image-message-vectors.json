@@ -1,0 +1,68 @@
+{
+  "schema": "branch.image-message-vectors/0.draft",
+  "application_payload_version": "branch.application-payload/0.draft",
+  "image_message_version": "branch.image-message/0.draft",
+  "image_transfer_version": "branch.image-transfer/0.draft",
+  "image_capabilities_control_kind": "branch.image.capabilities/0.draft",
+  "notes": [
+    "All canonical_body fields are deterministic CBOR bodies inside existing HPKE application payloads or signed application controls.",
+    "The manifest is an endpoint image message and chunks are bounded live opaque application data; neither is relay metadata or relay storage.",
+    "The test PNG bytes are a magic-byte sample only. Endpoint adapters must additionally verify actual magic and decoded dimensions before rendering."
+  ],
+  "valid": {
+    "inline": {
+      "version": "branch.image-message/0.draft",
+      "media_type": "image/png",
+      "width": 1,
+      "height": 1,
+      "bytes": "iVBORw0KGgo",
+      "canonical_body": "pWVieXRlc0iJUE5HDQoaCmV3aWR0aAFmaGVpZ2h0AWd2ZXJzaW9ueBxicmFuY2guaW1hZ2UtbWVzc2FnZS8wLmRyYWZ0am1lZGlhX3R5cGVpaW1hZ2UvcG5n"
+    },
+    "manifest": {
+      "version": "branch.image-transfer/0.draft",
+      "transfer_id": "EBAQEBAQEBAQEBAQEBAQEA",
+      "manifest_id": "ERERERERERERERERERERERERERERERERERERERERERE",
+      "message_id": "EhISEhISEhISEhISEhISEg",
+      "issued_at": 1700000000000,
+      "expires_at": 1700000900000,
+      "media_type": "image/png",
+      "width": 1920,
+      "height": 1080,
+      "byte_count": 3073,
+      "chunk_bytes": 2048,
+      "chunk_count": 2,
+      "sha256": "ExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExM",
+      "signature": "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFA",
+      "canonical_body": "rmV3aWR0aBkHgGZoZWlnaHQZBDhmc2hhMjU2WCATExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE2d2ZXJzaW9ueB1icmFuY2guaW1hZ2UtdHJhbnNmZXIvMC5kcmFmdGlpc3N1ZWRfYXQbAAABi8_laABpc2lnbmF0dXJlWEAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUamJ5dGVfY291bnQZDAFqZXhwaXJlc19hdBsAAAGLz_MjoGptZWRpYV90eXBlaWltYWdlL3BuZ2ptZXNzYWdlX2lkUBISEhISEhISEhISEhISEhJrY2h1bmtfYnl0ZXMZCABrY2h1bmtfY291bnQCa21hbmlmZXN0X2lkWCAREREREREREREREREREREREREREREREREREREREREREWt0cmFuc2Zlcl9pZFAQEBAQEBAQEBAQEBAQEBAQ",
+      "signing_bytes": "YnJhbmNoLmltYWdlLXRyYW5zZmVyLnNpZ25hdHVyZS8wLmRyYWZ0AK1ld2lkdGgZB4BmaGVpZ2h0GQQ4ZnNoYTI1NlggExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExNndmVyc2lvbngdYnJhbmNoLmltYWdlLXRyYW5zZmVyLzAuZHJhZnRpaXNzdWVkX2F0GwAAAYvP5WgAamJ5dGVfY291bnQZDAFqZXhwaXJlc19hdBsAAAGLz_MjoGptZWRpYV90eXBlaWltYWdlL3BuZ2ptZXNzYWdlX2lkUBISEhISEhISEhISEhISEhJrY2h1bmtfYnl0ZXMZCABrY2h1bmtfY291bnQCa21hbmlmZXN0X2lkWCAREREREREREREREREREREREREREREREREREREREREREWt0cmFuc2Zlcl9pZFAQEBAQEBAQEBAQEBAQEBAQ"
+    },
+    "chunk": {
+      "version": "branch.image-transfer/0.draft",
+      "transfer_id": "EBAQEBAQEBAQEBAQEBAQEA",
+      "manifest_id": "ERERERERERERERERERERERERERERERERERERERERERE",
+      "index": 1,
+      "bytes": "FRUVFRU",
+      "canonical_body": "pWVieXRlc0UVFRUVFWVpbmRleAFndmVyc2lvbngdYnJhbmNoLmltYWdlLXRyYW5zZmVyLzAuZHJhZnRrbWFuaWZlc3RfaWRYIBERERERERERERERERERERERERERERERERERERERERERa3RyYW5zZmVyX2lkUBAQEBAQEBAQEBAQEBAQEBA"
+    },
+    "capabilities": {
+      "version": "branch.image-message/0.draft",
+      "max_inline_bytes": 2800,
+      "max_relay_bytes": 4194304,
+      "max_direct_bytes": 16777216,
+      "max_width": 4096,
+      "max_height": 4096,
+      "max_pixels": 16777216,
+      "canonical_body": "p2d2ZXJzaW9ueBxicmFuY2guaW1hZ2UtbWVzc2FnZS8wLmRyYWZ0aW1heF93aWR0aBkQAGptYXhfaGVpZ2h0GRAAam1heF9waXhlbHMaAQAAAG9tYXhfcmVsYXlfYnl0ZXMaAEAAAHBtYXhfZGlyZWN0X2J5dGVzGgEAAABwbWF4X2lubGluZV9ieXRlcxkK8A"
+    }
+  },
+  "invalid": [
+    "unknown or non-canonical deterministic-CBOR fields reject",
+    "SVG, GIF, animation, external URLs, and unrecognized media types reject",
+    "inline image bytes over 2800 reject",
+    "declared dimensions over 4096 in either axis or 16777216 pixels reject",
+    "a transfer manifest whose message_id differs from its enclosing application payload rejects before projection",
+    "a transfer outside a current signed image capability's byte or pixel limits is not sent or automatically admitted",
+    "a chunk with wrong transfer/manifest/index/non-final length rejects",
+    "relay restart restores no manifest, chunk, image bytes, retry queue, or delivery state"
+  ]
+}

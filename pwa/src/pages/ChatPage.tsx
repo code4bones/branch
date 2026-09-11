@@ -7,20 +7,21 @@ import type { MenuProps } from "antd";
 import { ChatAvatar } from "../app/ChatAvatar.js";
 import { ContactPresence } from "../app/ContactPresence.js";
 import { DetailHeader } from "../app/DetailHeader.js";
-import { AttachmentSendControl } from "../app/AttachmentSendControl.js";
 import { InboundAttachmentOffer } from "../app/InboundAttachmentOffer.js";
 import { MessageComposer } from "../app/MessageComposer.js";
 import { MessageLog } from "../app/MessageLog.js";
 import { composeOutgoingText } from "../app/message-composition.js";
 import { VerifiedCompletedAttachment } from "../app/VerifiedCompletedAttachment.js";
 import { clearTransientCompletedAttachment } from "../app/transient-attachment-presentation.js";
+import type { ImageInput, ImageInputRejection } from "../app/image-message.js";
 import { peerSupportsChatText, sendApplicationCapabilities } from "../connectivity/application-capabilities-control.js";
+import { advertiseImageCapabilities, sendLocalImageInput } from "../connectivity/image-runtime.js";
 import { advertiseLiveRTCCapabilities } from "../connectivity/rtc-runtime.js";
 import { getRelaySessionClient, hasAttachedRelaySession } from "../connectivity/relay-session.js";
 import { createDeliveryID } from "../connectivity/seal-and-send.js";
 import { sendTypingControl } from "../connectivity/typing-control.js";
 import { CHATS_PATH } from "../app/paths.js";
-import { useCompletedAttachment, useContacts, useConversation, useIdentity, useInboundAttachmentOffer, useMarkContactRead, useMessageActions, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
+import { useCompletedAttachment, useContacts, useConversation, useConversationTimeline, useIdentity, useInboundAttachmentOffer, useLocalImageMessages, useMarkContactRead, useMessageActions, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
 import type { ContactSummary } from "../state/slices/contacts-slice.js";
 import type { MessageSummary } from "../state/slices/conversations-slice.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
@@ -31,6 +32,7 @@ export function ChatPage(): React.JSX.Element {
   const resolvedContactId = contactId ?? null;
   const contacts = useContacts();
   const conversation = useConversation(resolvedContactId);
+  const conversationTimeline = useConversationTimeline(resolvedContactId);
   const messageActions = useMessageActions();
   const identity = useIdentity();
   const transport = useTransportStatus();
@@ -43,6 +45,7 @@ export function ChatPage(): React.JSX.Element {
   const [displayName, setDisplayName] = useState("");
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardContactId, setForwardContactId] = useState<string | null>(null);
+  const [replyToMessageId, setReplyToMessageId] = useState<string | null>(null);
   const bulkActionsMeasureRef = useRef<HTMLDivElement>(null);
   const [topBulkActionCount, setTopBulkActionCount] = useState(4);
   const presentedIncomingByContactId = useRef(new Map<string, Set<string>>());
@@ -52,6 +55,7 @@ export function ChatPage(): React.JSX.Element {
   const contact = contacts.contacts.find((candidate) => candidate.contactId === resolvedContactId) ?? null;
   const inboundAttachmentOffer = useInboundAttachmentOffer(contact?.peerId ?? null);
   const completedAttachment = useCompletedAttachment(contact?.peerId ?? null);
+  const imageMessages = useLocalImageMessages(contact?.contactId ?? null);
 
   useEffect(() => {
     if (contact !== null) {
@@ -98,6 +102,11 @@ export function ChatPage(): React.JSX.Element {
       storeApi.getState().recordTransportTrace(`application capabilities: chat_${result}`);
     }).catch(() => {
       storeApi.getState().recordTransportTrace("application capabilities: chat_failed");
+    });
+    void advertiseImageCapabilities(storeApi, contact.peerId).then((result) => {
+      storeApi.getState().recordTransportTrace(`image capabilities: chat_${result}`);
+    }).catch(() => {
+      storeApi.getState().recordTransportTrace("image capabilities: chat_failed");
     });
     void advertiseLiveRTCCapabilities({
       localPeerId: identity.identity.peerId,
@@ -214,9 +223,11 @@ export function ChatPage(): React.JSX.Element {
       contactId: destination.contactId,
       body,
       createdAt: previousUnavailableMessage?.sentAt ?? createdAt,
-      createId: createDeliveryID
+      createId: createDeliveryID,
+      ...(replyToMessageId === null ? {} : { replyToMessageId })
     });
     const pendingMessage = composition.message;
+    setReplyToMessageId(null);
     if (previousUnavailableMessage === undefined) {
       conversation.appendMessage(pendingMessage);
     } else if (!conversation.retryUnavailableMessage(destination.contactId, previousUnavailableMessage.messageId, pendingMessage)) {
@@ -261,6 +272,26 @@ export function ChatPage(): React.JSX.Element {
     }
     setDraft("");
     sendBody(body);
+  };
+
+  const handleImageInput = (input: ImageInput, caption: string): void => {
+    if (contact.peerId === null) return;
+    const replyTarget = replyToMessageId ?? undefined;
+    setReplyToMessageId(null);
+    setSendError(null);
+    setDraft("");
+    void sendLocalImageInput(storeApi, contact.contactId, contact.peerId, input, caption, replyTarget).then((result) => {
+      if (result.status === "sent") return;
+      setSendError(imageSendError(result.reason));
+    }).catch(() => {
+      setSendError("The image could not be prepared for this live chat.");
+    });
+  };
+
+  const handleImageRejected = (reason: ImageInputRejection): void => {
+    setSendError(reason === "unsupported_type"
+      ? "Images currently support JPEG, PNG, or WebP only."
+      : "No supported image was found in the clipboard.");
   };
 
   const retryUnavailableMessage = (message: MessageSummary): void => {
@@ -373,10 +404,17 @@ export function ChatPage(): React.JSX.Element {
       <MessageLog
         contactId={contact.contactId}
         emptyDescription="No messages yet."
+        imageMessages={imageMessages}
         menuMessageId={messageActions.menuMessageId}
         messages={conversation.messages}
         onCloseMessageMenu={messageActions.closeMessageMenu}
+        hasOlder={conversationTimeline.hasOlder}
+        loadingOlder={conversationTimeline.loadingOlder}
+        onLoadOlder={conversationTimeline.loadOlder}
+        onLoadLatest={conversationTimeline.loadLatest}
+        onLoadReplyTarget={conversationTimeline.loadReplyTarget}
         onOpenMessageMenu={(message) => { messageActions.openMessageMenu(contact.contactId, message.messageId); }}
+        onReplyMessage={(applicationMessageId) => { setReplyToMessageId(applicationMessageId); messageActions.closeMessageMenu(); }}
         onRetryUnavailableMessage={retryUnavailableMessage}
         onToggleMessageSelection={(message) => { messageActions.toggleMessageSelection(contact.contactId, message.messageId); }}
         selectedMessageIds={messageActions.selectedMessageIds}
@@ -388,11 +426,14 @@ export function ChatPage(): React.JSX.Element {
       )}
       {sendError !== null && <div className="pwa-chat-error">{sendError}</div>}
       <div className="pwa-chat-compose-row">
-        {peerId !== null && hpkePublicKey !== null && <AttachmentSendControl peerId={peerId} />}
         <MessageComposer
+          {...(peerId !== null && hpkePublicKey !== null ? { attachmentPeerId: peerId } : {})}
           onChange={setDraft}
+          {...(isReachable ? { onImageInput: handleImageInput, onImageRejected: handleImageRejected } : {})}
           onSend={handleSend}
+          onCancelReply={() => { setReplyToMessageId(null); }}
           placeholder={isReachable ? "Message" : "Messaging is unavailable until this contact has a live identity route"}
+          replyToMessageId={replyToMessageId}
           value={draft}
           {...(isReachable ? { onTyping: handleTyping } : {})}
         />
@@ -441,6 +482,17 @@ export function ChatPage(): React.JSX.Element {
       </Modal>
     </section>
   );
+}
+
+function imageSendError(reason: "unsupported" | "unavailable" | "busy" | "send_failed" | "invalid_image" | "storage"): string {
+  switch (reason) {
+    case "unsupported": return "This contact has not enabled automatic image messages yet.";
+    case "unavailable": return "Image sharing needs a live reachable contact.";
+    case "busy": return "An image is already being sent to this contact.";
+    case "invalid_image": return "This image is too large, animated, or could not be safely normalized.";
+    case "storage": return "This device has reached its local image-message limit.";
+    case "send_failed": return "The live image message could not be sent.";
+  }
 }
 
 function typingSendFailure(cause: unknown): "relay_not_attached" | "protocol_error" | "send_failed" {

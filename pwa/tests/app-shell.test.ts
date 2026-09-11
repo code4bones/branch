@@ -606,6 +606,11 @@ void test("file picker retains its DOM input across asynchronous offer completio
   const control = await readFile(resolve(process.cwd(), "src/app/AttachmentSendControl.tsx"), "utf8");
   assert.match(control, /const input = event\.currentTarget/);
   assert.match(control, /input\.value = ""/);
+  assert.match(control, /aria-label="Add attachment"/);
+  assert.match(control, /key: "file"[\s\S]{0,80}label: "Send file"/);
+  assert.match(control, /key: "image"[\s\S]{0,80}label: "Send image"/);
+  assert.match(control, /trigger=\{\["click"\]\}/);
+  assert.doesNotMatch(control, /Tooltip|title="Send file"/);
   assert.doesNotMatch(control, /finally\(\(\) => \{[\s\S]{0,260}event\.currentTarget/u);
 });
 
@@ -667,7 +672,7 @@ void test("read-receipt policy defaults on and keeps an explicit device-owned op
   const settings = await readFile(settingsPagePath, "utf8");
   const hooks = await readFile(hooksPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 11/);
+  assert.match(database, /const DATABASE_VERSION = 14/);
   assert.match(database, /RECEIPT_POLICY_STORE/);
   assert.match(policyStore, /loadStoredReadReceiptPolicy/);
   assert.match(policyStore, /saveStoredReadReceiptPolicy/);
@@ -722,7 +727,7 @@ void test("PWA persists sender receipt targets beyond outbox settlement", async 
   const contacts = await readFile(contactsSlicePath, "utf8");
 
   assert.match(database, /MESSAGE_DELIVERY_TARGETS_STORE/);
-  assert.match(database, /const DATABASE_VERSION = 11/);
+  assert.match(database, /const DATABASE_VERSION = 14/);
   assert.match(targets, /maxStoredMessageDeliveryTargets = 128/);
   assert.match(targets, /byDeliveryId/);
   assert.match(outboxRuntime, /await saveStoredMessageDeliveryTarget/);
@@ -867,7 +872,7 @@ void test("PWA chat log follows the reader only when they are already at the lat
 
   assert.match(messageLog, /openedDifferentConversation/);
   assert.match(messageLog, /stickToBottom\.current/);
-  assert.match(messageLog, /newest\?\.direction === "outgoing"/);
+  assert.match(messageLog, /newestTimelineDirection === "outgoing"/);
   assert.match(messageLog, /setShowScrollToBottom\(!atBottom\)/);
   assert.match(messageLog, /Scroll to bottom/);
   assert.match(messageLog, /VerticalAlignBottomOutlined/);
@@ -881,13 +886,18 @@ void test("PWA chat log follows the reader only when they are already at the lat
   assert.match(messageLog, /DoubleCheckIcon/);
   assert.match(messageLog, /ExclamationCircleOutlined/);
   assert.match(messageLog, /RedoOutlined/);
+  const chatListSidebar = await readFile(chatListSidebarPath, "utf8");
+  assert.match(chatListSidebar, /import \{ DeliveryStateIcon \} from "\.\/MessageLog\.js"/);
+  assert.match(chatListSidebar, /entry\.lastMessage\?\.direction === "outgoing" && <DeliveryStateIcon state=\{entry\.lastMessage\.deliveryState\} \/>/);
+  assert.match(chatListSidebar, /pwa-chat-list-message-meta/);
   assert.match(messageLog, /Retry sending message/);
   assert.match(messageLog, /onRetryUnavailableMessage/);
   assert.match(messageLog, /aria-label=\{presentation\.label\}/);
   assert.match(messageLog, /hour12: false/);
   assert.match(formatTime, /hour12: false/);
   assert.match(messageComposer, /SendOutlined/);
-  assert.match(messageComposer, /aria-label="Send message"/);
+  assert.match(messageComposer, /"Send message" : "Send image"/);
+  assert.doesNotMatch(messageComposer, /Tooltip|title="Send message"/);
   assert.match(messageComposer, /Input\.TextArea/);
   assert.match(messageComposer, /maxRows: 5/);
   assert.match(messageComposer, /event\.shiftKey/);
@@ -902,6 +912,7 @@ void test("PWA typing uses the shared signed control runtime and remains volatil
   const presence = await readFile(contactPresencePath, "utf8");
   const chatListSidebar = await readFile(chatListSidebarPath, "utf8");
   const composer = await readFile(resolve(process.cwd(), "src/app/MessageComposer.tsx"), "utf8");
+  assert.match(composer, /requestAnimationFrame\(\(\) => \{ textAreaRef\.current\?\.focus\(\); \}\)/);
   const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
 
   assert.match(typingControl, /branch\.pwa\.typing\/0\.draft/);
@@ -959,6 +970,20 @@ void test("PWA exposes the local identity and release in the contact-list header
   assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
   assert.match(styles, /\.pwa-release-version/);
   assert.match(styles, /\.pwa-discovery-title-row/);
+});
+
+void test("PWA keeps the compact single-pane UI usable on a 320 by 568 iPhone 5 viewport", async () => {
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+
+  // 100vh is retained for old Safari, which predates svh; settings must scroll
+  // because the shell intentionally clips its outer bounds.
+  assert.match(styles, /\.pwa-shell \{[\s\S]*height: 100vh;[\s\S]*height: 100svh;/);
+  assert.match(styles, /\.pwa-settings \{[\s\S]*overflow-y: auto;/);
+  assert.match(styles, /@media \(max-width: 375px\) \{[\s\S]*\.pwa-sidebar-release-version \{\s*display: none;/);
+  assert.match(styles, /@media \(max-width: 375px\) \{[\s\S]*\.pwa-chat-message,[\s\S]*max-width: 92%;/);
+  assert.match(styles, /@media \(max-width: 767px\) and \(max-height: 600px\)/);
+  assert.match(styles, /\.pwa-chat-composer \.ant-input,[\s\S]*font-size: 16px;/);
+  assert.match(styles, /\.pwa-chat-image \{[\s\S]*max-height: 440px;[\s\S]*max-height: min\(58dvh, 440px\);/);
 });
 
 void test("PWA typing receiver accepts a signed control for its known contact", async () => {
@@ -1164,6 +1189,19 @@ void test("PWA dispatches registered generic text bytes before explicit beta JSO
   const genericResult = classifyIncomingMessage({ plaintext: generic, senderPeerId, knownContactId: "contact-alice" });
   assert.deepEqual(genericResult, { kind: "known_contact_message", contactId: "contact-alice", body: "canonical generic text", applicationMessageId: "AgICAgICAgICAgICAgICAg" });
 
+  const replied = encodeChatTextApplicationPayload({
+    messageId: Buffer.alloc(16, 9).toString("base64url"),
+    body: "reply text",
+    replyToMessageId: Buffer.alloc(16, 8).toString("base64url")
+  });
+  assert.deepEqual(classifyIncomingMessage({ plaintext: replied, senderPeerId, knownContactId: "contact-alice" }), {
+    kind: "known_contact_message",
+    contactId: "contact-alice",
+    body: "reply text",
+    applicationMessageId: "CQkJCQkJCQkJCQkJCQkJCQ",
+    replyToMessageId: "CAgICAgICAgICAgICAgICA"
+  });
+
   const unknown = encodeApplicationPayload({
     version: applicationPayloadVersion,
     kind: "example.unknown/0.draft",
@@ -1199,6 +1237,8 @@ void test("opening a live known-contact chat refreshes volatile attachment capab
   const transport = await readFile(resolve(process.cwd(), "src/connectivity/use-relay-transport.ts"), "utf8");
   assert.match(chatPage, /Opening a\n\s+\/\/ live known-contact chat re-advertises/);
   assert.match(chatPage, /application capabilities: chat_\$\{result\}/);
+  assert.match(chatPage, /advertiseLiveRTCCapabilities/);
+  assert.match(chatPage, /rtc capabilities: chat_\$\{result\}/);
   assert.match(transport, /application capabilities: reply_\$\{result\}/);
 });
 
@@ -1307,7 +1347,7 @@ void test("contacts, messages, read state, inbound requests, and local receipt w
   const lastOpenedChatStore = await readFile(lastOpenedChatStorePath, "utf8");
   const app = await readFile(appPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 11/);
+  assert.match(database, /const DATABASE_VERSION = 14/);
   assert.match(database, /IDENTITY_STORE/);
   assert.match(database, /CONTACTS_STORE/);
   assert.match(database, /MESSAGES_STORE/);
@@ -1319,6 +1359,9 @@ void test("contacts, messages, read state, inbound requests, and local receipt w
   assert.match(database, /CONTACT_DISCOVERY_STORE/);
   assert.match(database, /CONTACT_FOLDERS_STORE/);
   assert.match(database, /CONTACT_FOLDER_ASSIGNMENTS_STORE/);
+  assert.match(database, /CHAT_TIMELINE_STORE/);
+  assert.match(database, /byContactChronology/);
+  assert.match(database, /byApplicationMessageId/);
   assert.match(database, /createIndex\("byFolderId", "folderId"\)/);
   assert.match(contactsStore, /openDatabase/);
   assert.match(await readFile(contactFoldersStorePath, "utf8"), /loadStoredContactFolders/);
@@ -1327,7 +1370,8 @@ void test("contacts, messages, read state, inbound requests, and local receipt w
   assert.match(readStateStore, /openDatabase/);
   assert.match(messageRequestsStore, /openDatabase/);
   assert.match(bootstrap, /loadStoredContacts/);
-  assert.match(bootstrap, /loadStoredMessages/);
+  assert.match(bootstrap, /loadStoredTimelinePage/);
+  assert.doesNotMatch(bootstrap, /loadStoredMessages/);
   assert.match(bootstrap, /loadStoredReadState/);
   assert.match(bootstrap, /await removeLegacyDemoState\(\)/);
   assert.match(bootstrap, /loadStoredMessageRequests/);
@@ -1354,6 +1398,9 @@ void test("contacts, messages, read state, inbound requests, and local receipt w
   assert.match(await readFile(contactFoldersSlicePath, "utf8"), /maxContactFolders/);
   assert.doesNotMatch(await readFile(contactFoldersSlicePath, "utf8"), /WebSocket|fetch\(/);
   assert.match(messagesStore, /index\("byContactId"\)\.openCursor\(IDBKeyRange\.only\(contactId\)\)/);
+  assert.match(messagesStore, /loadStoredTimelinePage/);
+  assert.match(messagesStore, /loadStoredTimelineEntryByApplicationMessageId/);
+  assert.match(messagesStore, /IDBKeyRange\.bound/);
   assert.match(readStateStore, /deleteStoredReadState/);
   assert.match(await readFile(receiptPolicyStorePath, "utf8"), /openDatabase/);
   assert.match(conversationsSlice, /saveStoredMessage/);

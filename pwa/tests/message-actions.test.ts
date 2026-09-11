@@ -48,7 +48,8 @@ void test("a forward composes only visible text with fresh local and application
       direction: "outgoing",
       body: "visible text only",
       sentAt: 123,
-      deliveryState: "pending"
+      deliveryState: "pending",
+      applicationMessageId: "new-application-message"
     },
     applicationMessageId: "new-application-message"
   });
@@ -60,7 +61,11 @@ void test("desktop uses right-click while touch long-press and selection clicks 
   const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
 
   assert.match(messageLog, /trigger=\{hasMessageActions \? \["contextMenu"\] : \[\]\}/);
-  assert.match(messageLog, /items: onToggleSelection === undefined \? \[\] : \[/);
+  assert.match(messageLog, /key: "reply", label: "Reply"/);
+  assert.match(messageLog, /onReply\?: \(applicationMessageId: string\) => void;/);
+  assert.match(messageLog, /className=\{`pwa-chat-image-trigger is-\$\{entry\.image\.direction\}`\}/);
+  assert.match(messageLog, /classList\.add\("is-reply-target"\)/);
+  assert.match(chatPage, /onReplyMessage=\{\(applicationMessageId\) => \{ setReplyToMessageId\(applicationMessageId\);/);
   assert.doesNotMatch(messageLog, /key: "forward"|key: "delete"|onForward|onDelete/);
   assert.match(messageLog, /onPointerDown=\{onPointerDown\}/);
   assert.match(messageLog, /longPressDurationMs = 550/);

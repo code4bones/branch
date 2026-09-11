@@ -1,7 +1,8 @@
 import type { StateCreator } from "zustand";
 
 import type { AppStore } from "../store.js";
-import { deleteStoredMessagesLocally, replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
+import { deleteStoredMessagesLocally, maxConversationTimelineEntries, replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
+import { deleteStoredImageMessages } from "../../storage/image-media-store.js";
 
 // `received` remains an inbound/local compatibility value. Remote user-facing
 // outcomes for an outgoing message are explicit: a relay may say Relayed, but
@@ -18,11 +19,15 @@ export interface MessageSummary {
   readonly body: string;
   readonly sentAt: number;
   readonly deliveryState: MessageDeliveryState;
+  readonly applicationMessageId?: string;
+  readonly replyToMessageId?: string;
 }
 
 export interface ConversationsSlice {
   readonly messagesByContactId: Readonly<Record<string, readonly MessageSummary[]>>;
   readonly appendMessage: (message: MessageSummary) => void;
+  /** Replaces the selected chat's bounded device-local render projection. */
+  readonly replaceConversationWindow: (contactId: string, messages: readonly MessageSummary[]) => void;
   // A retry is a new E2EE/live delivery attempt, never a replay of the old ID.
   readonly retryUnavailableMessage: (contactId: string, previousMessageId: string, replacement: MessageSummary) => boolean;
   readonly setMessageDeliveryState: (contactId: string, messageId: string, deliveryState: MessageDeliveryState) => void;
@@ -39,10 +44,18 @@ export const createConversationsSlice: StateCreator<AppStore, [], [], Conversati
         [message.contactId]: orderConversationMessages([
           ...(state.messagesByContactId[message.contactId] ?? []).filter((existing) => existing.messageId !== message.messageId),
           message
-        ])
+        ]).slice(-maxConversationTimelineEntries)
       }
     }));
     persistMessageInOrder(message);
+  },
+  replaceConversationWindow: (contactId, messages) => {
+    const bounded = orderConversationMessages(messages)
+      .filter((message) => message.contactId === contactId)
+      .slice(-maxConversationTimelineEntries);
+    set((state) => ({
+      messagesByContactId: { ...state.messagesByContactId, [contactId]: bounded }
+    }));
   },
   retryUnavailableMessage: (contactId, previousMessageId, replacement) => {
     if (
@@ -118,7 +131,15 @@ export const createConversationsSlice: StateCreator<AppStore, [], [], Conversati
       // immediately. An envelope already handed to live transit is not recalled.
       outbox: state.outbox.filter((entry) => !wanted.has(entry.messageId))
     }));
+    // Images use the same device-local delete boundary as their message
+    // projection. No transport control, relay request, or remote deletion is
+    // emitted by this cleanup.
+    get().removeImageMessageProjections(deletedIds);
     persistMessageDeletionInOrder(deletedIds);
+    void deleteStoredImageMessages(deletedIds).catch(() => {
+      // The visible projection is already gone. A later explicit clear/contact
+      // removal can retry local byte cleanup when IndexedDB was unavailable.
+    });
     return deleted;
   }
 });

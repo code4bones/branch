@@ -1,14 +1,22 @@
-import { PaperClipOutlined } from "@ant-design/icons";
-import { Button, Tooltip, Typography } from "antd";
+import { FileOutlined, PaperClipOutlined, PictureOutlined } from "@ant-design/icons";
+import { Button, Dropdown, Typography } from "antd";
+import type { MenuProps } from "antd";
 import { useEffect, useRef, useState } from "react";
 
 import { attachmentSendAdmission, offerSelectedAttachment, subscribeAttachmentSendProgress } from "./attachment-send-bridge.js";
+import { acceptedImageMediaTypes, imageInputFromFiles } from "./image-message.js";
+import type { ImageInput, ImageInputRejection } from "./image-message.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 
 /** Explicit one-file picker. It never keeps the selected File in React state. */
-export function AttachmentSendControl({ peerId }: { readonly peerId: string }): React.JSX.Element {
+export function AttachmentSendControl({ peerId, onImageInput, onImageRejected }: {
+  readonly peerId: string;
+  readonly onImageInput?: (input: ImageInput) => void;
+  readonly onImageRejected?: (reason: ImageInputRejection) => void;
+}): React.JSX.Element {
   const storeApi = useAppStoreApi();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [offering, setOffering] = useState(false);
 
@@ -59,6 +67,28 @@ export function AttachmentSendControl({ peerId }: { readonly peerId: string }): 
     });
   };
 
+  const selectImage = (): void => { imageInputRef.current?.click(); };
+  const stageImage = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const input = event.currentTarget;
+    const image = imageInputFromFiles(input.files ?? [], "picker");
+    input.value = "";
+    if (image === null) {
+      onImageRejected?.("no_image");
+      return;
+    }
+    onImageInput?.(image);
+  };
+  const attachmentMenu: MenuProps = {
+    items: [
+      { key: "file", icon: <FileOutlined />, label: "Send file" },
+      ...(onImageInput === undefined ? [] : [{ key: "image", icon: <PictureOutlined />, label: "Send image" }])
+    ],
+    onClick: ({ key }) => {
+      if (key === "file") selectFile();
+      if (key === "image") selectImage();
+    }
+  };
+
   return (
     <div className="pwa-attachment-send-control">
       <input
@@ -68,9 +98,17 @@ export function AttachmentSendControl({ peerId }: { readonly peerId: string }): 
         ref={inputRef}
         type="file"
       />
-      <Tooltip title="Send file">
-        <Button aria-label="Send file" disabled={offering} icon={<PaperClipOutlined />} loading={offering} onClick={selectFile} shape="circle" type="text" />
-      </Tooltip>
+      {onImageInput !== undefined && <input
+        accept={acceptedImageMediaTypes.join(",")}
+        aria-label="Choose an image to send"
+        className="pwa-attachment-file-input"
+        onChange={stageImage}
+        ref={imageInputRef}
+        type="file"
+      />}
+      <Dropdown menu={attachmentMenu} trigger={["click"]}>
+        <Button aria-label="Add attachment" disabled={offering} icon={<PaperClipOutlined />} loading={offering} shape="circle" type="text" />
+      </Dropdown>
       {notice !== null && <Typography.Text aria-live="polite" className="pwa-attachment-send-notice" type="secondary">{notice}</Typography.Text>}
     </div>
   );

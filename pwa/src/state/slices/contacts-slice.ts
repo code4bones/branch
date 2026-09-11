@@ -8,6 +8,7 @@ import { clearStoredLastOpenedChat, saveStoredLastOpenedChat } from "../../stora
 import { deleteStoredOutboxForContact } from "../../storage/message-outbox-store.js";
 import { deleteStoredReadReceiptsForContact } from "../../storage/read-receipt-outbox-store.js";
 import { deleteStoredMessageDeliveryTargetsForContact } from "../../storage/message-delivery-target-store.js";
+import { deleteStoredImageMessagesForContact } from "../../storage/image-media-store.js";
 
 export interface ContactSummary {
   readonly contactId: string;
@@ -50,6 +51,7 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
     // Folder membership is a separate local UI projection. It must disappear
     // with the local contact, without adding a field to the contact record.
     get().clearContactFolderAssignment(contactId);
+    get().clearImageMessageProjectionsForContact(contactId);
     const wasSelected = get().selectedContactId === contactId;
     set((state) => {
       const { [contactId]: removedMessages, ...messagesByContactId } = state.messagesByContactId;
@@ -74,7 +76,8 @@ export const createContactsSlice: StateCreator<AppStore, [], [], ContactsSlice> 
       deleteStoredReadState(contactId),
       deleteStoredOutboxForContact(contactId),
       deleteStoredReadReceiptsForContact(contactId),
-      deleteStoredMessageDeliveryTargetsForContact(contactId)
+      deleteStoredMessageDeliveryTargetsForContact(contactId),
+      deleteStoredImageMessagesForContact(contactId)
     ]).catch(() => {
       // Best-effort persistence; the contact and local conversation are
       // already absent from this session even when IndexedDB is unavailable.

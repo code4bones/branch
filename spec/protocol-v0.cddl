@@ -468,3 +468,62 @@ attachment-chunk = {
   index: draft-timestamp,
   bytes: bstr .size (1..3072),
 }
+
+; D-BRANCH-087 endpoint-only auto-rendered raster image messages. These are
+; deterministic-CBOR bodies inside existing HPKE application payloads, never
+; relay frames, relay metadata, URLs, or an instruction to persist bytes.
+; A receiver validates image magic bytes and decoded dimensions independently
+; before projection; SVG, GIF, animation and unrecognized media are forbidden.
+raster-image-media-type = "image/jpeg" / "image/png" / "image/webp"
+
+image-inline = {
+  version: "branch.image-message/0.draft",
+  media_type: raster-image-media-type,
+  width: 1..4096,
+  height: 1..4096,
+  bytes: bstr .size (1..2800),
+  ? caption: tstr .size (1..1024),
+  ? reply_to_message_id: bstr .size 16,
+}
+
+; The enclosing application-payload message_id must match message_id. This
+; signed manifest itself is the image message when bytes arrive as live chunks.
+image-transfer-manifest = {
+  version: "branch.image-transfer/0.draft",
+  transfer_id: bstr .size 16,
+  manifest_id: bstr .size 32,
+  message_id: bstr .size 16,
+  issued_at: draft-timestamp,
+  expires_at: draft-timestamp,
+  media_type: raster-image-media-type,
+  width: 1..4096,
+  height: 1..4096,
+  byte_count: 1..16777216,
+  chunk_bytes: 256..3072,
+  chunk_count: 1..8192,
+  sha256: bstr .size 32,
+  ? caption: tstr .size (1..1024),
+  ? reply_to_message_id: bstr .size 16,
+  signature: bstr .size 64,
+}
+
+image-transfer-chunk = {
+  version: "branch.image-transfer/0.draft",
+  transfer_id: bstr .size 16,
+  manifest_id: bstr .size 32,
+  index: draft-timestamp,
+  bytes: bstr .size (1..3072),
+}
+
+; Body of signed application-control kind branch.image.capabilities/0.draft.
+; Its presence is receiver consent to automatic image admission only within the
+; declared limits; expiry/authentication come from its outer control envelope.
+image-capabilities = {
+  version: "branch.image-message/0.draft",
+  max_inline_bytes: 0..2800,
+  max_relay_bytes: 0..4194304,
+  max_direct_bytes: 0..16777216,
+  max_width: 1..4096,
+  max_height: 1..4096,
+  max_pixels: 1..16777216,
+}
