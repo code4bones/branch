@@ -106,6 +106,16 @@ type Snapshot struct {
 	DroppedFrames   uint64
 }
 
+// Limits is the immutable set of live-admission limits a Hub enforces. It is
+// safe for an adapter to expose these negotiated values without exposing any
+// session, route, presence, delivery, or operator state.
+type Limits struct {
+	MaxQueueDepth       int
+	MaxFrameBytes       int
+	MaxFramesPerSession uint64
+	MaxBytesPerSession  uint64
+}
+
 // Hub owns all live relay sessions and routes for one process.
 type Hub struct {
 	mu                sync.Mutex
@@ -414,6 +424,18 @@ func (hub *Hub) Snapshot() Snapshot {
 		snapshot.QueueDepth += len(state.inbox)
 	}
 	return snapshot
+}
+
+// Limits returns the immutable admission limits selected when this live Hub
+// was constructed. Unlike Snapshot, it is not derived from mutable relay
+// state and needs no lock.
+func (hub *Hub) Limits() Limits {
+	return Limits{
+		MaxQueueDepth:       hub.config.MaxQueueDepth,
+		MaxFrameBytes:       hub.config.MaxFrameBytes,
+		MaxFramesPerSession: hub.config.MaxFramesPerSession,
+		MaxBytesPerSession:  hub.config.MaxBytesPerSession,
+	}
 }
 
 func (hub *Hub) forward(ctx context.Context, from SessionID, routeID RouteID, payload []byte, now time.Time, delivery *Delivery) error {

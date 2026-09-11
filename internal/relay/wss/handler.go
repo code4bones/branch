@@ -237,6 +237,7 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 	defer session.Close()
 	defer handler.contactDiscovery.remove(relay.SessionID(sessionID))
 
+	limits := handler.hub.Limits()
 	ready := map[string]any{
 		"type":                       "READY",
 		"session_id":                 sessionID,
@@ -244,10 +245,10 @@ func (handler *Handler) run(parent context.Context, conn *connection) error {
 		"presence_ttl_seconds":       30,
 		"heartbeat_interval_seconds": 10,
 		"accepted_limits": map[string]any{
-			"max_frame_bytes":        handler.maxFrameBytes,
-			"max_queue_depth":        32,
-			"max_frames_per_session": 1 << 20,
-			"max_bytes_per_session":  1 << 30,
+			"max_frame_bytes":        limits.MaxFrameBytes,
+			"max_queue_depth":        limits.MaxQueueDepth,
+			"max_frames_per_session": limits.MaxFramesPerSession,
+			"max_bytes_per_session":  limits.MaxBytesPerSession,
 		},
 	}
 	if err := writeJSON(parent, conn, handler.writeTimeout, ready); err != nil {

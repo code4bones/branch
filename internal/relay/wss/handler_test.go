@@ -90,6 +90,44 @@ func TestHandlerAcceptsConfiguredBrowserOrigin(t *testing.T) {
 	conn.Close(websocket.StatusNormalClosure, "")
 }
 
+func TestHandlerReadyReportsTheConfiguredHubLimits(t *testing.T) {
+	hub, err := relay.NewHub(relay.Config{
+		MaxSessions:         8,
+		MaxQueueDepth:       3,
+		MaxFrameBytes:       12_345,
+		MaxFramesPerSession: 17,
+		MaxBytesPerSession:  98_765,
+		PresenceTTL:         30 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	nodeIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate identity: %v", err)
+	}
+	handler, err := NewHandler(Config{
+		Hub:              hub,
+		Identity:         nodeIdentity,
+		Random:           bytes.NewReader(countingBytes(512)),
+		Now:              func() time.Time { return time.Unix(1_789_000_000, 0) },
+		MaxFrameBytes:    49_152,
+		HandshakeTimeout: time.Second,
+		WriteTimeout:     time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	client := dialAndReady(t, server.URL)
+	defer client.Close(websocket.StatusNormalClosure, "")
+	if got, want := client.Ready.AcceptedLimits, (readyLimits{MaxFrameBytes: 12_345, MaxQueueDepth: 3, MaxFramesPerSession: 17, MaxBytesPerSession: 98_765}); got != want {
+		t.Fatalf("READY accepted_limits = %+v, want %+v", got, want)
+	}
+}
+
 func TestHandlerDeliversContactProbeForNegotiatedLiveDiscovery(t *testing.T) {
 	_, handler := newTestHubAndHandler(t)
 	server := httptest.NewServer(handler)
@@ -987,8 +1025,16 @@ func waitForPresence(t *testing.T, hub *relay.Hub, want int) {
 }
 
 type readyFrame struct {
-	SessionID string `json:"session_id"`
-	RouteID   string `json:"route_id"`
+	SessionID      string      `json:"session_id"`
+	RouteID        string      `json:"route_id"`
+	AcceptedLimits readyLimits `json:"accepted_limits"`
+}
+
+type readyLimits struct {
+	MaxFrameBytes       int    `json:"max_frame_bytes"`
+	MaxQueueDepth       int    `json:"max_queue_depth"`
+	MaxFramesPerSession uint64 `json:"max_frames_per_session"`
+	MaxBytesPerSession  uint64 `json:"max_bytes_per_session"`
 }
 
 type testClient struct {
