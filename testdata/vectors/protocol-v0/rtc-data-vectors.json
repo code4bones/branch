@@ -1,0 +1,37 @@
+{
+  "schema": "branch.rtc-data-vectors/0.draft",
+  "version": "branch.rtc.data/0.draft",
+  "limits": {"decoded_ciphertext_bytes": 6144, "data_frame_bytes": 8192, "admit_frame_bytes": 256},
+  "valid": {
+    "data": {
+      "version": "branch.rtc.data/0.draft",
+      "rtc_session_id": "AQEBAQEBAQEBAQEBAQEBAQ",
+      "origin_route_id": "AgICAgICAgICAgICAgICAg",
+      "path_epoch": 0,
+      "stream_id": 0,
+      "delivery_id": "AwMDAwMDAwMDAwMDAwMDAw",
+      "ack_requested": true,
+      "ciphertext": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
+      "canonical_frame": "qWRraW5kZGRhdGFndmVyc2lvbndicmFuY2gucnRjLmRhdGEvMC5kcmFmdGlzdHJlYW1faWQAamNpcGhlcnRleHRYIAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEanBhdGhfZXBvY2gAa2RlbGl2ZXJ5X2lkUAMDAwMDAwMDAwMDAwMDAwNtYWNrX3JlcXVlc3RlZPVucnRjX3Nlc3Npb25faWRQAQEBAQEBAQEBAQEBAQEBAW9vcmlnaW5fcm91dGVfaWRQAgICAgICAgICAgICAgICAg"
+    },
+    "admit": {
+      "version": "branch.rtc.data/0.draft",
+      "rtc_session_id": "AQEBAQEBAQEBAQEBAQEBAQ",
+      "delivery_id": "AwMDAwMDAwMDAwMDAwMDAw",
+      "canonical_frame": "pGRraW5kZWFkbWl0Z3ZlcnNpb253YnJhbmNoLnJ0Yy5kYXRhLzAuZHJhZnRrZGVsaXZlcnlfaWRQAwMDAwMDAwMDAwMDAwMDA25ydGNfc2Vzc2lvbl9pZFABAQEBAQEBAQEBAQEBAQEB"
+    }
+  },
+  "invalid_frame": {
+    "unknown_field": "qmRraW5kZGRhdGFndmVyc2lvbndicmFuY2gucnRjLmRhdGEvMC5kcmFmdGhyb3V0ZV9pZFAJCQkJCQkJCQkJCQkJCQkJaXN0cmVhbV9pZABqY2lwaGVydGV4dFggBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBARqcGF0aF9lcG9jaABrZGVsaXZlcnlfaWRQAwMDAwMDAwMDAwMDAwMDA21hY2tfcmVxdWVzdGVk9W5ydGNfc2Vzc2lvbl9pZFABAQEBAQEBAQEBAQEBAQEBb29yaWdpbl9yb3V0ZV9pZFACAgICAgICAgICAgICAgIC",
+    "numeric_ack_requested": "qWRraW5kZGRhdGFndmVyc2lvbndicmFuY2gucnRjLmRhdGEvMC5kcmFmdGlzdHJlYW1faWQAamNpcGhlcnRleHRYIAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEanBhdGhfZXBvY2gAa2RlbGl2ZXJ5X2lkUAMDAwMDAwMDAwMDAwMDAwNtYWNrX3JlcXVlc3RlZAFucnRjX3Nlc3Npb25faWRQAQEBAQEBAQEBAQEBAQEBAW9vcmlnaW5fcm91dGVfaWRQAgICAgICAgICAgICAgICAg",
+    "unknown_kind": "omRraW5kaXJlbGF5X2Fja2d2ZXJzaW9ud2JyYW5jaC5ydGMuZGF0YS8wLmRyYWZ0"
+  },
+  "controller_transcripts": [
+    {"id": "session_mismatch", "expect": "drop_without_admit"},
+    {"id": "aad_mismatch", "expect": "drop_without_admit"},
+    {"id": "exact_duplicate", "expect": "reemit_cached_admit_without_dispatch"},
+    {"id": "conflicting_delivery_reuse", "expect": "drop_without_admit"},
+    {"id": "missing_admission_timeout", "expect": "local_wss_fallback_without_delivery_claim"},
+    {"id": "wss_overlap", "expect": "one_dispatch_only"}
+  ]
+}

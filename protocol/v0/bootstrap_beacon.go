@@ -258,6 +258,11 @@ type cborArrayValue struct {
 
 func encodeCbor(value any) ([]byte, error) {
 	switch typed := value.(type) {
+	case bool:
+		if typed {
+			return []byte{0xf5}, nil
+		}
+		return []byte{0xf4}, nil
 	case uint64:
 		return encodeCborHeader(0, typed), nil
 	case string:

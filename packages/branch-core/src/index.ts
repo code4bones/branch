@@ -1,5 +1,6 @@
 export * from "./application-control/runtime.js";
 export * from "./application-control/contact-card.js";
+export * from "./application-control/webrtc.js";
 export * from "./application-payload/runtime.js";
 export * from "./application-payload/attachment.js";
 export * from "./application-payload/capabilities.js";
@@ -9,6 +10,7 @@ export * from "./connectivity/echo-client.js";
 export * from "./connectivity/echo-service.js";
 export * from "./connectivity/federation-self-test.js";
 export * from "./connectivity/payload-crypto.js";
+export * from "./connectivity/rtc-data.js";
 export * from "./connectivity/same-relay.js";
 export * from "./diagnostics/journal.js";
 export * from "./diagnostics/monitor.js";

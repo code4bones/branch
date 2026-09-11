@@ -18,10 +18,21 @@ var (
 )
 
 func decodeDeterministicCBOR(input []byte) (any, error) {
+	return decodeDeterministicCBORWithTextLimit(input, MaxDraftStringBytes)
+}
+
+// decodeDeterministicCBORWithTextLimit retains the shared deterministic-CBOR
+// checks while allowing a protocol body to declare a tighter or wider text
+// bound than the historical draft envelope fields. Callers must still apply
+// their field-specific bounds after decoding.
+func decodeDeterministicCBORWithTextLimit(input []byte, maxTextBytes int) (any, error) {
 	if len(input) == 0 || len(input) > MaxDraftEnvelopeBytes {
 		return nil, errInvalidCBOR
 	}
-	decoder := cborDecoder{input: input}
+	if maxTextBytes <= 0 || maxTextBytes > maxDecodedCBORBytes {
+		return nil, errInvalidCBOR
+	}
+	decoder := cborDecoder{input: input, maxTextBytes: maxTextBytes}
 	value, err := decoder.readValue()
 	if err != nil {
 		return nil, err
@@ -40,8 +51,9 @@ func decodeDeterministicCBOR(input []byte) (any, error) {
 }
 
 type cborDecoder struct {
-	input  []byte
-	offset int
+	input        []byte
+	offset       int
+	maxTextBytes int
 }
 
 func (decoder *cborDecoder) readValue() (any, error) {
@@ -51,6 +63,16 @@ func (decoder *cborDecoder) readValue() (any, error) {
 	}
 	major := initial >> 5
 	additional := initial & 0x1f
+	if major == 7 {
+		switch additional {
+		case 20:
+			return false, nil
+		case 21:
+			return true, nil
+		default:
+			return nil, errInvalidCBOR
+		}
+	}
 	argument, err := decoder.readArgument(additional)
 	if err != nil {
 		return nil, err
@@ -118,7 +140,7 @@ func (decoder *cborDecoder) readArgument(additional byte) (uint64, error) {
 }
 
 func (decoder *cborDecoder) readByteString(size uint64) ([]byte, error) {
-	if size == 0 || size > maxDecodedCBORBytes {
+	if size > maxDecodedCBORBytes {
 		return nil, errInvalidCBOR
 	}
 	data, err := decoder.readBytes(size)
@@ -129,7 +151,7 @@ func (decoder *cborDecoder) readByteString(size uint64) ([]byte, error) {
 }
 
 func (decoder *cborDecoder) readTextString(size uint64) (string, error) {
-	if size == 0 || size > MaxDraftStringBytes {
+	if size == 0 || size > uint64(decoder.maxTextBytes) {
 		return "", errInvalidCBOR
 	}
 	data, err := decoder.readBytes(size)
@@ -283,6 +305,18 @@ func cborUint(mapValue cborMapValue, key string) (uint64, error) {
 		return 0, fmt.Errorf("invalid_%s", key)
 	}
 	return number, nil
+}
+
+func cborBool(mapValue cborMapValue, key string) (bool, error) {
+	value, err := cborRequired(mapValue, key)
+	if err != nil {
+		return false, err
+	}
+	boolean, ok := value.(bool)
+	if !ok {
+		return false, fmt.Errorf("invalid_%s", key)
+	}
+	return boolean, nil
 }
 
 func cborBytes(mapValue cborMapValue, key string, size int) ([]byte, error) {

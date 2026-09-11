@@ -9,6 +9,8 @@ import { classifyIncomingMessage } from "./incoming-message.js";
 import { orderedAttachmentRoutes } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
 import { receiveTypingControl } from "./typing-control.js";
+import { clearLiveRTCSignaling, receiveLiveRTCSignaling } from "./rtc-runtime.js";
+import { clearLiveRTCDataSenders, installLiveRTCDataSender, RTCDataIngressRuntime } from "./rtc-data-runtime.js";
 import { consumePendingContactDiscovery, startContactDiscoveryRuntime, stopContactDiscoveryRuntime } from "./contact-discovery-runtime.js";
 import { startContactPresenceRuntime, stopContactPresenceRuntime } from "./contact-presence-runtime.js";
 import {
@@ -89,6 +91,8 @@ export function useRelayTransport(): void {
       stopMessageOutboxRuntime();
       stopReadReceiptRuntime();
       clearAttachmentTransferController();
+      clearLiveRTCSignaling();
+      clearLiveRTCDataSenders();
       disconnectRelaySession();
       lifecycle.currentKey = null;
       lifecycle.connectingKey = null;
@@ -369,15 +373,16 @@ async function handleIncomingEnvelope(
   deliveryId: string,
   ciphertext: string,
   originRouteId: string,
-  senderPeerId: string | null
-): Promise<void> {
+  senderPeerId: string | null,
+  preopenedPlaintext?: Uint8Array
+): Promise<boolean> {
   const state = storeApi.getState();
   const keys = getLocalIdentityKeys();
   if (keys === null || senderPeerId === null || state.identity === null) {
-    return;
+    return false;
   }
   try {
-    const plaintext = await openIncomingEnvelope({
+    const plaintext = preopenedPlaintext ?? await openIncomingEnvelope({
       senderPeerId,
       recipientPeerId: state.identity.peerId,
       originRouteId,
@@ -388,6 +393,7 @@ async function handleIncomingEnvelope(
     state.recordTransportTrace("incoming envelope: opened");
     const knownContact = state.contacts.find((candidate) => candidate.peerId === senderPeerId) ?? null;
     const knownContactId = knownContact?.contactId ?? null;
+    const localPeerId = state.identity.peerId;
     // The relay-authenticated sender peer is bound into the HPKE AAD. Once
     // such an envelope opens for an existing contact, it is fresh encrypted
     // live endpoint traffic — unlike a relay ACK, it can truthfully refresh
@@ -403,11 +409,11 @@ async function handleIncomingEnvelope(
       } else {
         state.recordTransportTrace("contact card: uncorrelated");
       }
-      return;
+      return true;
     }
     const typing = await receiveTypingControl({
       plaintext,
-      localPeerId: state.identity.peerId,
+      localPeerId,
       senderPeerId,
       knownContactId
     });
@@ -416,7 +422,7 @@ async function handleIncomingEnvelope(
       if (typing.contactId !== undefined && typing.expiresAt !== undefined) {
         state.setContactTyping(typing.contactId, typing.expiresAt);
       }
-      return;
+      return true;
     }
     const applicationCapabilities = await receiveApplicationCapabilities({
       plaintext,
@@ -441,7 +447,43 @@ async function handleIncomingEnvelope(
           state.recordTransportTrace("application capabilities: reply_failed");
         });
       }
-      return;
+      return true;
+    }
+    const rtcSignaling = await receiveLiveRTCSignaling({
+      plaintext,
+      localPeerId: state.identity.peerId,
+      senderPeerId,
+      knownContactId,
+      // Resolve at the moment an outbound answer/candidate is needed: a
+      // contact can be removed while an async Browser API operation runs.
+      recipientHpkePublicKey: (peerId) => storeApi.getState().contacts.find((contact) => contact.peerId === peerId)?.hpkePublicKey ?? null,
+      onDataChannel: (session) => {
+        // A direct channel learns the peer only from the authenticated RTC
+        // signaling session. It receives no relay route/session metadata and
+        // dispatches an already-opened plaintext through the same endpoint
+        // classifier as WSS before its narrow ADMIT is emitted.
+        const sender = installLiveRTCDataSender({
+          peerId: session.peerId,
+          rtcSessionId: session.rtcSessionId,
+          expiresAt: session.expiresAt,
+          channel: session.channel
+        });
+        new RTCDataIngressRuntime({
+          localPeerId,
+          remotePeerId: session.peerId,
+          rtcSessionId: session.rtcSessionId,
+          expiresAt: session.expiresAt,
+          channel: session.channel,
+          onAdmit: (deliveryId) => { sender.admit({ kind: "admit", version: "branch.rtc.data/0.draft", rtcSessionId: session.rtcSessionId, deliveryId }); },
+          dispatch: async ({ plaintext: directPlaintext, deliveryId: directDeliveryId, ciphertext: directCiphertext, originRouteId: directOriginRouteId }) => (
+            handleIncomingEnvelope(storeApi, directDeliveryId, directCiphertext, directOriginRouteId, session.peerId, directPlaintext)
+          )
+        });
+      }
+    });
+    if (rtcSignaling.handled) {
+      state.recordTransportTrace(`rtc signaling: ${rtcSignaling.outcome ?? "rejected"}`);
+      return true;
     }
     const receipt = await receiveDeliveryReceipt({
       plaintext,
@@ -476,12 +518,12 @@ async function handleIncomingEnvelope(
           }
         }
       }
-      return;
+      return true;
     }
     const attachment = await attachmentTransferController(storeApi).receive(senderPeerId, plaintext);
     if (attachment.status === "handled") {
       state.recordTransportTrace(`attachment: inbound ${attachment.kind}`);
-      return;
+      return true;
     }
     // Do not turn arbitrary unknown application bytes into a telemetry
     // surface. These three outcomes can arise only after attachment routing
@@ -527,7 +569,7 @@ async function handleIncomingEnvelope(
           state.recordTransportTrace("delivery receipt: delivered_failed");
         });
       }
-      return;
+      return true;
     }
     if (disposition.kind === "known_contact_presence_ping") {
       state.recordTransportTrace("incoming envelope: presence_ping");
@@ -542,7 +584,7 @@ async function handleIncomingEnvelope(
           // persisted, or surfaced as a message when the route is absent.
         });
       }
-      return;
+      return true;
     }
     if (disposition.kind === "known_contact_presence_pong") {
       state.recordTransportTrace("incoming envelope: presence_pong");
@@ -552,7 +594,7 @@ async function handleIncomingEnvelope(
       // text can however use this verified live moment to renew the existing
       // signed capability exchange after a peer restart.
       renewQueuedTextCapabilityAfterPresencePong(storeApi, disposition.contactId);
-      return;
+      return true;
     }
     if (disposition.kind === "message_request") {
       state.recordTransportTrace("incoming envelope: message_request");
@@ -565,9 +607,11 @@ async function handleIncomingEnvelope(
         receivedAt: Date.now()
       });
     }
+    return true;
   } catch {
     // Malformed or undecryptable payload: drop it rather than surface
     // ciphertext or throw across an event-handler boundary.
     state.recordTransportTrace("incoming envelope: rejected");
+    return false;
   }
 }

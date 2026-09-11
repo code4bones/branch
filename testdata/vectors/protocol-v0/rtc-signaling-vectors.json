@@ -1,0 +1,36 @@
+{
+  "schema":"branch.rtc-signaling-vectors/0.draft",
+  "application_control_version":"branch.application-control/0.draft",
+  "application_control_signature_domain":"branch.application-control.signature/0.draft",
+  "signaling_version":"branch.rtc.signaling/0.draft",
+  "kinds":["branch.rtc.capabilities/0.draft","branch.rtc.offer/0.draft","branch.rtc.answer/0.draft","branch.rtc.candidate/0.draft","branch.rtc.restart/0.draft","branch.rtc.cancel/0.draft"],
+  "limits":{"description_bytes":1536,"candidate_bytes":1024,"candidates_per_direction":32,"generation":65535,"signaling_ttl_ms":60000,"capabilities_ttl_ms":300000},
+  "valid":{
+    "session_id":"AQEBAQEBAQEBAQEBAQEBAQ",
+    "description":"v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=branch\r\nt=0 0\r\na=fingerprint:sha-256 02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02:02\r\n",
+    "description_sha256":"XHhbz4BE6VmpjCjGwnE-E6VHI5fseXIKBUqA_lXBCEg",
+    "dtls_fingerprint_sha256":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+    "canonical_body":{
+      "capabilities":"pGd2ZXJzaW9ueBxicmFuY2gucnRjLnNpZ25hbGluZy8wLmRyYWZ0c21heF9jYW5kaWRhdGVfYnl0ZXMZBAB1bWF4X2Rlc2NyaXB0aW9uX2J5dGVzGQYAeBxtYXhfY2FuZGlkYXRlc19wZXJfZGlyZWN0aW9uGCA",
+      "offer":"pmd2ZXJzaW9ueBxicmFuY2gucnRjLnNpZ25hbGluZy8wLmRyYWZ0amdlbmVyYXRpb24Aa2Rlc2NyaXB0aW9ueKd2PTANCm89LSAxIDEgSU4gSVA0IDEyNy4wLjAuMQ0Kcz1icmFuY2gNCnQ9MCAwDQphPWZpbmdlcnByaW50OnNoYS0yNTYgMDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDINCm5ydGNfc2Vzc2lvbl9pZFABAQEBAQEBAQEBAQEBAQEBcmRlc2NyaXB0aW9uX3NoYTI1NlggXHhbz4BE6VmpjCjGwnE-E6VHI5fseXIKBUqA_lXBCEh3ZHRsc19maW5nZXJwcmludF9zaGEyNTZYIAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC",
+      "answer":"p2d2ZXJzaW9ueBxicmFuY2gucnRjLnNpZ25hbGluZy8wLmRyYWZ0amdlbmVyYXRpb24Ba2Rlc2NyaXB0aW9ueKd2PTANCm89LSAxIDEgSU4gSVA0IDEyNy4wLjAuMQ0Kcz1icmFuY2gNCnQ9MCAwDQphPWZpbmdlcnByaW50OnNoYS0yNTYgMDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDINCm5ydGNfc2Vzc2lvbl9pZFABAQEBAQEBAQEBAQEBAQEBcmRlc2NyaXB0aW9uX3NoYTI1NlggXHhbz4BE6VmpjCjGwnE-E6VHI5fseXIKBUqA_lXBCEh3ZHRsc19maW5nZXJwcmludF9zaGEyNTZYIAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICeBhvZmZlcl9kZXNjcmlwdGlvbl9zaGEyNTZYIFx4W8-AROlZqYwoxsJxPhOlRyOX7HlyCgVKgP5VwQhI",
+      "candidate":"pmd2ZXJzaW9ueBxicmFuY2gucnRjLnNpZ25hbGluZy8wLmRyYWZ0aWNhbmRpZGF0ZXgoY2FuZGlkYXRlOjEgMSBVRFAgMSAxOTIuMC4yLjEgOSB0eXAgaG9zdGlkaXJlY3Rpb25nb2ZmZXJlcmpnZW5lcmF0aW9uAW5ydGNfc2Vzc2lvbl9pZFABAQEBAQEBAQEBAQEBAQEBcmRlc2NyaXB0aW9uX3NoYTI1NlggXHhbz4BE6VmpjCjGwnE-E6VHI5fseXIKBUqA_lXBCEg",
+      "restart":"p2d2ZXJzaW9ueBxicmFuY2gucnRjLnNpZ25hbGluZy8wLmRyYWZ0amdlbmVyYXRpb24Ca2Rlc2NyaXB0aW9ueKd2PTANCm89LSAxIDEgSU4gSVA0IDEyNy4wLjAuMQ0Kcz1icmFuY2gNCnQ9MCAwDQphPWZpbmdlcnByaW50OnNoYS0yNTYgMDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDI6MDINCm5ydGNfc2Vzc2lvbl9pZFABAQEBAQEBAQEBAQEBAQEBcmRlc2NyaXB0aW9uX3NoYTI1NlggXHhbz4BE6VmpjCjGwnE-E6VHI5fseXIKBUqA_lXBCEh3ZHRsc19maW5nZXJwcmludF9zaGEyNTZYIAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICeBhwcmlvcl9kZXNjcmlwdGlvbl9zaGEyNTZYIFx4W8-AROlZqYwoxsJxPhOlRyOX7HlyCgVKgP5VwQhI",
+      "cancel":"pWZyZWFzb25lZ2xhcmVndmVyc2lvbngcYnJhbmNoLnJ0Yy5zaWduYWxpbmcvMC5kcmFmdGpnZW5lcmF0aW9uAm5ydGNfc2Vzc2lvbl9pZFABAQEBAQEBAQEBAQEBAQEBcmRlc2NyaXB0aW9uX3NoYTI1NlggXHhbz4BE6VmpjCjGwnE-E6VHI5fseXIKBUqA_lXBCEg"
+    }
+  },
+  "negative_cases":[
+    {"id":"description_hash_substitution","layer":"rtc_body","expected":"reject","mutation":"description_sha256 differs from SHA-256(description)"},
+    {"id":"sdp_fingerprint_substitution","layer":"rtc_adapter","expected":"reject","mutation":"the exact one sha-256 SDP fingerprint does not equal dtls_fingerprint_sha256"},
+    {"id":"malformed_or_oversize_candidate","layer":"rtc_body","expected":"reject","mutation":"unknown field, invalid UTF-8, invalid direction, or candidate exceeds candidate_bytes"},
+    {"id":"unknown_capability","layer":"application_control","expected":"reject_without_traffic","mutation":"unknown control kind or missing/expired capabilities"},
+    {"id":"expired_or_replayed_control","layer":"application_control","expected":"reject_without_traffic","mutation":"expires_at is past or control_id has already been accepted"},
+    {"id":"peer_substitution","layer":"application_control","expected":"reject_without_traffic","mutation":"recipient peer id differs from local peer id or signature no longer verifies sender binding"},
+    {"id":"wrong_description_or_candidate_33","layer":"rtc_session_controller","expected":"reject_without_traffic","mutation":"answer/candidate hash is not active description or candidate count exceeds 32"},
+    {"id":"glare_loser","layer":"rtc_session_controller","expected":"drop_local_offer_process_remote","mutation":"concurrent offers where local immutable peer id does not win the decision-defined lexical ordering"}
+  ],
+  "invalid_body":{
+    "description_hash_substitution":"pmd2ZXJzaW9ueBxicmFuY2gucnRjLnNpZ25hbGluZy8wLmRyYWZ0amdlbmVyYXRpb24Aa2Rlc2NyaXB0aW9uZ3Y9MFxyXG5ucnRjX3Nlc3Npb25faWRQAQEBAQEBAQEBAQEBAQEBAXJkZXNjcmlwdGlvbl9zaGEyNTZYIAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJd2R0bHNfZmluZ2VycHJpbnRfc2hhMjU2WCACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg",
+    "candidate_invalid_direction":"pmd2ZXJzaW9ueBxicmFuY2gucnRjLnNpZ25hbGluZy8wLmRyYWZ0aWNhbmRpZGF0ZWljYW5kaWRhdGVpZGlyZWN0aW9uZGJvdGhqZ2VuZXJhdGlvbgBucnRjX3Nlc3Npb25faWRQAQEBAQEBAQEBAQEBAQEBAXJkZXNjcmlwdGlvbl9zaGEyNTZYIAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC"
+  }
+}

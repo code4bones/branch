@@ -341,6 +341,99 @@ application-capabilities = {
 
 application-identifier = text .size (1..96)
 
+; D-BRANCH-091/093 WebRTC signaling is endpoint-only signed
+; application-control body data inside an existing HPKE ENVELOPE. These maps
+; are never relay frames, relay capabilities, public carrier records or TURN
+; configuration. The enclosing application-control binds known peers, random
+; control id, issuance, expiry and Ed25519 signature.
+rtc-signaling-version = "branch.rtc.signaling/0.draft"
+rtc-session-id = bstr .size 16
+rtc-description-hash = bstr .size 32
+rtc-dtls-fingerprint-sha256 = bstr .size 32
+rtc-generation = 0..65535
+rtc-description = text .size (1..1536)
+rtc-candidate = text .size (1..1024)
+
+rtc-capabilities = {
+  version: rtc-signaling-version,
+  max_description_bytes: 1..1536,
+  max_candidate_bytes: 1..1024,
+  max_candidates_per_direction: 1..32,
+}
+
+rtc-offer = {
+  version: rtc-signaling-version,
+  rtc_session_id: rtc-session-id,
+  generation: rtc-generation,
+  description: rtc-description,
+  description_sha256: rtc-description-hash,
+  dtls_fingerprint_sha256: rtc-dtls-fingerprint-sha256,
+}
+
+rtc-answer = {
+  version: rtc-signaling-version,
+  rtc_session_id: rtc-session-id,
+  generation: rtc-generation,
+  description: rtc-description,
+  description_sha256: rtc-description-hash,
+  dtls_fingerprint_sha256: rtc-dtls-fingerprint-sha256,
+  offer_description_sha256: rtc-description-hash,
+}
+
+rtc-candidate-control = {
+  version: rtc-signaling-version,
+  rtc_session_id: rtc-session-id,
+  generation: rtc-generation,
+  direction: "offerer" / "answerer",
+  description_sha256: rtc-description-hash,
+  candidate: rtc-candidate,
+}
+
+rtc-restart = {
+  version: rtc-signaling-version,
+  rtc_session_id: rtc-session-id,
+  generation: rtc-generation,
+  prior_description_sha256: rtc-description-hash,
+  description: rtc-description,
+  description_sha256: rtc-description-hash,
+  dtls_fingerprint_sha256: rtc-dtls-fingerprint-sha256,
+}
+
+rtc-cancel = {
+  version: rtc-signaling-version,
+  rtc_session_id: rtc-session-id,
+  generation: rtc-generation,
+  description_sha256: rtc-description-hash,
+  reason: "cancelled" / "rejected" / "glare",
+}
+
+; D-BRANCH-094 endpoint-only direct WebRTC DataChannel frame family. DATA
+; reuses the decoded bytes of an existing HPKE sealed payload and its AAD; it
+; is not a relay ENVELOPE, relay ACK, or application-payload format.
+rtc-data-version = "branch.rtc.data/0.draft"
+rtc-data-frame = rtc-data / rtc-admit
+
+rtc-data = {
+  kind: "data",
+  version: rtc-data-version,
+  rtc_session_id: rtc-session-id,
+  origin_route_id: bstr .size 16,
+  path_epoch: uint,
+  stream_id: uint,
+  delivery_id: bstr .size 16,
+  ack_requested: bool,
+  ; Existing sealed payload is at most 8192 base64url characters, which
+  ; decodes to at most 6144 bytes. No relay session_id or route_id exists.
+  ciphertext: bstr .size (1..6144),
+}
+
+rtc-admit = {
+  kind: "admit",
+  version: rtc-data-version,
+  rtc_session_id: rtc-session-id,
+  delivery_id: bstr .size 16,
+}
+
 ; Deterministic-CBOR body of signed application-control kind
 ; branch.contact-card/0.draft. It is carried only inside existing HPKE
 ; ENVELOPE plaintext, never as relay metadata. BranchID and peer_id are bound

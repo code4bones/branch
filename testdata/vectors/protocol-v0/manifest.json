@@ -78,6 +78,17 @@
     "application_payload_version": "branch.application-payload/0.draft",
     "attachment_version": "branch.attachment/0.draft"
   },
+  "rtc_signaling": {
+    "fixture": "rtc-signaling-vectors.json",
+    "schema": "branch.rtc-signaling-vectors/0.draft",
+    "signaling_version": "branch.rtc.signaling/0.draft",
+    "application_control_version": "branch.application-control/0.draft"
+  },
+  "rtc_data": {
+    "fixture": "rtc-data-vectors.json",
+    "schema": "branch.rtc-data-vectors/0.draft",
+    "version": "branch.rtc.data/0.draft"
+  },
   "cases": [
     {
       "name": "valid-rendezvous-offer-envelope",

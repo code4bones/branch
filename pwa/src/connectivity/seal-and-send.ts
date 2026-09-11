@@ -11,6 +11,7 @@ import { fixedAckRequested, fixedPathEpoch, fixedStreamId } from "./payload-aad-
 import { encodeChatTextApplicationPayload } from "./application-payload.js";
 import { encodeBetaPwaMessagePayload, encodeBetaPwaPresencePing, encodeBetaPwaPresencePong } from "./message-payload.js";
 import { armBestEffortPendingAbandonment, clearDelivery, getRelaySessionClient, trackDelivery } from "./relay-session.js";
+import { sendLiveRTCData } from "./rtc-data-runtime.js";
 
 const liveRouteIDs = new WeakMap<object, Map<string, string>>();
 const maxLiveRoutesPerAttachment = 64;
@@ -165,14 +166,33 @@ async function sealAndSendPayload(options: SealPayloadOptions): Promise<void> {
   // concurrent conversations cannot overwrite one another's live binding.
   const routeId = liveRouteID(client, options.recipientPeerId);
   client.rendezvous(options.recipientPeerId, { routeId });
-  if (options.track !== undefined) {
-    trackDelivery(options.deliveryId, options.track.contactId, options.track.messageId, options.track.onTimeout);
-  }
-  try {
+  let sentFallback = false;
+  const sendWSS = (): Promise<void> => {
+    if (sentFallback) return Promise.resolve();
+    sentFallback = true;
+    if (options.track !== undefined) trackDelivery(options.deliveryId, options.track.contactId, options.track.messageId, options.track.onTimeout);
     client.sendSealedEnvelope(sealed, { deliveryId: options.deliveryId, routeId, originRouteId, ackRequested: fixedAckRequested });
-    if (options.track === undefined) {
-      armBestEffortPendingAbandonment(client, options.deliveryId);
-    }
+    if (options.track === undefined) armBestEffortPendingAbandonment(client, options.deliveryId);
+    return Promise.resolve();
+  };
+  const sentDirect = sendLiveRTCData({
+    peerId: options.recipientPeerId,
+    frame: {
+      kind: "data",
+      version: "branch.rtc.data/0.draft",
+      rtcSessionId: "",
+      originRouteId,
+      pathEpoch: fixedPathEpoch,
+      streamId: fixedStreamId,
+      deliveryId: options.deliveryId,
+      ackRequested: fixedAckRequested,
+      ciphertext: sealed
+    },
+    fallbackToWSS: sendWSS
+  });
+  if (sentDirect) return;
+  try {
+    await sendWSS();
   } catch (cause) {
     clearDelivery(options.deliveryId);
     throw cause;

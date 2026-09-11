@@ -15,6 +15,7 @@ import { composeOutgoingText } from "../app/message-composition.js";
 import { VerifiedCompletedAttachment } from "../app/VerifiedCompletedAttachment.js";
 import { clearTransientCompletedAttachment } from "../app/transient-attachment-presentation.js";
 import { peerSupportsChatText, sendApplicationCapabilities } from "../connectivity/application-capabilities-control.js";
+import { advertiseLiveRTCCapabilities } from "../connectivity/rtc-runtime.js";
 import { getRelaySessionClient, hasAttachedRelaySession } from "../connectivity/relay-session.js";
 import { createDeliveryID } from "../connectivity/seal-and-send.js";
 import { sendTypingControl } from "../connectivity/typing-control.js";
@@ -97,6 +98,15 @@ export function ChatPage(): React.JSX.Element {
       storeApi.getState().recordTransportTrace(`application capabilities: chat_${result}`);
     }).catch(() => {
       storeApi.getState().recordTransportTrace("application capabilities: chat_failed");
+    });
+    void advertiseLiveRTCCapabilities({
+      localPeerId: identity.identity.peerId,
+      peerId: contact.peerId,
+      recipientHpkePublicKey: (peerId) => peerId === contact.peerId ? contact.hpkePublicKey : null
+    }).then((result) => {
+      storeApi.getState().recordTransportTrace(`rtc capabilities: chat_${result}`);
+    }).catch(() => {
+      storeApi.getState().recordTransportTrace("rtc capabilities: chat_failed");
     });
   }, [contact, identity.identity, storeApi, transport.attachStatus]);
 

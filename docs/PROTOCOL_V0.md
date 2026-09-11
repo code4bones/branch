@@ -607,6 +607,112 @@ policy. Receipt absence, expiry, rejection, or a failed live send is Unknown,
 not an offline, unread, or delivery claim. A client never queues or retries a
 receipt after its live send fails.
 
+#### WebRTC signaling controls
+
+D-BRANCH-091 and D-BRANCH-093 add only endpoint signaling, not a WebRTC data
+transport. The signed known-contact `branch.application-control/0.draft` kinds
+are `branch.rtc.capabilities/0.draft`, `branch.rtc.offer/0.draft`,
+`branch.rtc.answer/0.draft`, `branch.rtc.candidate/0.draft`,
+`branch.rtc.restart/0.draft`, and `branch.rtc.cancel/0.draft`. They are raw
+HPKE plaintext in an ordinary live `ENVELOPE`; relays and federation forward
+bounded opaque ciphertext and do not parse SDP, ICE candidates, addresses,
+fingerprints, or credentials.
+
+Every body has `version = branch.rtc.signaling/0.draft`, a random 16-byte
+`rtc_session_id`, and `generation` in `0..65535`. The enclosing signed control
+binds its random control id, exact known sender/recipient peer ids, issue and
+expiry time. Capabilities last at most five minutes and state only receiver
+limits `{max_description_bytes, max_candidate_bytes,
+max_candidates_per_direction}`. A sender sends an offer only after a current
+accepted capability; missing or expired capability means unsupported, not
+offline. Signaling controls other than capabilities expire within 60 seconds.
+
+Offer, answer and restart carry strict UTF-8 `description` at most 1536 bytes,
+its required SHA-256 `description_sha256`, and a 32-byte
+`dtls_fingerprint_sha256`. The adapter extracts exactly one
+`a=fingerprint:sha-256` SDP line and requires its decoded digest to equal the
+signed value before WebRTC API effects. Missing, multiple, other-algorithm or
+mismatching fingerprint lines reject. Answer additionally binds
+`offer_description_sha256`; restart binds `prior_description_sha256`.
+
+One candidate control carries one strict UTF-8 candidate at most 1024 bytes,
+the session/generation, direction `offerer` or `answerer`, and the owned
+description hash. A session accepts no more than 32 candidates in either
+direction. No fragment, candidate array, URL, external fetch or arbitrary
+reason text exists. Cancel is terminal for its exact session/generation/
+description hash and has only `cancelled`, `rejected`, or `glare` reason.
+
+The codec is stateless. An endpoint-owned bounded RTC session controller owns
+outstanding offers, answer/candidate order, candidate count/deduplication,
+terminal state, expiry and glare. For concurrent offers, the lexicographically
+lower immutable peer id keeps its locally-created offer; the other side drops
+its local offer and processes the remote offer. No invalid/unknown control
+elicits automatic traffic.
+
+This family changes neither attachment `HELLO`/`READY`, `relay.forwarded`,
+`peer.received`, Delivered/Read, origin-route AAD, `delivery_id`, path epoch,
+BootstrapBeacon nor SearchCarrier. `RTCDataChannel.send()` and
+`bufferedAmount` are local browser facts, not peer delivery.
+
+D-BRANCH-095 fixes one browser-channel profile for an RTC session/generation:
+the offerer creates exactly one `RTCDataChannel` before its offer, with label
+`branch.rtc.data/0.draft`, `ordered = true`, `negotiated = false`, and the
+browser reliable default (no `maxPacketLifeTime` or `maxRetransmits`). The
+answerer accepts only one inbound channel with that exact profile; an extra or
+mismatching channel is closed without processing. Only binary `ArrayBuffer`
+bytes of the closed DATA/ADMIT family may cross it—no text, JSON, batch, or
+fragment layer exists. Channel open, close, send, and `bufferedAmount` remain
+local facts; closing it clears only volatile direct state and never alters a
+relay ACK, receipt, carrier, or WSS fallback semantic.
+
+#### WebRTC direct data outer boundary
+
+D-BRANCH-094 defines the endpoint-only deterministic-CBOR
+`branch.rtc.data/0.draft` outer family. It is a DataChannel frame, not a relay
+attachment frame or application-message format. A closed `data` map is
+`{kind, version, rtc_session_id, origin_route_id, path_epoch, stream_id,
+delivery_id, ack_requested, ciphertext}`; `kind` is `data`, `version` is
+`branch.rtc.data/0.draft`, `rtc_session_id`, `origin_route_id`, and
+`delivery_id` are exactly 16 bytes, and `ciphertext` is the exact decoded bytes
+of the existing HPKE sealed payload. A closed `admit` map is `{kind, version,
+rtc_session_id, delivery_id}`. No unknown field, text wrapper, fragment,
+batch, relay `session_id`, relay `route_id`, sender field, ACK type, SDP, ICE,
+TURN value, key, capability, plaintext, reason, or receiver-status field
+exists. A direct frame is bounded to the current 8192-byte attachment
+ciphertext allowance plus its fixed canonical header.
+
+The active authenticated RTC controller supplies the remote immutable peer id;
+`data` never claims an identity itself. Before dispatch, the receiver bounds and
+canonical-decodes the frame, requires its exact active `rtc_session_id`, checks
+the supported stream/path values, reconstructs the existing HPKE AAD unchanged,
+and opens the payload under that controller-bound peer identity. It maintains a
+bounded volatile cross-path admission ledger keyed by sender, stream and
+delivery ID together with the ciphertext fingerprint. A first valid delivery
+is dispatched exactly once and gets one `admit`; an exact duplicate is not
+dispatched again and re-emits its cached `admit`. Conflict, malformed input,
+session mismatch and HPKE-open failure are dropped (or close the direct
+session) without an admission. This ledger expires with the RTC session and is
+never durable endpoint state, relay state, or diagnostics.
+
+`admit` means only that the remote endpoint accepted and decrypted an outer
+delivery for local dispatch. It is authenticated by the identity-bound DTLS
+DataChannel, releases one sender-side bounded direct in-flight slot, and stops
+direct retransmission. It is not `relay.forwarded`, `peer.received`, Delivered,
+Read, message presentation, attachment acceptance, integrity result, durable
+custody, or availability evidence. A missing `admit`, channel failure, timeout
+or cancellation triggers only local bounded fallback policy: the sender may
+put the identical sealed delivery, delivery ID and AAD on WSS. Existing signed
+delivery-receipt controls remain the only Delivered/Read authority.
+
+D-BRANCH-096 bounds that local policy: an active session has at most 32
+pending direct deliveries, sends each canonical DATA once, and waits at most
+eight seconds for its exact session-matching ADMIT. A matching ADMIT only
+releases that volatile slot. Capacity exhaustion, local channel send failure,
+channel/session close, or the deadline causes one exact-ciphertext WSS
+fallback—never a second DATA attempt. The unchanged existing WSS pending and
+ACK rules apply only after that fallback. Direct pending state and timers are
+cleared on ADMIT, fallback, reset, expiry, or close and are never durable.
+
 ### Extensible application payload and attachment boundary
 
 D-BRANCH-057 introduces the pre-publication, endpoint-only

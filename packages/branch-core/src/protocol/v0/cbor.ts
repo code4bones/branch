@@ -5,7 +5,7 @@ export const maxCborBytes = 48 * 1024;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
-export type CborValue = number | string | Uint8Array | readonly CborValue[] | CborMap;
+export type CborValue = boolean | number | string | Uint8Array | readonly CborValue[] | CborMap;
 
 export interface CborMap {
   readonly kind: "map";
@@ -44,6 +44,9 @@ export function decodeDeterministicCbor(bytes: Uint8Array, maxBytes = 64 * 1024)
 }
 
 export function encodeDeterministicCbor(value: CborValue): Uint8Array {
+  if (typeof value === "boolean") {
+    return new Uint8Array([value ? 0xf5 : 0xf4]);
+  }
   if (typeof value === "number") {
     return encodeUnsigned(value);
   }
@@ -96,6 +99,13 @@ export function readText(value: CborValue, key: string): string {
 
 export function readUint(value: CborValue, key: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new CborError(`invalid_${key}`);
+  }
+  return value;
+}
+
+export function readBoolean(value: CborValue, key: string): boolean {
+  if (typeof value !== "boolean") {
     throw new CborError(`invalid_${key}`);
   }
   return value;
@@ -229,6 +239,11 @@ class CborDecoder {
     const initial = this.readByte();
     const major = initial >> 5;
     const additional = initial & 0x1f;
+    if (major === 7) {
+      if (additional === 20) return false;
+      if (additional === 21) return true;
+      throw new CborError("unsupported_cbor_type");
+    }
     const argument = this.readArgument(additional);
     switch (major) {
       case 0:
