@@ -17,18 +17,21 @@ import (
 )
 
 const (
-	defaultAPIBaseURL      = "https://api.github.com"
-	defaultRawBaseURL      = "https://raw.githubusercontent.com"
-	defaultLocator         = "branchbootstrapv0"
-	defaultTimeout         = 3 * time.Second
-	defaultMaxRepositories = 5
-	maxRepositoriesLimit   = 10
-	defaultMaxResponse     = 128 * 1024
-	maxResponse            = 256 * 1024
-	defaultMaxRecordBytes  = 64 * 1024
-	maxRecordBytesLimit    = 64 * 1024
-	maxWrappersPerRecord   = 16
-	maxBootstrapCandidates = 8
+	defaultAPIBaseURL        = "https://api.github.com"
+	defaultRawBaseURL        = "https://raw.githubusercontent.com"
+	defaultLocator           = "branchbootstrapv0"
+	defaultTimeout           = 3 * time.Second
+	defaultMaxRepositories   = 5
+	maxRepositoriesLimit     = 10
+	defaultMaxResponse       = 128 * 1024
+	maxResponse              = 256 * 1024
+	defaultMaxRecordBytes    = 64 * 1024
+	maxRecordBytesLimit      = 64 * 1024
+	maxWrappersPerRecord     = 16
+	maxBootstrapCandidates   = 8
+	maxGitHubOwnerBytes      = 39
+	maxGitHubRepositoryBytes = 100
+	maxGitHubBranchBytes     = 256
 )
 
 var ErrInvalidConfig = errors.New("invalid github identity carrier config")
@@ -289,6 +292,9 @@ func (source *IdentityContactSource) searchRepositories(ctx context.Context) ([]
 }
 
 func (source *IdentityContactSource) readRepositoryRecords(ctx context.Context, repository githubRepository) ([]string, error) {
+	if !validRepository(repository) {
+		return nil, ErrInvalidConfig
+	}
 	endpoint := source.rawBaseURL.JoinPath(repository.Owner.Login, repository.Name, repository.DefaultBranch, ".branch", "records.br0")
 
 	body, status, err := source.getRaw(ctx, endpoint.String())
@@ -355,10 +361,56 @@ func parseRawBaseURL(value string) (*url.URL, error) {
 }
 
 func validRepository(repository githubRepository) bool {
-	return repository.FullName != "" && len(repository.FullName) <= 256 &&
-		repository.Owner.Login != "" && len(repository.Owner.Login) <= 128 &&
-		repository.Name != "" && len(repository.Name) <= 128 &&
-		repository.DefaultBranch != "" && len(repository.DefaultBranch) <= 256
+	return repository.FullName == repository.Owner.Login+"/"+repository.Name &&
+		validGitHubOwner(repository.Owner.Login) &&
+		validGitHubRepositoryName(repository.Name) &&
+		validGitHubBranch(repository.DefaultBranch)
+}
+
+func validGitHubOwner(value string) bool {
+	if len(value) == 0 || len(value) > maxGitHubOwnerBytes || value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func validGitHubRepositoryName(value string) bool {
+	return validGitHubPathSegment(value, maxGitHubRepositoryBytes)
+}
+
+// validGitHubBranch accepts Git's ordinary slash-separated refs only after
+// validating every raw-content path segment independently. This keeps common
+// refs such as release/2026 valid without permitting dot-segment traversal or
+// path-confusing bytes in a GitHub raw-content URL.
+func validGitHubBranch(value string) bool {
+	if len(value) == 0 || len(value) > maxGitHubBranchBytes || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") || strings.Contains(value, "..") {
+		return false
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if !validGitHubPathSegment(segment, maxGitHubBranchBytes) || strings.HasSuffix(segment, ".lock") {
+			return false
+		}
+	}
+	return true
+}
+
+func validGitHubPathSegment(value string, maximumLength int) bool {
+	if len(value) == 0 || len(value) > maximumLength || value == "." || value == ".." {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '-' && character != '_' && character != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func extractWrappers(content string, limit int) []string {

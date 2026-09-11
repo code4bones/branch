@@ -168,6 +168,31 @@ func TestStaticPeerRouterRejectsUnpinnedOrUnsafeCandidates(t *testing.T) {
 	}
 }
 
+func TestCleanFederationEndpointRejectsSpecialAddresses(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		wantErr  bool
+	}{
+		{name: "ipv4 zero network", endpoint: "wss://0.1.2.3:443/relay/v0", wantErr: true},
+		{name: "nat64 loopback", endpoint: "wss://[64:ff9b::7f00:1]:443/relay/v0", wantErr: true},
+		{name: "nat64 private", endpoint: "wss://[64:ff9b::a00:1]:443/relay/v0", wantErr: true},
+		{name: "nat64 public", endpoint: "wss://[64:ff9b::808:808]:443/relay/v0"},
+		{name: "public ipv4", endpoint: "wss://8.8.8.8:443/relay/v0"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := cleanFederationEndpoint(test.endpoint, FederationEndpointPolicy{})
+			if test.wantErr && !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("cleanFederationEndpoint(%q) error = %v, want ErrInvalidConfig", test.endpoint, err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("cleanFederationEndpoint(%q) error = %v", test.endpoint, err)
+			}
+		})
+	}
+}
+
 func TestStaticPeerRouterAllowsDevelopmentEndpointOnlyWithExplicitPolicy(t *testing.T) {
 	hub, err := relay.NewHub(relay.DefaultConfig())
 	if err != nil {

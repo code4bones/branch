@@ -32,6 +32,11 @@ const (
 	maxFederationResponses       = 4
 )
 
+var (
+	ipv4ZeroPrefix       = netip.MustParsePrefix("0.0.0.0/8")
+	wellKnownNAT64Prefix = netip.MustParsePrefix("64:ff9b::/96")
+)
+
 // StaticPeerRouterConfig is retained as a bounded test adapter for pinned WSS
 // fixtures. The branch-node composition root does not expose it as deployment
 // configuration; discovered federation uses DiscoveredPeerRouter instead.
@@ -1024,12 +1029,17 @@ func privateOrSpecialAddress(address netip.Addr) bool {
 		return true
 	}
 	if address.Is4() {
-		return netip.MustParsePrefix("100.64.0.0/10").Contains(address) ||
+		return ipv4ZeroPrefix.Contains(address) ||
+			netip.MustParsePrefix("100.64.0.0/10").Contains(address) ||
 			netip.MustParsePrefix("192.0.0.0/24").Contains(address) ||
 			netip.MustParsePrefix("192.0.2.0/24").Contains(address) ||
 			netip.MustParsePrefix("198.18.0.0/15").Contains(address) ||
 			netip.MustParsePrefix("198.51.100.0/24").Contains(address) ||
 			netip.MustParsePrefix("203.0.113.0/24").Contains(address)
+	}
+	if wellKnownNAT64Prefix.Contains(address) {
+		bytes := address.As16()
+		return privateOrSpecialAddress(netip.AddrFrom4([4]byte(bytes[12:])))
 	}
 	return netip.MustParsePrefix("2001:db8::/32").Contains(address)
 }

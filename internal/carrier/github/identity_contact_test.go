@@ -92,6 +92,74 @@ func TestIdentityContactSourceLookupRejectsTimeout(t *testing.T) {
 	}
 }
 
+func TestValidRepositoryRejectsPathConfusingSearchMetadata(t *testing.T) {
+	valid := githubRepository{FullName: "octo-org/relay.core", DefaultBranch: "release/2026_09"}
+	valid.Owner.Login = "octo-org"
+	valid.Name = "relay.core"
+	if !validRepository(valid) {
+		t.Fatal("valid repository rejected")
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*githubRepository)
+	}{
+		{name: "owner traversal", mutate: func(repository *githubRepository) {
+			repository.Owner.Login, repository.FullName = "..", "../relay.core"
+		}},
+		{name: "owner encoded separator", mutate: func(repository *githubRepository) {
+			repository.Owner.Login, repository.FullName = "octo%2Forg", "octo%2Forg/relay.core"
+		}},
+		{name: "repository separator", mutate: func(repository *githubRepository) {
+			repository.Name, repository.FullName = "relay/core", "octo-org/relay/core"
+		}},
+		{name: "repository traversal", mutate: func(repository *githubRepository) { repository.Name, repository.FullName = "..", "octo-org/.." }},
+		{name: "branch traversal", mutate: func(repository *githubRepository) { repository.DefaultBranch = "main/../../outside" }},
+		{name: "branch encoded separator", mutate: func(repository *githubRepository) { repository.DefaultBranch = "main%2Foutside" }},
+		{name: "branch dot dot", mutate: func(repository *githubRepository) { repository.DefaultBranch = "release..candidate" }},
+		{name: "branch lock suffix", mutate: func(repository *githubRepository) { repository.DefaultBranch = "release.lock" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository := valid
+			test.mutate(&repository)
+			if validRepository(repository) {
+				t.Fatalf("path-confusing repository accepted: %+v", repository)
+			}
+		})
+	}
+}
+
+func TestIdentityContactSourceRejectsPathConfusingRepositoryBeforeRawRequest(t *testing.T) {
+	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	branchID, _ := testIdentityContact(t, now, now.Add(time.Hour))
+	rawRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/search/repositories":
+			_, _ = response.Write([]byte(`{"items":[{"full_name":"owner/repo","fork":false,"default_branch":"main/../../outside","owner":{"login":"owner"},"name":"repo"},{"full_name":"owner/..","fork":false,"default_branch":"main","owner":{"login":"owner"},"name":".."}]}`))
+		default:
+			rawRequests++
+			response.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+	source, err := NewIdentityContactSource(IdentityContactSourceConfig{APIBaseURL: server.URL, RawBaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("new source: %v", err)
+	}
+	candidates, err := source.LookupIdentityContact(context.Background(), branchID)
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidates = %+v, want none", candidates)
+	}
+	if rawRequests != 0 {
+		t.Fatalf("raw requests = %d, want 0", rawRequests)
+	}
+}
+
 func TestIdentityContactSourceReturnsBoundedBootstrapBeaconCandidates(t *testing.T) {
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
