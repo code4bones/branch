@@ -377,6 +377,7 @@ body {
 .pwa-detail {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: transparent;
@@ -1253,6 +1254,17 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 .pwa-settings-list dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.pwa-relay-test-pin {
+  display: block;
+  width: min(100%, 560px);
+  margin-top: 8px;
+}
+
+.pwa-settings-list dd > .ant-typography-secondary {
+  display: block;
+  margin-top: 5px;
 }
 
 @media (max-width: 767px) {

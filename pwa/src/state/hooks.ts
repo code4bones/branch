@@ -439,10 +439,12 @@ export interface ConnectionControls {
   readonly discoveredRoutes: readonly RelayRouteMaterial[];
   readonly routeSource: string;
   readonly discoveryMessage: string;
+  readonly selectedRelayKey: string | null;
   readonly setRouteSearching: () => void;
   readonly setRouteFound: (routes: readonly RelayRouteMaterial[], source: string) => void;
   readonly setRouteFailed: (message: string) => void;
   readonly resetRoute: () => void;
+  readonly setSelectedRelayKey: (relayKey: string | null) => void;
 }
 
 export interface TransportControls {
@@ -463,9 +465,11 @@ export function useConnection(): ConnectionControls {
   const discoveredRoutes = useAppStore((state) => state.discoveredRoutes);
   const routeSource = useAppStore((state) => state.routeSource);
   const discoveryMessage = useAppStore((state) => state.discoveryMessage);
+  const selectedRelayKey = useAppStore((state) => state.selectedRelayKey);
   const setRouteSearching = useAppStore((state) => state.setRouteSearching);
   const setRouteFound = useAppStore((state) => state.setRouteFound);
   const setRouteFailed = useAppStore((state) => state.setRouteFailed);
   const resetRoute = useAppStore((state) => state.resetRoute);
-  return { routeStatus, discoveredRoutes, routeSource, discoveryMessage, setRouteSearching, setRouteFound, setRouteFailed, resetRoute };
+  const setSelectedRelayKey = useAppStore((state) => state.setSelectedRelayKey);
+  return { routeStatus, discoveredRoutes, routeSource, discoveryMessage, selectedRelayKey, setRouteSearching, setRouteFound, setRouteFailed, resetRoute, setSelectedRelayKey };
 }

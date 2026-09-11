@@ -7,7 +7,7 @@ import { attachmentTransferController, clearAttachmentTransferController } from 
 import { advertiseImageCapabilities, clearImageRuntime, imageTransferController, receiveImageCapabilities, receiveImagePayload, shouldReplyToImageCapabilities } from "./image-runtime.js";
 import { receiveDeliveryReceipt, sendDeliveryReceipt } from "./delivery-receipt-control.js";
 import { classifyIncomingMessage } from "./incoming-message.js";
-import { orderedAttachmentRoutes } from "./relay-route-selection.js";
+import { attachmentRoutesForSelection } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
 import { receiveTypingControl } from "./typing-control.js";
 import { clearLiveRTCSignaling, receiveLiveRTCSignaling } from "./rtc-runtime.js";
@@ -75,7 +75,11 @@ export function useRelayTransport(): void {
       return undefined;
     }
     const unsubscribe = storeApi.subscribe((state, previousState) => {
-      if (state.identity === previousState.identity && state.discoveredRoutes === previousState.discoveredRoutes) {
+      if (
+        state.identity === previousState.identity &&
+        state.discoveredRoutes === previousState.discoveredRoutes &&
+        state.selectedRelayKey === previousState.selectedRelayKey
+      ) {
         return;
       }
       lifecycle.reconnectAttempts = 0;
@@ -106,12 +110,16 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
   if (lifecycle.stopped) {
     return;
   }
-  const { identity, discoveredRoutes } = storeApi.getState();
+  const { identity, discoveredRoutes, selectedRelayKey } = storeApi.getState();
   const keys = getLocalIdentityKeys();
   if (identity === null || discoveredRoutes.length === 0 || keys === null) {
     return;
   }
-  const attachmentRoutes = orderedAttachmentRoutes(discoveredRoutes);
+  const attachmentRoutes = attachmentRoutesForSelection(discoveredRoutes, selectedRelayKey);
+  if (attachmentRoutes.length === 0) {
+    storeApi.getState().setAttachStatus("error", "Selected relay is no longer available; choose Auto in Settings");
+    return;
+  }
   const candidateKeys = new Set(attachmentRoutes.map((route) => attachmentKey(route, identity.peerId)));
   if (lifecycle.currentKey !== null && candidateKeys.has(lifecycle.currentKey) && getRelaySessionClient() !== null) {
     return;
@@ -131,8 +139,8 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
   const failures: string[] = [];
 
   // Discovery returns at most four independently signed, already validated
-  // candidates. Trying them locally is live transport selection, not carrier
-  // discovery, and stores neither routes nor failed messages.
+  // candidates. Auto tries them in deterministic order; a present tab-local
+  // pin deliberately tries exactly one. Neither mode persists route material.
   for (const [index, route] of attachmentRoutes.entries()) {
     const attachKey = attachmentKey(route, identity.peerId);
     lifecycle.connectingKey = attachKey;

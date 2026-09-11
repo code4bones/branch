@@ -1,5 +1,5 @@
 import { CopyOutlined, DownloadOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button, Input, Modal, Segmented, Space, Switch, Tag, Typography } from "antd";
+import { Button, Input, Modal, Select, Segmented, Space, Switch, Tag, Typography } from "antd";
 import { useRef, useState } from "react";
 
 import { DetailHeader } from "../app/DetailHeader.js";
@@ -7,7 +7,8 @@ import { pwaReleaseVersion } from "../app/pwa-release.js";
 import { useBranchID } from "../identity/use-branch-id.js";
 import { updateLocalIdentityDisplayName } from "../identity/create-local-identity.js";
 import { decryptPortableProfile, encryptPortableProfile, maxPortableProfileFileBytes } from "../profile/profile-bundle.js";
-import { useContactDiscoveryPolicy, useIdentity, useReceiptPolicy, useThemeControls, useTransportStatus } from "../state/hooks.js";
+import { useConnection, useContactDiscoveryPolicy, useIdentity, useReceiptPolicy, useThemeControls, useTransportStatus } from "../state/hooks.js";
+import { relayRouteKey } from "../connectivity/relay-route-selection.js";
 import type { ThemeMode } from "../state/slices/ui-slice.js";
 import { loadPortableProfileSnapshot, replacePortableProfileSnapshot } from "../storage/profile-migration-store.js";
 
@@ -17,6 +18,7 @@ export function SettingsPage(): React.JSX.Element {
   const receiptPolicy = useReceiptPolicy();
   const contactDiscoveryPolicy = useContactDiscoveryPolicy();
   const transport = useTransportStatus();
+  const connection = useConnection();
   const branchID = useBranchID(identity.identity?.peerId ?? null);
   const [branchIdCopied, setBranchIdCopied] = useState(false);
   const [displayName, setDisplayName] = useState(identity.identity?.displayName ?? "");
@@ -118,6 +120,17 @@ export function SettingsPage(): React.JSX.Element {
           <dd>
             <Tag color={attachTagColor(transport.attachStatus)}>{transport.attachStatus}</Tag>
             {transport.attachMessage}
+            <Select
+              aria-label="Relay for this tab"
+              className="pwa-relay-test-pin"
+              onChange={(value) => { connection.setSelectedRelayKey(value === "auto" ? null : value); }}
+              options={[
+                { label: "Auto — deterministic fallback", value: "auto" },
+                ...connection.discoveredRoutes.map((route) => ({ label: route.endpointUri, value: relayRouteKey(route) }))
+              ]}
+              value={connection.selectedRelayKey ?? "auto"}
+            />
+            <Typography.Text type="secondary">Test pin for this tab only. Routes still require their normal relay proof.</Typography.Text>
           </dd>
         </div>
         <div className="pwa-settings-trace-row">

@@ -56,7 +56,7 @@ import {
 import { createAppStore } from "../src/state/store.js";
 import { groupMessagesByContactId, orderConversationMessages } from "../src/state/slices/conversations-slice.js";
 import { autoPresentedIncomingMessage } from "../src/app/MessageLog.js";
-import { orderedAttachmentRoutes } from "../src/connectivity/relay-route-selection.js";
+import { attachmentRoutesForSelection, orderedAttachmentRoutes, relayRouteKey } from "../src/connectivity/relay-route-selection.js";
 
 const indexHtmlPath = resolve(process.cwd(), "public/index.html");
 const manifestPath = resolve(process.cwd(), "public/manifest.json");
@@ -363,7 +363,7 @@ void test("relay attach and message sealing keep canonical protocol state out of
   assert.match(useRelayTransport, /for \(const \[index, route\] of attachmentRoutes\.entries\(\)\)/);
   assert.match(useRelayTransport, /No discovered relay accepted attachment/);
   assert.match(useRelayTransport, /attachmentKey\(route, identity\.peerId\)/);
-  assert.match(useRelayTransport, /orderedAttachmentRoutes\(discoveredRoutes\)/);
+  assert.match(useRelayTransport, /attachmentRoutesForSelection\(discoveredRoutes, selectedRelayKey\)/);
   assert.match(useRelayTransport, /getRelaySessionClient\(\) !== attachedClient/);
   assert.match(useRelayTransport, /lifecycle\.connectingKey = null;/);
   assert.match(useRelayTransport, /READY -> attached window/);
@@ -413,6 +413,18 @@ void test("PWA chooses a deterministic local attachment order from the same vali
 
   assert.deepEqual(routes.map((route) => route.relayPublicKey), ["a", "z", "b"]);
   assert.match(selection, /Carrier ordering is untrusted presentation data/);
+});
+
+void test("PWA relay test pin remains volatile, validated and fail-closed", () => {
+  const relayB = { endpointUri: "wss://relay-b.example", relayPublicKey: "relay-b", profileMultihash: "profile" };
+  const routes = [
+    relayB,
+    { endpointUri: "wss://relay-a.example", relayPublicKey: "relay-a", profileMultihash: "profile" }
+  ];
+  const pinned = relayRouteKey(relayB);
+  assert.deepEqual(attachmentRoutesForSelection(routes, null).map((route) => route.endpointUri), ["wss://relay-a.example", "wss://relay-b.example"]);
+  assert.deepEqual(attachmentRoutesForSelection(routes, pinned).map((route) => route.endpointUri), ["wss://relay-b.example"]);
+  assert.deepEqual(attachmentRoutesForSelection(routes, "missing validated route"), []);
 });
 
 void test("PWA correlates a sent message with the relay delivery acknowledgement", async () => {
@@ -979,11 +991,25 @@ void test("PWA keeps the compact single-pane UI usable on a 320 by 568 iPhone 5 
   // because the shell intentionally clips its outer bounds.
   assert.match(styles, /\.pwa-shell \{[\s\S]*height: 100vh;[\s\S]*height: 100svh;/);
   assert.match(styles, /\.pwa-settings \{[\s\S]*overflow-y: auto;/);
+  assert.match(styles, /\.pwa-detail \{[\s\S]*min-height: 0;/);
   assert.match(styles, /@media \(max-width: 375px\) \{[\s\S]*\.pwa-sidebar-release-version \{\s*display: none;/);
   assert.match(styles, /@media \(max-width: 375px\) \{[\s\S]*\.pwa-chat-message,[\s\S]*max-width: 92%;/);
   assert.match(styles, /@media \(max-width: 767px\) and \(max-height: 600px\)/);
   assert.match(styles, /\.pwa-chat-composer \.ant-input,[\s\S]*font-size: 16px;/);
   assert.match(styles, /\.pwa-chat-image \{[\s\S]*max-height: 440px;[\s\S]*max-height: min\(58dvh, 440px\);/);
+});
+
+void test("Settings exposes only a volatile choice among already discovered relay routes", async () => {
+  const settings = await readFile(settingsPagePath, "utf8");
+  const connection = await readFile(resolve(process.cwd(), "src/state/slices/connection-slice.ts"), "utf8");
+  const transport = await readFile(useRelayTransportPath, "utf8");
+  assert.match(settings, /aria-label="Relay for this tab"/);
+  assert.match(settings, /connection\.discoveredRoutes\.map/);
+  assert.match(settings, /Test pin for this tab only/);
+  assert.match(connection, /selectedRelayKey: string \| null/);
+  assert.match(connection, /relayRouteKey\(route\) === selectedRelayKey/);
+  assert.match(transport, /attachmentRoutesForSelection/);
+  assert.match(transport, /Selected relay is no longer available; choose Auto in Settings/);
 });
 
 void test("PWA typing receiver accepts a signed control for its known contact", async () => {
