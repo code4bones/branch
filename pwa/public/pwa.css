@@ -1208,10 +1208,6 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 
 .pwa-poc-debug-trace time { color: var(--pwa-cyan); }
 
-@media (max-width: 1499px) {
-  .pwa-poc-debug { display: none; }
-}
-
 .pwa-attachment-send-control {
   position: relative;
   display: inline-flex;

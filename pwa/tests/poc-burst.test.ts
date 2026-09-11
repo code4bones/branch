@@ -41,7 +41,7 @@ void test("chat exposes the floating PoC panel while compact CSS keeps it out of
   assert.match(chat, /<PocDebugPanel/);
   assert.match(chat, /sendPocBurstMessage/);
   assert.match(css, /\.pwa-poc-debug \{[\s\S]*position: absolute/);
-  assert.match(css, /@media \(max-width: 1499px\) \{[\s\S]*\.pwa-poc-debug \{ display: none; \}/);
+  assert.match(css, /@media \(max-width: 767px\) \{[\s\S]*\.pwa-poc-debug \{ display: none; \}/);
 });
 
 class Timers implements PocBurstTimerPort {
