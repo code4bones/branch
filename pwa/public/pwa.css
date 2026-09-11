@@ -342,7 +342,7 @@ body {
 .pwa-transport-trace {
   display: grid;
   gap: 4px;
-  max-height: 300px;
+  max-height: 420px;
   width: 100%;
   margin: 0;
   padding-left: 20px;
@@ -351,6 +351,26 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem;
 }
+
+.pwa-transport-trace li {
+  display: grid;
+  grid-template-columns: 16px max-content minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+}
+
+.pwa-transport-trace-icon {
+  color: var(--pwa-muted);
+}
+
+.pwa-transport-trace li.is-relay .pwa-transport-trace-icon { color: var(--pwa-cyan); }
+.pwa-transport-trace li.is-presence .pwa-transport-trace-icon { color: #8aa4ff; }
+.pwa-transport-trace li.is-rtc .pwa-transport-trace-icon { color: #a78bfa; }
+.pwa-transport-trace li.is-application .pwa-transport-trace-icon { color: #5ecb9c; }
+.pwa-transport-trace li.is-attachment .pwa-transport-trace-icon { color: #e9b86f; }
+.pwa-transport-trace li.is-delivery .pwa-transport-trace-icon { color: #68c9e8; }
+.pwa-transport-trace li.is-alert .pwa-transport-trace-icon,
+.pwa-transport-trace li.is-negative .pwa-transport-trace-icon { color: var(--pwa-danger); }
 
 .pwa-transport-trace time {
   color: var(--pwa-cyan);

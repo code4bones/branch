@@ -81,6 +81,10 @@ interface Session {
   remoteDescriptionSHA256: string | null;
   expiresAt: number;
   readonly receivedCandidates: Set<string>;
+  // WSS preserves a live route, not cross-frame causality. An answerer's
+  // candidate can therefore arrive before its answer. Keep a bounded local
+  // staging set until the authenticated remote description is installed.
+  readonly pendingCandidates: Map<string, RtcCandidate>;
   sentCandidates: number;
   channel: RTCDataChannelPort | null;
 }
@@ -142,6 +146,7 @@ export class RTCSessionController {
       remoteDescriptionSHA256: null,
       expiresAt: now + rtcSignalingControlTTLms,
       receivedCandidates: new Set(),
+      pendingCandidates: new Map(),
       sentCandidates: 0,
       channel
     };
@@ -222,6 +227,7 @@ export class RTCSessionController {
       remoteDescriptionSHA256: offer.descriptionSHA256,
       expiresAt: now + rtcSignalingControlTTLms,
       receivedCandidates: new Set(),
+      pendingCandidates: new Map(),
       sentCandidates: 0,
       channel: null
     };
@@ -261,6 +267,7 @@ export class RTCSessionController {
     if (session.remoteDescriptionSHA256 !== null) return "rejected";
     await session.connection.setRemoteDescription(answer.description);
     session.remoteDescriptionSHA256 = answer.descriptionSHA256;
+    await this.applyPendingCandidates(session);
     // A refreshed answer lifetime is bounded by the received signed control,
     // never a browser connection-state event.
     session.expiresAt = now + rtcSignalingControlTTLms;
@@ -272,10 +279,16 @@ export class RTCSessionController {
     const session = this.#sessions.get(peerId);
     if (session === undefined || session.id !== candidate.rtcSessionId || session.generation !== candidate.generation) return "rejected";
     const remoteDirection = session.role === "offerer" ? "answerer" : "offerer";
-    if (candidate.direction !== remoteDirection || session.remoteDescriptionSHA256 !== candidate.descriptionSHA256) return "rejected";
+    if (candidate.direction !== remoteDirection) return "rejected";
     const key = `${candidate.descriptionSHA256}\u0000${candidate.candidate}`;
-    if (session.receivedCandidates.has(key)) return "duplicate";
+    if (session.receivedCandidates.has(key) || session.pendingCandidates.has(key)) return "duplicate";
     if (session.receivedCandidates.size >= maxRtcCandidatesPerDirection) return "rejected";
+    if (session.remoteDescriptionSHA256 === null) {
+      if (session.pendingCandidates.size >= maxRtcCandidatesPerDirection) return "rejected";
+      session.pendingCandidates.set(key, candidate);
+      return "accepted";
+    }
+    if (session.remoteDescriptionSHA256 !== candidate.descriptionSHA256) return "rejected";
     await session.connection.addIceCandidate(candidate.candidate);
     session.receivedCandidates.add(key);
     session.expiresAt = now + rtcSignalingControlTTLms;
@@ -315,6 +328,24 @@ export class RTCSessionController {
       return;
     }
     session.channel = channel;
+    // The answerer receives this event after its session setup. Publish it at
+    // that point too; otherwise only the offerer's local channel reaches the
+    // DATA/ADMIT adapter and every direct send falls back to WSS.
+    this.publishDataChannel(session);
+  }
+
+  private async applyPendingCandidates(session: Session): Promise<void> {
+    for (const [key, candidate] of session.pendingCandidates) {
+      session.pendingCandidates.delete(key);
+      if (candidate.descriptionSHA256 !== session.remoteDescriptionSHA256) continue;
+      try {
+        await session.connection.addIceCandidate(candidate.candidate);
+        session.receivedCandidates.add(key);
+      } catch {
+        // Browser candidate parsing is transport-local. A bad staged
+        // candidate cannot invalidate the already authenticated answer.
+      }
+    }
   }
 
   private publishDataChannel(session: Session): void {

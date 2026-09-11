@@ -72,12 +72,30 @@ void test("RTC session controller permits an offer only after live peer capabili
   const offerSignal = sent[0];
   if (offerSignal === undefined || offerSignal.kind !== rtcOfferControlKind) assert.fail("missing offer");
   const offer = offerSignal.body;
+  const activeConnection = connections[0];
+  if (activeConnection === undefined) throw new Error("missing peer connection");
   const answerDescriptionSHA256 = await rtcDescriptionSHA256(remoteSDP);
+  const earlyCandidate: RTCSignal = {
+    kind: rtcCandidateControlKind,
+    body: {
+      version: rtcSignalingVersion,
+      rtcSessionId: offer.rtcSessionId,
+      generation: 0,
+      direction: "answerer",
+      descriptionSHA256: answerDescriptionSHA256,
+      candidate: "candidate:1 1 UDP 1 192.0.2.1 9 typ host"
+    }
+  };
+  // Live WSS signaling does not make an answer and its first candidate one
+  // atomic delivery. A candidate that beats the answer is staged, not lost.
+  assert.equal(await controller.receive(remotePeer, earlyCandidate), "accepted");
+  assert.deepEqual(activeConnection.candidates, []);
   assert.equal(await controller.receive(remotePeer, {
     kind: rtcAnswerControlKind,
     body: { version: rtcSignalingVersion, rtcSessionId: offer.rtcSessionId, generation: 0, description: remoteSDP, descriptionSHA256: answerDescriptionSHA256, dtlsFingerprintSHA256: extractDTLSFingerprintSHA256(remoteSDP), offerDescriptionSHA256: offer.descriptionSHA256 }
   }), "accepted");
   assert.equal(connections[0]?.remote, remoteSDP);
+  assert.deepEqual(activeConnection.candidates, ["candidate:1 1 UDP 1 192.0.2.1 9 typ host"]);
   connections[0].emitCandidate("candidate:1 1 UDP 1 192.0.2.1 9 typ host");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(sent[1]?.kind, rtcCandidateControlKind);
@@ -123,11 +141,13 @@ void test("RTC glare has one deterministic winner and duplicate remote candidate
 
 void test("RTC session accepts only the D95 reliable binary channel profile", async () => {
   const connection = new FakeConnection();
+  const published: RTCDataChannelPort[] = [];
   const controller = new RTCSessionController({
     localPeerId: remotePeer,
     newSessionId: () => "AQEBAQEBAQEBAQEBAQEBAQ",
     createConnection: () => connection,
-    sendSignal: () => Promise.resolve()
+    sendSignal: () => Promise.resolve(),
+    onDataChannel: (session) => { published.push(session.channel); }
   });
   const remoteDescriptionSHA256 = await rtcDescriptionSHA256(remoteSDP);
   const offer: RtcOffer = { version: rtcSignalingVersion, rtcSessionId: "AQEBAQEBAQEBAQEBAQEBAQ", generation: 0, description: remoteSDP, descriptionSHA256: remoteDescriptionSHA256, dtlsFingerprintSHA256: extractDTLSFingerprintSHA256(remoteSDP) };
@@ -135,6 +155,9 @@ void test("RTC session accepts only the D95 reliable binary channel profile", as
   assert.equal(await controller.receive(localPeer, { kind: rtcOfferControlKind, body: offer }), "accepted");
   connection.emitDataChannel(channel);
   assert.equal(channel.binaryType, "arraybuffer");
+  // The answerer must publish the browser-delivered channel as well as the
+  // offerer's locally created channel, otherwise DATA/ADMIT stays inert.
+  assert.deepEqual(published, [channel]);
   const extra = new FakeChannel(rtcDataChannelLabel);
   connection.emitDataChannel(extra);
   assert.equal(extra.closed, true);

@@ -391,16 +391,17 @@ void test("PWA relay trace is bounded local diagnostic state and never protocol 
     store.getState().recordTransportTrace(`event-${String(index)}`);
   }
   const trace = store.getState().transportTrace;
-  assert.equal(trace.length, 24);
-  assert.equal(trace[0]?.detail, "event-6");
+  assert.equal(trace.length, 30);
+  assert.equal(trace[0]?.detail, "event-0");
   assert.equal(trace.at(-1)?.detail, "event-29");
 
   const slice = await readFile(transportSlicePath, "utf8");
   const settings = await readFile(settingsPagePath, "utf8");
-  assert.match(slice, /maxTransportTraceEntries = 24/);
+  assert.match(slice, /maxTransportTraceEntries = 64/);
   assert.match(slice, /recordTransportTrace/);
   assert.doesNotMatch(slice, /IndexedDB|saveStored|fetch\(|WebSocket/);
   assert.match(settings, /Relay trace/);
+  assert.match(settings, /TraceIcon/);
 });
 
 void test("PWA chooses a deterministic local attachment order from the same validated relay set", async () => {

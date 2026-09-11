@@ -8,7 +8,7 @@ import {
 } from "@code4bones/branch-core";
 
 import { RTCSessionController, type RTCDataChannelPort, type RTCPeerConnectionPort, type RTCSignal, type RTCSignalResult } from "./rtc-session.js";
-import { RTCSignalingControlRuntime, type RTCSignalingControlOutcome } from "./rtc-signaling-control.js";
+import { RTCSignalingControlRuntime, type RTCSignalingControlOutcome, type RTCSignalingKind } from "./rtc-signaling-control.js";
 
 export interface RTCSessionRuntimeOptions {
   readonly localPeerId: string;
@@ -29,6 +29,9 @@ export interface RTCSignalingPort {
 export interface RTCSessionRuntimeReceive {
   readonly handled: boolean;
   readonly outcome?: RTCSignalingControlOutcome | RTCSignalResult;
+  // A fixed registry value only. It is safe for the optional local trace and
+  // deliberately excludes SDP, candidates, IDs, and other transport data.
+  readonly kind?: RTCSignalingKind;
 }
 
 // Endpoint-only composition root. It explicitly creates browser connections
@@ -82,7 +85,7 @@ export class RTCSessionRuntime {
     }
     if (control.kind === rtcCapabilitiesControlKind) {
       if (!this.#sessions.acceptCapabilities(input.senderPeerId, control.body as RtcCapabilities, control.expiresAt ?? 0)) {
-        return { handled: true, outcome: "rejected" };
+        return { handled: true, outcome: "rejected", kind: control.kind };
       }
       // Acceptance is determined by the verified remote control. A local
       // scheduling failure must not reinterpret it as an invalid control or
@@ -94,14 +97,14 @@ export class RTCSessionRuntime {
         // The next bounded capability advertisement can establish a fresh
         // session attempt; no browser state is made durable here.
       }
-      return { handled: true, outcome: "accepted" };
+      return { handled: true, outcome: "accepted", kind: control.kind };
     }
     // Restart remains a signed, bounded and replay-protected wire body but is
     // intentionally not mapped to Browser API effects until its generation
     // transition is implemented and tested. A valid but unsupported endpoint
     // extension is rejected locally, never forwarded or retried.
-    if (control.kind === "branch.rtc.restart/0.draft") return { handled: true, outcome: "rejected" };
-    return { handled: true, outcome: await this.#sessions.receive(input.senderPeerId, { kind: control.kind, body: control.body } as RTCSignal) };
+    if (control.kind === "branch.rtc.restart/0.draft") return { handled: true, outcome: "rejected", kind: control.kind };
+    return { handled: true, outcome: await this.#sessions.receive(input.senderPeerId, { kind: control.kind, body: control.body } as RTCSignal), kind: control.kind };
   }
 
   async advertiseCapabilities(peerId: string): Promise<"sent" | "skipped"> {

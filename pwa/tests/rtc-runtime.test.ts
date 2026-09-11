@@ -41,7 +41,7 @@ void test("accepted live RTC capability is answered and the lexical initiator se
     senderPeerId: remotePeerId,
     knownContactId: "known-contact",
     now: 1_000
-  }), { handled: true, outcome: "accepted" });
+  }), { handled: true, outcome: "accepted", kind: rtcCapabilitiesControlKind });
   assert.deepEqual(signaling.sent.map((entry) => entry.kind), [rtcCapabilitiesControlKind, rtcOfferControlKind]);
 
   // Duplicate capabilities neither start a second offer nor create a new
@@ -64,7 +64,7 @@ void test("a local RTC scheduling failure does not reject a verified capability"
     senderPeerId: remotePeerId,
     knownContactId: "known-contact",
     now: 1_000
-  }), { handled: true, outcome: "accepted" });
+  }), { handled: true, outcome: "accepted", kind: rtcCapabilitiesControlKind });
 });
 
 class FakeSignaling implements RTCSignalingPort {

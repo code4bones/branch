@@ -495,7 +495,7 @@ async function handleIncomingEnvelope(
       }
     });
     if (rtcSignaling.handled) {
-      state.recordTransportTrace(`rtc signaling: ${rtcSignaling.outcome ?? "rejected"}`);
+      state.recordTransportTrace(`rtc signaling: ${rtcSignaling.kind ?? "unknown"} ${rtcSignaling.outcome ?? "rejected"}`);
       return true;
     }
     const imageCapabilities = await receiveImageCapabilities(storeApi, senderPeerId, plaintext);

@@ -1,4 +1,4 @@
-import { CopyOutlined, DownloadOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloudServerOutlined, CopyOutlined, DownloadOutlined, ExclamationCircleOutlined, FileTextOutlined, PaperClipOutlined, RadarChartOutlined, SaveOutlined, UploadOutlined, WifiOutlined } from "@ant-design/icons";
 import { Button, Input, Modal, Select, Segmented, Space, Switch, Tag, Typography } from "antd";
 import { useRef, useState } from "react";
 
@@ -139,7 +139,8 @@ export function SettingsPage(): React.JSX.Element {
             {transport.transportTrace.length === 0 ? "No live-session events yet" : (
               <ol className="pwa-transport-trace">
                 {transport.transportTrace.map((entry) => (
-                  <li key={`${String(entry.at)}-${entry.detail}`}>
+                  <li className={`is-${traceEntity(entry.detail)}${traceIsNegative(entry.detail) ? " is-negative" : ""}`} key={`${String(entry.at)}-${entry.detail}`}>
+                    <span aria-hidden="true" className="pwa-transport-trace-icon"><TraceIcon entity={traceEntity(entry.detail)} /></span>
                     <time>{formatTraceTime(entry.at)}</time> {entry.detail}
                   </li>
                 ))}
@@ -269,6 +270,34 @@ export function SettingsPage(): React.JSX.Element {
       </dl>
     </section>
   );
+}
+
+type TraceEntity = "relay" | "presence" | "rtc" | "application" | "attachment" | "delivery" | "alert";
+
+function traceEntity(detail: string): TraceEntity {
+  if (detail.startsWith("rtc ")) return "rtc";
+  if (detail.startsWith("presence") || detail.includes("HEARTBEAT")) return "presence";
+  if (detail.startsWith("image") || detail.startsWith("attachment")) return "attachment";
+  if (detail.startsWith("application capabilities") || detail.startsWith("typing control")) return "application";
+  if (detail.startsWith("delivery receipt") || detail.startsWith("outbox") || detail.startsWith("incoming envelope")) return "delivery";
+  if (traceIsNegative(detail)) return "alert";
+  return "relay";
+}
+
+function traceIsNegative(detail: string): boolean {
+  return /(?:failed|rejected|expired|error|closed|unavailable)/iu.test(detail);
+}
+
+function TraceIcon({ entity }: { readonly entity: TraceEntity }): React.JSX.Element {
+  switch (entity) {
+    case "rtc": return <WifiOutlined />;
+    case "presence": return <RadarChartOutlined />;
+    case "application": return <FileTextOutlined />;
+    case "attachment": return <PaperClipOutlined />;
+    case "delivery": return <CheckCircleOutlined />;
+    case "alert": return <ExclamationCircleOutlined />;
+    case "relay": return <CloudServerOutlined />;
+  }
 }
 
 function formatTraceTime(at: number): string {
