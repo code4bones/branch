@@ -44,6 +44,13 @@ func TestFederationObservabilityClassifiesCarrierAndHandshakeTimeouts(t *testing
 	}
 }
 
+func TestFederationObservabilityMapsForwardFailureToRouteFailure(t *testing.T) {
+	event, level, result := federationEvent(wss.FederationForwardFailed)
+	if event != observability.EventRouteMigrationFailed || level != observability.LevelWarn || result != "unavailable" {
+		t.Fatalf("forward failure mapping = %q %q %q", event, level, result)
+	}
+}
+
 func TestOffFederationObservabilityDoesNotRecordEvents(t *testing.T) {
 	recorder := observability.NewRecorder(observability.RecorderOptions{})
 	observer, fanout := newFederationObserver(observability.ModeOff, recorder, "0.0.0-test")

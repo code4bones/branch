@@ -59,7 +59,7 @@ func federationEvent(kind wss.FederationObservationKind) (observability.EventNam
 		return observability.EventRouteSelected, observability.LevelInfo, "success"
 	case wss.FederationBridgeEstablished:
 		return observability.EventRouteMigrationCompleted, observability.LevelInfo, "success"
-	case wss.FederationBridgeFailed, wss.FederationRouteUnavailable:
+	case wss.FederationBridgeFailed, wss.FederationForwardFailed, wss.FederationRouteUnavailable:
 		return observability.EventRouteMigrationFailed, observability.LevelWarn, "unavailable"
 	default:
 		return observability.EventRouteMigrationFailed, observability.LevelWarn, "unavailable"

@@ -379,7 +379,9 @@ func (forwarder *federatedWSSForwarder) Forward(ctx context.Context, routeID rel
 		forwarder.closeLocked()
 		return relay.ErrPeerUnavailable
 	}
+	forwardStarted := time.Now()
 	if err := client.forwardEnvelope(ctx, routeID, payload, senderPeerID); err != nil {
+		forwarder.observe(ctx, FederationForwardFailed, federationFailureReason(err), time.Since(forwardStarted))
 		forwarder.closeLocked()
 		return normalizeFederationError(err)
 	}

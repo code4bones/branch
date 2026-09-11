@@ -18,7 +18,11 @@ const (
 	FederationRouteSelected          FederationObservationKind = "route_selected"
 	FederationBridgeEstablished      FederationObservationKind = "bridge_established"
 	FederationBridgeFailed           FederationObservationKind = "bridge_failed"
-	FederationRouteUnavailable       FederationObservationKind = "route_unavailable"
+	// FederationForwardFailed is emitted only when an already-established
+	// bridge cannot obtain the remote relay.forwarded outcome. Successful
+	// ordinary ENVELOPE forwarding remains intentionally unobserved.
+	FederationForwardFailed    FederationObservationKind = "forward_failed"
+	FederationRouteUnavailable FederationObservationKind = "route_unavailable"
 )
 
 // FederationObservation is an optional diagnostic signal emitted after a
