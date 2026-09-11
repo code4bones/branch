@@ -42,6 +42,9 @@ func TestFederationObservabilityClassifiesCarrierAndHandshakeTimeouts(t *testing
 	if reason := federationReason(wss.FederationBridgeFailed, "timeout"); reason != observability.ReasonHandshakeTimeout {
 		t.Fatalf("bridge timeout reason = %q", reason)
 	}
+	if reason := federationReason(wss.FederationCarrierLookupFailed, "rate_limited"); reason != observability.ReasonRateLimitExceeded {
+		t.Fatalf("carrier rate limit reason = %q", reason)
+	}
 }
 
 func TestFederationObservabilityMapsForwardFailureToRouteFailure(t *testing.T) {

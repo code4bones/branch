@@ -38,20 +38,27 @@ type DiscoveredPeerRouterConfig struct {
 	MaxFrameBytes  int64
 	DialTimeout    time.Duration
 	WriteTimeout   time.Duration
-	Observer       FederationObserver
+	// CarrierPassMinInterval bounds anonymous GitHub carrier pressure without
+	// retaining carrier results. Zero selects the safe GitHub default; other
+	// sources remain unpaced unless a future profile defines its own policy.
+	CarrierPassMinInterval time.Duration
+	Observer               FederationObserver
 }
 
 // DiscoveredPeerRouter derives up to eight ephemeral WSS candidates from one
 // carrier pass. It keeps neither a relay topology nor a durable candidate cache.
 type DiscoveredPeerRouter struct {
-	source   discovery.BootstrapBeaconLookupSource
-	identity FederationIdentity
-	base     *StaticPeerRouter
-	now      func() time.Time
-	observer FederationObserver
+	source                 discovery.BootstrapBeaconLookupSource
+	identity               FederationIdentity
+	base                   *StaticPeerRouter
+	now                    func() time.Time
+	observer               FederationObserver
+	carrierPassMinInterval time.Duration
 
 	backoffMu       sync.Mutex
 	backoff         map[string]time.Time
+	carrierPassMu   sync.Mutex
+	nextCarrierPass time.Time
 	discoveryMu     sync.Mutex
 	discoveryStatus FederationCarrierObservation
 }
@@ -76,6 +83,10 @@ func NewDiscoveredPeerRouter(config DiscoveredPeerRouterConfig) (*DiscoveredPeer
 	if now == nil {
 		now = time.Now
 	}
+	carrierPassMinInterval, err := githubCarrierPassMinInterval(config.Source, config.CarrierPassMinInterval)
+	if err != nil {
+		return nil, err
+	}
 	base, err := NewStaticPeerRouter(StaticPeerRouterConfig{
 		LocalHub:       config.LocalHub,
 		EndpointPolicy: config.EndpointPolicy,
@@ -89,12 +100,13 @@ func NewDiscoveredPeerRouter(config DiscoveredPeerRouterConfig) (*DiscoveredPeer
 		return nil, err
 	}
 	return &DiscoveredPeerRouter{
-		source:   config.Source,
-		identity: config.Identity,
-		base:     base,
-		now:      now,
-		observer: federationObserverOrNoop(config.Observer),
-		backoff:  make(map[string]time.Time, maxFederationPeers),
+		source:                 config.Source,
+		identity:               config.Identity,
+		base:                   base,
+		now:                    now,
+		observer:               federationObserverOrNoop(config.Observer),
+		carrierPassMinInterval: carrierPassMinInterval,
+		backoff:                make(map[string]time.Time, maxFederationPeers),
 	}, nil
 }
 
@@ -234,6 +246,11 @@ func (router *DiscoveredPeerRouter) FederationCarrierSnapshot() *FederationCarri
 func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time) (string, []federationCandidate) {
 	started := router.now()
 	router.observe(ctx, FederationCarrierLookupStarted, "", 0)
+	if !router.reserveCarrierPass(now) {
+		router.recordCarrierObservation("unavailable", "carrier_rate_limited", 0, now)
+		router.observe(ctx, FederationCarrierLookupFailed, "rate_limited", router.now().Sub(started))
+		return "", nil
+	}
 	observations, err := router.source.LookupBootstrapBeacons(ctx)
 	if err != nil {
 		router.recordCarrierObservation("unavailable", carrierLookupFailureReason(err), 0, now)
@@ -332,6 +349,8 @@ func (router *DiscoveredPeerRouter) observe(ctx context.Context, kind Federation
 
 func federationFailureReason(err error) string {
 	switch {
+	case bootstrapCarrierRateLimited(err):
+		return "rate_limited"
 	case errors.Is(err, relay.ErrPeerUnavailable):
 		return "peer_unavailable"
 	case errors.Is(err, context.DeadlineExceeded):
@@ -339,6 +358,37 @@ func federationFailureReason(err error) string {
 	default:
 		return "relay_unavailable"
 	}
+}
+
+func githubCarrierPassMinInterval(source discovery.BootstrapBeaconLookupSource, configured time.Duration) (time.Duration, error) {
+	if configured < 0 || (configured != 0 && (configured < 12*time.Second || configured > time.Minute)) {
+		return 0, ErrInvalidConfig
+	}
+	if sourceID, ok := source.(discovery.BootstrapBeaconSourceID); !ok || sourceID.ID() != "github" {
+		return 0, nil
+	}
+	if configured == 0 {
+		return 12 * time.Second, nil
+	}
+	return configured, nil
+}
+
+func (router *DiscoveredPeerRouter) reserveCarrierPass(now time.Time) bool {
+	if router.carrierPassMinInterval == 0 {
+		return true
+	}
+	router.carrierPassMu.Lock()
+	defer router.carrierPassMu.Unlock()
+	if now.Before(router.nextCarrierPass) {
+		return false
+	}
+	router.nextCarrierPass = now.Add(router.carrierPassMinInterval)
+	return true
+}
+
+func bootstrapCarrierRateLimited(err error) bool {
+	reason, ok := discovery.BootstrapBeaconLookupFailureReason(err)
+	return ok && reason == "github_rate_limited"
 }
 
 func (router *DiscoveredPeerRouter) recordCarrierObservation(state string, reason string, candidateCount int, now time.Time) {

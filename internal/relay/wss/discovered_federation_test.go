@@ -19,6 +19,7 @@ type testBootstrapBeaconSource struct {
 	calls        int
 	observations []discovery.BootstrapBeaconCandidate
 	err          error
+	id           string
 }
 
 func (source *testBootstrapBeaconSource) LookupBootstrapBeacons(context.Context) ([]discovery.BootstrapBeaconCandidate, error) {
@@ -29,7 +30,12 @@ func (source *testBootstrapBeaconSource) LookupBootstrapBeacons(context.Context)
 	return append([]discovery.BootstrapBeaconCandidate(nil), source.observations...), nil
 }
 
-func (source *testBootstrapBeaconSource) ID() string { return "github" }
+func (source *testBootstrapBeaconSource) ID() string {
+	if source.id != "" {
+		return source.id
+	}
+	return "github"
+}
 
 func TestDiscoveredPeerRouterRecordsSafeCarrierLookupFailure(t *testing.T) {
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
@@ -72,7 +78,7 @@ func TestDiscoveredPeerRouterDerivesEphemeralCandidatesFromSignedBeacons(t *test
 	}
 	localWrapper := testFederationBeacon(t, now, localIdentity.PublicKey(), localIdentity.Sign, "wss://local.example.test:443/relay/v0", 0)
 	remoteWrapper := testFederationBeacon(t, now, remotePublicKey, func(input []byte) []byte { return ed25519.Sign(remotePrivateKey, input) }, "wss://remote.example.test:443/relay/v0", 1)
-	source := &testBootstrapBeaconSource{observations: []discovery.BootstrapBeaconCandidate{
+	source := &testBootstrapBeaconSource{id: "test", observations: []discovery.BootstrapBeaconCandidate{
 		{Wrapper: "BRANCH0.poison", Source: "carrier/poison"},
 		{Wrapper: remoteWrapper, Source: "carrier/remote"},
 		{Wrapper: localWrapper, Source: "carrier/local"},
@@ -103,6 +109,50 @@ func TestDiscoveredPeerRouterDerivesEphemeralCandidatesFromSignedBeacons(t *test
 	_, _ = router.discover(context.Background(), now)
 	if source.calls != 2 {
 		t.Fatalf("source was cached; calls = %d", source.calls)
+	}
+}
+
+func TestDiscoveredPeerRouterPacesGitHubPassesWithoutCandidateCache(t *testing.T) {
+	now := time.Date(2026, 9, 11, 18, 0, 0, 0, time.UTC)
+	localIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate local identity: %v", err)
+	}
+	remotePublicKey, remotePrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate remote identity: %v", err)
+	}
+	localWrapper := testFederationBeacon(t, now, localIdentity.PublicKey(), localIdentity.Sign, "wss://local.example.test:443/relay/v0", 0)
+	remoteWrapper := testFederationBeacon(t, now, remotePublicKey, func(input []byte) []byte { return ed25519.Sign(remotePrivateKey, input) }, "wss://remote.example.test:443/relay/v0", 1)
+	source := &testBootstrapBeaconSource{observations: []discovery.BootstrapBeaconCandidate{{Wrapper: localWrapper}, {Wrapper: remoteWrapper}}}
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewDiscoveredPeerRouter(DiscoveredPeerRouterConfig{
+		Source: source, Identity: localIdentity, LocalHub: hub, Now: func() time.Time { return now }, CarrierPassMinInterval: 12 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	if local, candidates := router.discover(context.Background(), now); local != localWrapper || len(candidates) != 1 {
+		t.Fatalf("first discovery = local %q candidates %+v", local, candidates)
+	}
+	if local, candidates := router.discover(context.Background(), now.Add(time.Second)); local != "" || len(candidates) != 0 {
+		t.Fatalf("paced discovery retained candidates: local %q candidates %+v", local, candidates)
+	}
+	if source.calls != 1 {
+		t.Fatalf("paced source calls = %d, want 1", source.calls)
+	}
+	observation := router.FederationCarrierSnapshot()
+	if observation == nil || observation.LastReason != "carrier_rate_limited" || observation.CandidateCount != 0 {
+		t.Fatalf("paced observation = %+v", observation)
+	}
+	if local, candidates := router.discover(context.Background(), now.Add(12*time.Second)); local != localWrapper || len(candidates) != 1 {
+		t.Fatalf("retry discovery = local %q candidates %+v", local, candidates)
+	}
+	if source.calls != 2 {
+		t.Fatalf("retry source calls = %d, want 2", source.calls)
 	}
 }
 

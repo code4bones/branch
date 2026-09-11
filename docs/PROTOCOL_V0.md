@@ -2404,6 +2404,12 @@ relay identities, and no periodic crawl, topology exchange, directory, or
 durable cache. Candidate state is memory-only and expires no later than the
 beacon. A local hit never triggers carrier discovery.
 
+The anonymous GitHub carrier is additionally paced per relay: at most one
+carrier pass starts in each 12-second interval. A miss during that interval
+returns a bounded transient rate-limit result and retains neither source bytes
+nor candidate state for later use. The next permitted pass reads and validates
+fresh signed public records normally.
+
 Within one carrier pass, observations merge by the beacon sender key. Only the
 highest valid signed sequence for one sender can supply a candidate; two
 different canonical wrappers at the same sequence are equivocation and supply

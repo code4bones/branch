@@ -85,6 +85,8 @@ func federationReason(kind wss.FederationObservationKind, reason string) observa
 		return observability.ReasonRouteNoCandidate
 	case "relay_backoff":
 		return observability.ReasonRouteDegraded
+	case "rate_limited":
+		return observability.ReasonRateLimitExceeded
 	case "carrier_unavailable":
 		return observability.ReasonCarrierUnavailable
 	case "relay_unavailable":
