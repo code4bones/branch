@@ -65,6 +65,7 @@ type DiscoveredPeerRouter struct {
 	view            federationDiscoveryView
 	discoveryMu     sync.Mutex
 	discoveryStatus FederationCarrierObservation
+	probe           federationProbe
 }
 
 type federationDiscoveryView struct {
@@ -74,6 +75,13 @@ type federationDiscoveryView struct {
 }
 
 const federationRefreshInterval = time.Hour
+
+// maxConcurrentFederationProbes bounds cold exact-peer lookup fan-out. The
+// verified view itself is already bounded, but probing every relay at once
+// would still let one client rendezvous consume all outbound federation dials.
+const maxConcurrentFederationProbes = 3
+
+type federationProbe func(context.Context, federationCandidate, relay.PeerID, string, time.Time) error
 
 // FederationCarrierObservation is a short-lived, protected operator summary
 // of one carrier pass. It contains no candidate endpoint, identity, route,
@@ -111,7 +119,7 @@ func NewDiscoveredPeerRouter(config DiscoveredPeerRouterConfig) (*DiscoveredPeer
 	if err != nil {
 		return nil, err
 	}
-	return &DiscoveredPeerRouter{
+	router := &DiscoveredPeerRouter{
 		source:                 config.Source,
 		identity:               config.Identity,
 		base:                   base,
@@ -119,7 +127,9 @@ func NewDiscoveredPeerRouter(config DiscoveredPeerRouterConfig) (*DiscoveredPeer
 		observer:               federationObserverOrNoop(config.Observer),
 		carrierPassMinInterval: carrierPassMinInterval,
 		backoff:                make(map[string]time.Time, maxFederationPeers),
-	}, nil
+	}
+	router.probe = router.probeCandidate
+	return router, nil
 }
 
 func (*DiscoveredPeerRouter) ID() string { return "relay_discovery" }
@@ -156,44 +166,103 @@ func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, pee
 }
 
 func (router *DiscoveredPeerRouter) probeFederatedPeer(ctx context.Context, peerID relay.PeerID, localBeacon string, candidates []federationCandidate, now time.Time, lookupStarted time.Time) (relay.FederatedForwarder, bool) {
+	eligible := make([]federationCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		if err := ctx.Err(); err != nil {
-			return nil, false
-		}
 		if router.backoffActive(candidate.identityKey, now) {
 			router.observe(ctx, FederationCandidateRejected, "relay_backoff", 0)
 			continue
 		}
-		candidateStarted := router.now()
-		client, err := router.dial(ctx, candidate, localBeacon)
-		if err != nil {
-			router.recordCandidateObservation(candidate, "unreachable", "discovered_dial_failed", 0, now)
-			router.recordBackoff(candidate, now)
-			router.observe(ctx, FederationCandidateRejected, federationFailureReason(err), router.now().Sub(candidateStarted))
-			continue
-		}
-		err = client.lookup(ctx, peerID)
-		client.close()
-		if err != nil {
-			router.recordLookupFailure(candidate, err, now)
-			router.observe(ctx, FederationCandidateRejected, federationFailureReason(err), router.now().Sub(candidateStarted))
-			continue
-		}
-		router.clearBackoff(candidate.identityKey)
-		router.recordCandidateObservation(candidate, "reachable", "discovered_lookup_ok", 1, now)
-		router.observe(ctx, FederationRouteSelected, "success", router.now().Sub(lookupStarted))
-		return &federatedWSSForwarder{
-			router:         router.base,
-			endpoint:       candidate.endpoint,
-			relayPublicKey: append([]byte(nil), candidate.relayPublicKey...),
-			peerID:         peerID,
-			dial: func(callCtx context.Context, forwarded federationCandidate) (*federationClient, error) {
-				return router.dial(callCtx, forwarded, localBeacon)
-			},
-			observer: router.observer,
-		}, true
+		eligible = append(eligible, candidate)
 	}
+	if len(eligible) == 0 || ctx.Err() != nil {
+		return nil, false
+	}
+
+	probeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	workerCount := min(maxConcurrentFederationProbes, len(eligible))
+	jobs := make(chan federationCandidate)
+	results := make(chan federationProbeResult, workerCount)
+	var workers sync.WaitGroup
+	for range workerCount {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for candidate := range jobs {
+				results <- federationProbeResult{candidate: candidate, err: router.probe(probeCtx, candidate, peerID, localBeacon, now)}
+			}
+		}()
+	}
+
+	next, inflight := 0, 0
+	for next < len(eligible) && inflight < workerCount {
+		jobs <- eligible[next]
+		next++
+		inflight++
+	}
+	for inflight > 0 {
+		result := <-results
+		inflight--
+		if result.err == nil && ctx.Err() == nil {
+			cancel()
+			close(jobs)
+			workers.Wait()
+			router.observe(ctx, FederationRouteSelected, "success", router.now().Sub(lookupStarted))
+			return router.newForwarder(result.candidate, peerID, localBeacon), true
+		}
+		if next < len(eligible) && ctx.Err() == nil {
+			jobs <- eligible[next]
+			next++
+			inflight++
+		}
+	}
+	close(jobs)
+	workers.Wait()
 	return nil, false
+}
+
+type federationProbeResult struct {
+	candidate federationCandidate
+	err       error
+}
+
+func (router *DiscoveredPeerRouter) newForwarder(candidate federationCandidate, peerID relay.PeerID, localBeacon string) relay.FederatedForwarder {
+	return &federatedWSSForwarder{
+		router:         router.base,
+		endpoint:       candidate.endpoint,
+		relayPublicKey: append([]byte(nil), candidate.relayPublicKey...),
+		peerID:         peerID,
+		dial: func(callCtx context.Context, forwarded federationCandidate) (*federationClient, error) {
+			return router.dial(callCtx, forwarded, localBeacon)
+		},
+		observer: router.observer,
+	}
+}
+
+func (router *DiscoveredPeerRouter) probeCandidate(ctx context.Context, candidate federationCandidate, peerID relay.PeerID, localBeacon string, now time.Time) error {
+	started := router.now()
+	client, err := router.dial(ctx, candidate, localBeacon)
+	if err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		router.recordCandidateObservation(candidate, "unreachable", "discovered_dial_failed", 0, now)
+		router.recordBackoff(candidate, now)
+		router.observe(ctx, FederationCandidateRejected, federationFailureReason(err), router.now().Sub(started))
+		return err
+	}
+	defer client.close()
+	if err := client.lookup(ctx, peerID); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		router.recordLookupFailure(candidate, err, now)
+		router.observe(ctx, FederationCandidateRejected, federationFailureReason(err), router.now().Sub(started))
+		return err
+	}
+	router.clearBackoff(candidate.identityKey)
+	router.recordCandidateObservation(candidate, "reachable", "discovered_lookup_ok", 1, now)
+	return nil
 }
 
 // recordLookupFailure keeps an unavailable peer distinct from an unavailable

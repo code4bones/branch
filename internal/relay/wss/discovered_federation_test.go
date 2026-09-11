@@ -6,6 +6,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -359,6 +361,130 @@ func TestDiscoveredPeerRouterDoesNotBackOffReachableRelayForMissingPeer(t *testi
 	router.recordLookupFailure(candidate, context.DeadlineExceeded, now)
 	if !router.backoffActive(candidate.identityKey, now) {
 		t.Fatal("failed relay lookup did not enter backoff")
+	}
+}
+
+func TestDiscoveredPeerRouterParallelProbeUsesFastMatchAndCancelsLoser(t *testing.T) {
+	now := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+	localIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate local identity: %v", err)
+	}
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewDiscoveredPeerRouter(DiscoveredPeerRouterConfig{
+		Source:   &testBootstrapBeaconSource{},
+		Identity: localIdentity,
+		LocalHub: hub,
+		Now:      func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	slowStarted := make(chan struct{})
+	slowStopped := make(chan struct{})
+	var active atomic.Int32
+	var maxActive atomic.Int32
+	router.probe = func(ctx context.Context, candidate federationCandidate, _ relay.PeerID, _ string, _ time.Time) error {
+		current := active.Add(1)
+		for previous := maxActive.Load(); current > previous && !maxActive.CompareAndSwap(previous, current); previous = maxActive.Load() {
+		}
+		defer active.Add(-1)
+		switch candidate.identityKey {
+		case "slow":
+			close(slowStarted)
+			<-ctx.Done()
+			close(slowStopped)
+			return ctx.Err()
+		case "fast":
+			<-slowStarted
+			return nil
+		default:
+			return errors.New("unexpected candidate")
+		}
+	}
+	candidates := []federationCandidate{
+		{endpoint: "wss://slow.example.test:443/relay/v0", identityKey: "slow", expiresAt: now.Add(time.Hour)},
+		{endpoint: "wss://fast.example.test:443/relay/v0", identityKey: "fast", expiresAt: now.Add(time.Hour)},
+	}
+
+	forwarder, ok := router.probeFederatedPeer(context.Background(), relay.PeerID(testPeerID), "local-beacon", candidates, now, now)
+	if !ok {
+		t.Fatal("fast candidate was not selected")
+	}
+	selected, ok := forwarder.(*federatedWSSForwarder)
+	if !ok || selected.endpoint != candidates[1].endpoint {
+		t.Fatalf("selected forwarder = %#v", forwarder)
+	}
+	select {
+	case <-slowStopped:
+	case <-time.After(time.Second):
+		t.Fatal("slow losing probe was not cancelled")
+	}
+	if max := maxActive.Load(); max != 2 {
+		t.Fatalf("parallel active probes = %d, want 2", max)
+	}
+}
+
+func TestDiscoveredPeerRouterParallelProbeBoundsColdFanout(t *testing.T) {
+	now := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+	localIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate local identity: %v", err)
+	}
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewDiscoveredPeerRouter(DiscoveredPeerRouterConfig{
+		Source:   &testBootstrapBeaconSource{},
+		Identity: localIdentity,
+		LocalHub: hub,
+		Now:      func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	var active atomic.Int32
+	var maxActive atomic.Int32
+	started := make(chan struct{}, maxConcurrentFederationProbes)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go func() {
+		for range maxConcurrentFederationProbes {
+			select {
+			case <-started:
+			case <-ctx.Done():
+				return
+			}
+		}
+		cancel()
+	}()
+	router.probe = func(ctx context.Context, _ federationCandidate, _ relay.PeerID, _ string, _ time.Time) error {
+		current := active.Add(1)
+		for previous := maxActive.Load(); current > previous && !maxActive.CompareAndSwap(previous, current); previous = maxActive.Load() {
+		}
+		defer active.Add(-1)
+		started <- struct{}{}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	candidates := make([]federationCandidate, 0, maxFederationPeers)
+	for index := 0; index < maxFederationPeers; index++ {
+		candidates = append(candidates, federationCandidate{
+			endpoint:    "wss://relay.example.test:443/relay/v0",
+			identityKey: "candidate-" + string(rune('a'+index)),
+			expiresAt:   now.Add(time.Hour),
+		})
+	}
+	if _, ok := router.probeFederatedPeer(ctx, relay.PeerID(testPeerID), "local-beacon", candidates, now, now); ok {
+		t.Fatal("cancelled probes unexpectedly selected a forwarder")
+	}
+	if max := maxActive.Load(); max != maxConcurrentFederationProbes {
+		t.Fatalf("max active probes = %d, want %d", max, maxConcurrentFederationProbes)
 	}
 }
 
