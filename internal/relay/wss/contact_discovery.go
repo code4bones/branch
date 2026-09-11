@@ -13,7 +13,7 @@ const contactDiscoveryWindow = time.Minute
 // no storage adapter, queue, result cache, or negative-result representation.
 type contactDiscovery struct {
 	mu        sync.Mutex
-	byBranch  map[string]contactTarget
+	byBranch  map[string]contactTargets
 	bySession map[relay.SessionID]string
 	lookups   map[relay.SessionID]contactRequestWindow
 	probes    map[relay.SessionID][]time.Time
@@ -25,13 +25,21 @@ type contactTarget struct {
 	conn      *connection
 }
 
+// contactTargets holds all concurrently live opted-in sessions for one exact
+// BranchID. selected preserves the former most-recent-announce preference
+// while every target remains removable only by its own session lifecycle.
+type contactTargets struct {
+	bySession map[relay.SessionID]contactTarget
+	selected  relay.SessionID
+}
+
 // contactRequestWindow maps a request ID to the relay-observed arrival time.
 // Client expiry bounds the probe's usefulness, but must not let a requester
 // shorten the relay's rolling anti-enumeration window.
 type contactRequestWindow struct{ entries map[string]time.Time }
 
 func newContactDiscovery() contactDiscovery {
-	return contactDiscovery{byBranch: make(map[string]contactTarget), bySession: make(map[relay.SessionID]string), lookups: make(map[relay.SessionID]contactRequestWindow), probes: make(map[relay.SessionID][]time.Time)}
+	return contactDiscovery{byBranch: make(map[string]contactTargets), bySession: make(map[relay.SessionID]string), lookups: make(map[relay.SessionID]contactRequestWindow), probes: make(map[relay.SessionID][]time.Time)}
 }
 
 func (state *contactDiscovery) announce(sessionID relay.SessionID, branchID string, peerID relay.PeerID, conn *connection, discoverable bool) {
@@ -39,7 +47,13 @@ func (state *contactDiscovery) announce(sessionID relay.SessionID, branchID stri
 	defer state.mu.Unlock()
 	state.removeLocked(sessionID)
 	if discoverable {
-		state.byBranch[branchID] = contactTarget{sessionID: sessionID, peerID: peerID, conn: conn}
+		targets := state.byBranch[branchID]
+		if targets.bySession == nil {
+			targets.bySession = make(map[relay.SessionID]contactTarget)
+		}
+		targets.bySession[sessionID] = contactTarget{sessionID: sessionID, peerID: peerID, conn: conn}
+		targets.selected = sessionID
+		state.byBranch[branchID] = targets
 		state.bySession[sessionID] = branchID
 	}
 }
@@ -51,7 +65,19 @@ func (state *contactDiscovery) remove(sessionID relay.SessionID) {
 }
 func (state *contactDiscovery) removeLocked(sessionID relay.SessionID) {
 	if branchID, ok := state.bySession[sessionID]; ok {
-		delete(state.byBranch, branchID)
+		targets := state.byBranch[branchID]
+		delete(targets.bySession, sessionID)
+		if len(targets.bySession) == 0 {
+			delete(state.byBranch, branchID)
+		} else {
+			if targets.selected == sessionID {
+				for replacement := range targets.bySession {
+					targets.selected = replacement
+					break
+				}
+			}
+			state.byBranch[branchID] = targets
+		}
 		delete(state.bySession, sessionID)
 	}
 	delete(state.lookups, sessionID)
@@ -80,7 +106,11 @@ func (state *contactDiscovery) reserve(requester relay.SessionID, requestID, bra
 	if _, duplicate := window.entries[requestID]; duplicate {
 		return contactTarget{}, false
 	}
-	target, ok := state.byBranch[branchID]
+	targets, ok := state.byBranch[branchID]
+	if !ok {
+		return contactTarget{}, false
+	}
+	target, ok := targets.bySession[targets.selected]
 	if !ok {
 		return contactTarget{}, false
 	}

@@ -86,3 +86,48 @@ func TestContactDiscoveryRequesterDuplicateAndSessionCleanup(t *testing.T) {
 		t.Fatal("session cleanup retained duplicate request state")
 	}
 }
+
+func TestContactDiscoveryKeepsOtherLiveSessionForSameBranchID(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+
+	t.Run("removing older session preserves newer selected target", func(t *testing.T) {
+		state := newContactDiscovery()
+		state.announce("older", "br1.same", "peer", &connection{}, true)
+		state.announce("newer", "br1.same", "peer", &connection{}, true)
+
+		resolved, ok := state.reserve("requester-before-cleanup", "request-before-cleanup", "br1.same", now, now.Add(time.Minute))
+		if !ok || resolved.sessionID != "newer" {
+			t.Fatalf("target before older cleanup = %+v, %v", resolved, ok)
+		}
+
+		state.remove("older")
+		for index := 0; index < 3; index++ {
+			requester := relay.SessionID(fmt.Sprintf("requester-after-cleanup-%d", index))
+			requestID := fmt.Sprintf("request-after-cleanup-%d", index)
+			resolved, ok := state.reserve(requester, requestID, "br1.same", now, now.Add(time.Minute))
+			if !ok || resolved.sessionID != "newer" {
+				t.Fatalf("target after older cleanup = %+v, %v", resolved, ok)
+			}
+		}
+		if _, ok := state.reserve("requester-over-limit", "request-over-limit", "br1.same", now, now.Add(time.Minute)); ok {
+			t.Fatal("older session cleanup reset newer target probe window")
+		}
+
+		state.remove("newer")
+		if _, ok := state.reserve("requester-two", "request-two", "br1.same", now, now.Add(time.Minute)); ok {
+			t.Fatal("final session cleanup retained discovery mapping")
+		}
+	})
+
+	t.Run("removing newer session preserves older target", func(t *testing.T) {
+		state := newContactDiscovery()
+		state.announce("older", "br1.same", "peer", &connection{}, true)
+		state.announce("newer", "br1.same", "peer", &connection{}, true)
+
+		state.remove("newer")
+		resolved, ok := state.reserve("requester", "request-one", "br1.same", now, now.Add(time.Minute))
+		if !ok || resolved.sessionID != "older" {
+			t.Fatalf("target after newer cleanup = %+v, %v", resolved, ok)
+		}
+	})
+}
