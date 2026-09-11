@@ -1133,6 +1133,85 @@ button.pwa-chat-reply-preview { cursor: pointer; }
   backdrop-filter: blur(12px);
 }
 
+/* Endpoint-local PoC tooling. It floats only where the desktop chat has a
+   genuine side gutter; compact layouts retain their unobstructed chat. */
+.pwa-poc-debug {
+  position: absolute;
+  z-index: 3;
+  top: 82px;
+  right: 18px;
+  width: 252px;
+  max-height: calc(100% - 156px);
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid #24596c;
+  border-radius: 10px;
+  background: rgb(20 29 35 / 96%);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
+  backdrop-filter: blur(12px);
+  font-size: 0.76rem;
+}
+
+.pwa-poc-debug-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  color: var(--pwa-cyan);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.pwa-poc-debug-status {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 9px;
+}
+
+.pwa-poc-debug-status div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.pwa-poc-debug-status dt,
+.pwa-poc-debug-status dd { margin: 0; }
+.pwa-poc-debug-status dt { color: var(--pwa-muted); }
+.pwa-poc-debug-status dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pwa-poc-debug-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.pwa-poc-debug-actions .ant-select { width: 100px; }
+.pwa-poc-debug-progress { min-width: 0; color: var(--pwa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwa-poc-debug-note { margin: 9px 0; color: var(--pwa-muted); font-size: 0.7rem; line-height: 1.35; }
+
+.pwa-poc-debug-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 164px;
+  margin: 0;
+  padding: 7px 0 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--pwa-line);
+  color: var(--pwa-muted);
+  font-family: var(--pwa-mono);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  list-style: none;
+}
+
+.pwa-poc-debug-trace time { color: var(--pwa-cyan); }
+
+@media (max-width: 1499px) {
+  .pwa-poc-debug { display: none; }
+}
+
 .pwa-attachment-send-control {
   position: relative;
   display: inline-flex;
@@ -1288,6 +1367,7 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 }
 
 @media (max-width: 767px) {
+  .pwa-poc-debug { display: none; }
   .pwa-sidebar {
     flex: 1 1 auto;
     width: 100%;

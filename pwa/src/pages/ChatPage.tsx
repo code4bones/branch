@@ -10,6 +10,7 @@ import { DetailHeader } from "../app/DetailHeader.js";
 import { InboundAttachmentOffer } from "../app/InboundAttachmentOffer.js";
 import { MessageComposer } from "../app/MessageComposer.js";
 import { MessageLog } from "../app/MessageLog.js";
+import { PocDebugPanel } from "../app/PocDebugPanel.js";
 import { composeOutgoingText } from "../app/message-composition.js";
 import { VerifiedCompletedAttachment } from "../app/VerifiedCompletedAttachment.js";
 import { clearTransientCompletedAttachment } from "../app/transient-attachment-presentation.js";
@@ -24,7 +25,7 @@ import { CHATS_PATH } from "../app/paths.js";
 import { useCompletedAttachment, useContacts, useConversation, useConversationTimeline, useIdentity, useInboundAttachmentOffer, useLocalImageMessages, useMarkContactRead, useMessageActions, useReceiptPolicy, useTransportStatus } from "../state/hooks.js";
 import type { ContactSummary } from "../state/slices/contacts-slice.js";
 import type { MessageSummary } from "../state/slices/conversations-slice.js";
-import { useAppStoreApi } from "../state/StoreProvider.js";
+import { useAppStore, useAppStoreApi } from "../state/StoreProvider.js";
 
 export function ChatPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -36,6 +37,7 @@ export function ChatPage(): React.JSX.Element {
   const messageActions = useMessageActions();
   const identity = useIdentity();
   const transport = useTransportStatus();
+  const queuedForSelectedChat = useAppStore((state) => state.outbox.filter((entry) => entry.contactId === resolvedContactId).length);
   const receiptPolicy = useReceiptPolicy();
   const storeApi = useAppStoreApi();
   const [draft, setDraft] = useState("");
@@ -210,7 +212,7 @@ export function ChatPage(): React.JSX.Element {
     }
   };
 
-  const sendBody = (body: string, previousUnavailableMessage?: MessageSummary, destination: ContactSummary = contact): void => {
+  const sendBody = (body: string, previousUnavailableMessage?: MessageSummary, destination: ContactSummary = contact, includeDraftReply = true): void => {
     if (body === "" || identity.identity === null) {
       return;
     }
@@ -219,15 +221,16 @@ export function ChatPage(): React.JSX.Element {
     // A live outer delivery ID is created later by the outbox runtime; a
     // forwarded body never inherits IDs or receipt state from its source.
     const createdAt = Date.now();
+    const draftReplyToMessageId = includeDraftReply ? replyToMessageId : null;
     const composition = composeOutgoingText({
       contactId: destination.contactId,
       body,
       createdAt: previousUnavailableMessage?.sentAt ?? createdAt,
       createId: createDeliveryID,
-      ...(replyToMessageId === null ? {} : { replyToMessageId })
+      ...(draftReplyToMessageId === null ? {} : { replyToMessageId: draftReplyToMessageId })
     });
     const pendingMessage = composition.message;
-    setReplyToMessageId(null);
+    if (includeDraftReply) setReplyToMessageId(null);
     if (previousUnavailableMessage === undefined) {
       conversation.appendMessage(pendingMessage);
     } else if (!conversation.retryUnavailableMessage(destination.contactId, previousUnavailableMessage.messageId, pendingMessage)) {
@@ -323,7 +326,7 @@ export function ChatPage(): React.JSX.Element {
     const sources = messageActions.forwardSourceMessageIds
       .map((messageId) => conversation.messages.find((message) => message.messageId === messageId))
       .filter((message): message is MessageSummary => message !== undefined);
-    for (const source of sources) sendBody(source.body, undefined, destination);
+    for (const source of sources) sendBody(source.body, undefined, destination, false);
     messageActions.clearMessageSelection();
     messageActions.clearForwardSources();
     setForwardOpen(false);
@@ -365,6 +368,22 @@ export function ChatPage(): React.JSX.Element {
     }).catch((cause: unknown) => {
       storeApi.getState().recordTransportTrace(`typing control: ${typingSendFailure(cause)}`);
     });
+  };
+
+  const sendPocBurstMessage = (index: number, total: number): void => {
+    sendBody(`[PoC burst ${String(index)}/${String(total)}]`, undefined, contact, false);
+    if (index === 1) storeApi.getState().recordTransportTrace(`poc burst: started ${String(total)}`);
+    if (index === total) storeApi.getState().recordTransportTrace(`poc burst: queued ${String(total)}`);
+  };
+
+  const rerunRendezvous = (): void => {
+    if (peerId === null || !hasAttachedRelaySession()) return;
+    try {
+      getRelaySessionClient()?.rendezvous(peerId);
+      storeApi.getState().recordTransportTrace("poc rendezvous: sent");
+    } catch {
+      storeApi.getState().recordTransportTrace("poc rendezvous: failed");
+    }
   };
 
   return (
@@ -438,6 +457,17 @@ export function ChatPage(): React.JSX.Element {
           {...(isReachable ? { onTyping: handleTyping } : {})}
         />
       </div>
+      <PocDebugPanel
+        attachedRelayEndpoint={transport.attachedRelayEndpoint}
+        attachStatus={transport.attachStatus}
+        contactId={contact.contactId}
+        contactName={contact.displayName}
+        enabled={isReachable && identity.identity !== null && transport.attachStatus === "attached"}
+        onBurstMessage={sendPocBurstMessage}
+        onRendezvous={rerunRendezvous}
+        queuedCount={queuedForSelectedChat}
+        transportTrace={transport.transportTrace}
+      />
       <Modal
         okText="Save"
         onCancel={() => { setRenameOpen(false); }}
