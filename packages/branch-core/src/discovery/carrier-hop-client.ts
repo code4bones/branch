@@ -42,6 +42,15 @@ export interface DiscoveredCarrierHopReport {
 
 const maxRouteSnapshot = 4;
 
+/**
+ * Public bootstrap material that has already passed the signed-beacon
+ * validator.  This is deliberately not a relay assertion: consumers still
+ * have to perform the ordinary attachment challenge before using a route.
+ */
+export interface VerifiedRelayRouteMaterial extends RelayRouteMaterial {
+  readonly expiresAt: number;
+}
+
 export async function runDiscoveredCarrierHopPoC(options: DiscoveredCarrierHopOptions): Promise<DiscoveredCarrierHopReport> {
   const discovery = await discoverClientBootstrapBeacons(discoveryRequest(options));
   const routeSnapshot = routesFromBeaconObservations(discovery.observations);
@@ -64,14 +73,27 @@ export async function runDiscoveredCarrierHopPoC(options: DiscoveredCarrierHopOp
 }
 
 export function routesFromBeaconObservations(observations: readonly BeaconObservation[]): readonly RelayRouteMaterial[] {
-  const routes: RelayRouteMaterial[] = [];
+  return verifiedRoutesFromBeaconObservations(observations).map(({ expiresAt: ignored, ...route }) => {
+    void ignored;
+    return route;
+  });
+}
+
+/**
+ * Preserve the signed beacon expiry for bounded local bootstrap views.  The
+ * route-only helper above remains for live transport callers, which must not
+ * confuse cached discovery material with an attachment or presence claim.
+ */
+export function verifiedRoutesFromBeaconObservations(observations: readonly BeaconObservation[]): readonly VerifiedRelayRouteMaterial[] {
+  const routes: VerifiedRelayRouteMaterial[] = [];
   const seen = new Set<string>();
   for (const observation of observations) {
     if (
       observation.validation !== "accepted" ||
       observation.relayEndpoint === null ||
       observation.senderPublicKey === null ||
-      observation.profileMultihash === null
+      observation.profileMultihash === null ||
+      observation.expiresAt === null
     ) {
       continue;
     }
@@ -87,7 +109,8 @@ export function routesFromBeaconObservations(observations: readonly BeaconObserv
     routes.push({
       endpointUri: endpoint.uri,
       relayPublicKey: observation.senderPublicKey,
-      profileMultihash: observation.profileMultihash
+      profileMultihash: observation.profileMultihash,
+      expiresAt: observation.expiresAt
     });
     if (routes.length >= maxRouteSnapshot) {
       break;

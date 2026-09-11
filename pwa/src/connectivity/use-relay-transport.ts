@@ -32,6 +32,7 @@ import {
   getRelaySessionClient,
   hasAttachedRelaySession,
   notifyLiveForwardedAck,
+  probeRelayAttachments,
   reserveIncomingDelivery,
   takeTrackedDeliveries
 } from "./relay-session.js";
@@ -40,16 +41,24 @@ import type { AppStoreApi } from "../state/store.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 import { claimStoredReceivedApplicationMessage } from "../storage/received-application-messages-store.js";
 import { deleteStoredMessageDeliveryTarget, findStoredMessageDeliveryTarget } from "../storage/message-delivery-target-store.js";
+import { findRelayRouteViaGitHub, resolveRelayRouteForForeground } from "../discovery/find-relay-route.js";
 
 const reconnectBaseDelayMs = 1_000;
 const reconnectMaxDelayMs = 8_000;
 const reconnectMaxAttempts = 6;
+// Reserved D-BRANCH-102 hook. Raw carrier metadata cannot write this set. A
+// later accepted RTC/TURN capability with a short-lived ICE config may supply
+// a route key here; beta.125 deliberately has no such capability yet.
+const authenticatedTurnReadyRouteKeys = new Set<string>();
 
 interface AttachmentLifecycle {
   currentKey: string | null;
   connectingKey: string | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  probeController: AbortController | null;
+  foregroundController: AbortController | null;
+  carrierRefillAttemptKey: string | null;
   stopped: boolean;
 }
 
@@ -66,6 +75,9 @@ export function useRelayTransport(): void {
     connectingKey: null,
     reconnectAttempts: 0,
     reconnectTimer: null,
+    probeController: null,
+    foregroundController: null,
+    carrierRefillAttemptKey: null,
     stopped: false
   };
 
@@ -82,13 +94,28 @@ export function useRelayTransport(): void {
       ) {
         return;
       }
+      // A changed route set or tab-local pin supersedes an in-flight probe.
+      // Without this, an older automatic result could attach after the user
+      // explicitly chose a different verified relay.
+      lifecycle.probeController?.abort();
+      lifecycle.probeController = null;
       lifecycle.reconnectAttempts = 0;
       void tryAttach(storeApi, lifecycle);
     });
     void tryAttach(storeApi, lifecycle);
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState !== "visible") return;
+      void refreshRelayViewOnForeground(storeApi, lifecycle);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       unsubscribe();
       lifecycle.stopped = true;
+      lifecycle.probeController?.abort();
+      lifecycle.probeController = null;
+      lifecycle.foregroundController?.abort();
+      lifecycle.foregroundController = null;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       clearReconnectTimer(lifecycle);
       stopHeartbeat();
       stopContactDiscoveryRuntime();
@@ -137,15 +164,29 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
   }
   clearReconnectTimer(lifecycle);
   const failures: string[] = [];
+  // A manual pin is authoritative and deliberately avoids auto probing or
+  // source fallback. Auto mode authenticates a bounded candidate set first,
+  // then attaches in latency order with its ordinary fallback safety net.
+  const probeController = new AbortController();
+  lifecycle.probeController = probeController;
+  const rankedRoutes = selectedRelayKey === null
+    ? (await probeRelayAttachments(attachmentRoutes, { peerId: identity.peerId, publicKey: identity.relayPublicKey, privateKey: keys.relayPrivateKey }, probeController.signal, authenticatedTurnReadyRouteKeys)).map((result) => result.route)
+    : attachmentRoutes;
+  if (lifecycle.probeController === probeController) lifecycle.probeController = null;
+  if (isLifecycleStopped(lifecycle) || isAbortSignalAborted(probeController.signal) || storeApi.getState().selectedRelayKey !== selectedRelayKey) return;
+  const routesToAttach = rankedRoutes.length > 0 ? rankedRoutes : attachmentRoutes;
+  if (selectedRelayKey === null) {
+    storeApi.getState().recordTransportTrace(`relay probe: ${String(rankedRoutes.length)} of ${String(attachmentRoutes.length)} accepted`);
+  }
 
   // Discovery returns at most four independently signed, already validated
   // candidates. Auto tries them in deterministic order; a present tab-local
   // pin deliberately tries exactly one. Neither mode persists route material.
-  for (const [index, route] of attachmentRoutes.entries()) {
+  for (const [index, route] of routesToAttach.entries()) {
     const attachKey = attachmentKey(route, identity.peerId);
     lifecycle.connectingKey = attachKey;
-    storeApi.getState().recordTransportTrace(`attach attempt: candidate ${String(index + 1)} of ${String(attachmentRoutes.length)}`);
-    storeApi.getState().setAttachStatus("attaching", `Attaching to relay ${String(index + 1)} of ${String(attachmentRoutes.length)}…`);
+    storeApi.getState().recordTransportTrace(`attach attempt: candidate ${String(index + 1)} of ${String(routesToAttach.length)}`);
+    storeApi.getState().setAttachStatus("attaching", `Attaching to relay ${String(index + 1)} of ${String(routesToAttach.length)}…`);
     try {
       const attachedClient = await attachRelaySession(
         route,
@@ -163,8 +204,8 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
       lifecycle.connectingKey = null;
       lifecycle.currentKey = attachKey;
       lifecycle.reconnectAttempts = 0;
-      storeApi.getState().recordTransportTrace(`attached: candidate ${String(index + 1)} of ${String(attachmentRoutes.length)}`);
-      storeApi.getState().setAttachStatus("attached", `Attached to relay ${String(index + 1)} of ${String(attachmentRoutes.length)}`);
+      storeApi.getState().recordTransportTrace(`attached: candidate ${String(index + 1)} of ${String(routesToAttach.length)}`);
+      storeApi.getState().setAttachStatus("attached", `Attached to relay ${String(index + 1)} of ${String(routesToAttach.length)}`);
       startHeartbeat(attachedClient);
       startContactDiscoveryRuntime(storeApi, attachedClient);
       startContactPresenceRuntime(storeApi, attachedClient);
@@ -189,7 +230,60 @@ async function tryAttach(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle):
     return;
   }
   storeApi.getState().setAttachStatus("error", `No discovered relay accepted attachment: ${failures.join("; ")}`);
+  void refillCarrierAfterAutomaticAttachFailure(storeApi, lifecycle, discoveredRoutes, selectedRelayKey);
   scheduleReconnect(storeApi, lifecycle);
+}
+
+async function refillCarrierAfterAutomaticAttachFailure(
+  storeApi: AppStoreApi,
+  lifecycle: AttachmentLifecycle,
+  routes: readonly { readonly endpointUri: string; readonly relayPublicKey: string; readonly profileMultihash: string }[],
+  selectedRelayKey: string | null
+): Promise<void> {
+  if (selectedRelayKey !== null || lifecycle.stopped) return;
+  const routeKey = routes.map((route) => attachmentKey(route, "")).sort().join("|");
+  if (lifecycle.carrierRefillAttemptKey === routeKey) return;
+  lifecycle.carrierRefillAttemptKey = routeKey;
+  try {
+    const refreshed = await findRelayRouteViaGitHub();
+    if (isLifecycleStopped(lifecycle) || refreshed.routes.length === 0) return;
+    storeApi.getState().recordTransportTrace("relay view: carrier_refreshed_after_attach_failure");
+    storeApi.getState().setRouteFound(refreshed.routes, refreshed.source);
+  } catch {
+    storeApi.getState().recordTransportTrace("relay view: carrier_refresh_failed");
+  }
+}
+
+async function refreshRelayViewOnForeground(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle): Promise<void> {
+  const state = storeApi.getState();
+  // A tab-local manual pin must remain authoritative over lifecycle refresh.
+  if (lifecycle.stopped || state.selectedRelayKey !== null || lifecycle.foregroundController !== null) return;
+  const controller = new AbortController();
+  lifecycle.foregroundController = controller;
+  try {
+    const resolved = await resolveRelayRouteForForeground(controller.signal);
+    if (shouldStopForegroundRefresh(storeApi, lifecycle, controller.signal)) return;
+    if (resolved.cacheUsed) {
+      storeApi.getState().recordTransportTrace(resolved.stale ? "relay view: cache_stale" : "relay view: cache_ready");
+      if (!resolved.stale) return;
+      // Reconcile with the still-valid cached routes before one foreground
+      // source read. This never creates an independent periodic crawl.
+      storeApi.getState().setRouteFound(resolved.routes, resolved.source);
+      const refreshed = await findRelayRouteViaGitHub(controller.signal);
+      if (shouldStopForegroundRefresh(storeApi, lifecycle, controller.signal) || refreshed.routes.length === 0) return;
+      storeApi.getState().recordTransportTrace("relay view: carrier_refreshed");
+      storeApi.getState().setRouteFound(refreshed.routes, refreshed.source);
+      return;
+    }
+    if (resolved.routes.length > 0) {
+      storeApi.getState().recordTransportTrace("relay view: carrier_bootstrap");
+      storeApi.getState().setRouteFound(resolved.routes, resolved.source);
+    }
+  } catch {
+    if (!isAbortSignalAborted(controller.signal)) storeApi.getState().recordTransportTrace("relay view: foreground_refresh_failed");
+  } finally {
+    if (lifecycle.foregroundController === controller) lifecycle.foregroundController = null;
+  }
 }
 
 function attachmentKey(route: { readonly endpointUri: string; readonly relayPublicKey: string; readonly profileMultihash: string }, peerId: string): string {
@@ -262,6 +356,14 @@ function isActiveAttachmentAttempt(lifecycle: AttachmentLifecycle, attachKey: st
 
 function isLifecycleStopped(lifecycle: AttachmentLifecycle): boolean {
   return lifecycle.stopped;
+}
+
+function isAbortSignalAborted(signal: AbortSignal): boolean {
+  return signal.aborted;
+}
+
+function shouldStopForegroundRefresh(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle, signal: AbortSignal): boolean {
+  return isLifecycleStopped(lifecycle) || isAbortSignalAborted(signal) || storeApi.getState().selectedRelayKey !== null;
 }
 
 function handleTransportEvent(storeApi: AppStoreApi, lifecycle: AttachmentLifecycle, event: SameRelayTransportEvent): void {

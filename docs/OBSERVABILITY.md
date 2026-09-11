@@ -105,6 +105,13 @@ The PWA records a bounded local sequence of state transitions and outcomes. It
 supports manual redacted export. It is not analytics, presence reporting, or a
 hidden upload channel.
 
+The local relay-bootstrap view may record only fixed outcomes such as
+`cache_ready`, `cache_stale`, `carrier_bootstrap`, `carrier_refreshed`, and
+`foreground_refresh_failed`, plus bounded aggregate probe counts. It does not
+record beacon bytes, repository names, endpoint URLs, relay keys, route or
+session identifiers, peer references, or whether a particular user was found.
+This journal does not schedule discovery or alter attachment selection.
+
 ## 4. Common event envelope
 
 Every structured event uses the same stable envelope where applicable:

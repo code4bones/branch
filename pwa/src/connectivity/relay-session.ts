@@ -17,6 +17,8 @@ const incomingDeliveryIds = new DeliveryDedupWindow();
 let liveForwardedAckListener: ((deliveryId: string) => void) | null = null;
 
 const maxTrackedDeliveries = 64;
+export const relayAttachmentProbeTimeoutMs = 5_000;
+export const maxConcurrentRelayAttachmentProbes = 2;
 // A first route through independent relays can include one bounded carrier
 // pass and a transient federation attachment before relay.forwarded returns.
 // This remains a foreground, client-only wait; it is not a relay queue or a
@@ -90,6 +92,91 @@ export async function attachRelaySession(
     }
     throw cause;
   }
+}
+
+export interface RelayAttachmentProbeResult {
+  readonly route: RelayRouteMaterial;
+  readonly latencyMs: number;
+}
+
+/**
+ * Performs the normal authenticated attachment challenge without publishing
+ * this tab's presence or replacing its live singleton session.  It is only a
+ * bounded local ranking probe; success makes no statement about a peer or
+ * future forwarding availability.
+ */
+export async function probeRelayAttachments(
+  routes: readonly RelayRouteMaterial[],
+  identity: SameRelayIdentity,
+  signal?: AbortSignal,
+  authenticatedTurnReadyRouteKeys: ReadonlySet<string> = new Set<string>()
+): Promise<readonly RelayAttachmentProbeResult[]> {
+  const candidates = routes.slice(0, 4);
+  const results: RelayAttachmentProbeResult[] = [];
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(maxConcurrentRelayAttachmentProbes, candidates.length) }, async () => {
+    while (!signal?.aborted) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const route = candidates[index];
+      if (route === undefined) return;
+      const result = await probeRelayAttachment(route, identity, signal);
+      if (result !== null) results.push(result);
+    }
+  });
+  await Promise.all(workers);
+  return orderRelayAttachmentProbeResults(results, authenticatedTurnReadyRouteKeys);
+}
+
+/**
+ * The TURN preference input is intentionally not carrier metadata. A later
+ * RTC capability may populate it only after authenticated acceptance and an
+ * actual short-lived ICE configuration; until then this is an empty hook.
+ */
+export function orderRelayAttachmentProbeResults(
+  results: readonly RelayAttachmentProbeResult[],
+  authenticatedTurnReadyRouteKeys: ReadonlySet<string> = new Set<string>()
+): readonly RelayAttachmentProbeResult[] {
+  return [...results].sort((left, right) => {
+    const leftTurnReady = authenticatedTurnReadyRouteKeys.has(routeComparisonKey(left.route));
+    const rightTurnReady = authenticatedTurnReadyRouteKeys.has(routeComparisonKey(right.route));
+    if (leftTurnReady !== rightTurnReady) return leftTurnReady ? -1 : 1;
+    const latency = left.latencyMs - right.latencyMs;
+    if (latency !== 0) return latency;
+    return routeComparisonKey(left.route).localeCompare(routeComparisonKey(right.route));
+  });
+}
+
+async function probeRelayAttachment(
+  route: RelayRouteMaterial,
+  identity: SameRelayIdentity,
+  signal?: AbortSignal
+): Promise<RelayAttachmentProbeResult | null> {
+  if (signal?.aborted) return null;
+  const candidate = new SameRelayTransportClient({ route, identity, handshakeTimeoutMs: relayAttachmentProbeTimeoutMs });
+  const startedAt = performance.now();
+  let abortListener: (() => void) | null = null;
+  const timeout = setTimeout(() => {
+    candidate.disconnect();
+  }, relayAttachmentProbeTimeoutMs);
+  try {
+    if (signal !== undefined) {
+      abortListener = () => { candidate.disconnect(); };
+      signal.addEventListener("abort", abortListener, { once: true });
+    }
+    await candidate.attach();
+    return { route, latencyMs: Math.max(0, Math.round(performance.now() - startedAt)) };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+    if (abortListener !== null && signal !== undefined) signal.removeEventListener("abort", abortListener);
+    candidate.disconnect();
+  }
+}
+
+function routeComparisonKey(route: RelayRouteMaterial): string {
+  return `${route.endpointUri}\n${route.relayPublicKey}\n${route.profileMultihash}`;
 }
 
 export function disconnectRelaySession(): void {

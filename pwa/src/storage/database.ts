@@ -4,6 +4,9 @@
 // from different modules is a real way to deadlock IndexedDB upgrades.
 
 const DATABASE_NAME = "branch-pwa";
+// v15 adds one bounded, user-owned view of already verified public relay
+// bootstrap material. It contains no messages, peers, routes-in-use, or
+// attachment state; the normal live attachment challenge is still required.
 // v14 adds an application-message-ID lookup index to the compact timeline.
 // It resolves local reply targets without confusing a presentation message ID
 // with the authenticated application identity.
@@ -15,7 +18,7 @@ const DATABASE_NAME = "branch-pwa";
 // v11 adds bounded device-local deletion tombstones. They prevent an older
 // asynchronous message write from reviving a locally deleted bubble; neither
 // they nor the deletion action ever leave this browser's DB.
-const DATABASE_VERSION = 14;
+const DATABASE_VERSION = 15;
 
 export const IDENTITY_STORE = "identity";
 export const CONTACTS_STORE = "contacts";
@@ -42,6 +45,7 @@ export const IMAGE_MEDIA_STORE = "imageMedia";
 // This contains serializable text summaries or image projection metadata only.
 // Image Blob bytes remain in IMAGE_MEDIA_STORE and never enter this index.
 export const CHAT_TIMELINE_STORE = "chatTimeline";
+export const RELAY_BOOTSTRAP_VIEW_STORE = "relayBootstrapView";
 
 export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -110,6 +114,9 @@ export function openDatabase(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(IMAGE_MEDIA_STORE)) {
         db.createObjectStore(IMAGE_MEDIA_STORE, { keyPath: "messageId" });
+      }
+      if (!db.objectStoreNames.contains(RELAY_BOOTSTRAP_VIEW_STORE)) {
+        db.createObjectStore(RELAY_BOOTSTRAP_VIEW_STORE);
       }
       let timeline: IDBObjectStore;
       if (!db.objectStoreNames.contains(CHAT_TIMELINE_STORE)) {

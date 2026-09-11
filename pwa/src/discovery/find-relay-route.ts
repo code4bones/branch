@@ -2,14 +2,27 @@ import {
   createGitHubSearchCarrier,
   discoverClientBootstrapBeacons,
   githubDiscoveryDefaultQuery,
-  routesFromBeaconObservations,
-  type RelayRouteMaterial
+  verifiedRoutesFromBeaconObservations,
+  type RelayRouteMaterial,
+  type VerifiedRelayRouteMaterial
 } from "@code4bones/branch-core";
+
+import {
+  makeStoredRelayBootstrapView,
+  relayRoutesFromBootstrapView
+} from "./relay-bootstrap-view.js";
+import { loadStoredRelayBootstrapView, saveStoredRelayBootstrapView } from "../storage/relay-bootstrap-view-store.js";
 
 export interface FindRelayRouteResult {
   readonly routes: readonly RelayRouteMaterial[];
   readonly source: string;
   readonly message: string;
+}
+
+export interface RelayBootstrapResolution extends FindRelayRouteResult {
+  /** A stale view remains signed and usable, but permits one foreground refresh. */
+  readonly stale: boolean;
+  readonly cacheUsed: boolean;
 }
 
 // Searches GitHub for signed relay bootstrap beacons and returns every
@@ -26,10 +39,41 @@ export async function findRelayRouteViaGitHub(signal?: AbortSignal): Promise<Fin
     page: 1,
     ...(signal === undefined ? {} : { signal })
   });
-  const routes = routesFromBeaconObservations(discovery.observations);
+  const verifiedRoutes = verifiedRoutesFromBeaconObservations(discovery.observations);
+  if (verifiedRoutes.length > 0) {
+    await saveStoredRelayBootstrapView(makeStoredRelayBootstrapView(verifiedRoutes, Date.now()));
+  }
   return {
-    routes,
+    routes: routeMaterial(verifiedRoutes),
     source: "github",
     message: discovery.message
   };
+}
+
+/**
+ * Resolve a route for a visible PWA lifecycle action.  A still-valid local
+ * verified view is always returned before its carrier is consulted.  There is
+ * deliberately no timer or service-worker caller for this function.
+ */
+export async function resolveRelayRouteForForeground(signal?: AbortSignal): Promise<RelayBootstrapResolution> {
+  const cached = await loadStoredRelayBootstrapView(Date.now());
+  if (cached !== null) {
+    return {
+      routes: relayRoutesFromBootstrapView(cached),
+      source: "local verified relay view",
+      message: cached.stale ? "Using stale verified relay view; refreshing in foreground" : "Using verified relay view",
+      stale: cached.stale,
+      cacheUsed: true
+    };
+  }
+  const discovered = await findRelayRouteViaGitHub(signal);
+  return { ...discovered, stale: false, cacheUsed: false };
+}
+
+function routeMaterial(routes: readonly VerifiedRelayRouteMaterial[]): readonly RelayRouteMaterial[] {
+  return routes.map((route): RelayRouteMaterial => {
+    const { expiresAt: ignored, ...material } = route;
+    void ignored;
+    return material;
+  });
 }

@@ -57,6 +57,12 @@ import { createAppStore } from "../src/state/store.js";
 import { groupMessagesByContactId, orderConversationMessages } from "../src/state/slices/conversations-slice.js";
 import { autoPresentedIncomingMessage } from "../src/app/MessageLog.js";
 import { attachmentRoutesForSelection, orderedAttachmentRoutes, relayRouteKey } from "../src/connectivity/relay-route-selection.js";
+import {
+  decodeStoredRelayBootstrapView,
+  makeStoredRelayBootstrapView,
+  relayBootstrapRefreshIntervalMs
+} from "../src/discovery/relay-bootstrap-view.js";
+import { orderRelayAttachmentProbeResults } from "../src/connectivity/relay-session.js";
 
 const indexHtmlPath = resolve(process.cwd(), "public/index.html");
 const manifestPath = resolve(process.cwd(), "public/manifest.json");
@@ -91,6 +97,8 @@ const identityKeysPath = resolve(process.cwd(), "src/identity/identity-keys.ts")
 const identitySlicePath = resolve(process.cwd(), "src/state/slices/identity-slice.ts");
 const srcDir = resolve(process.cwd(), "src");
 const databasePath = resolve(process.cwd(), "src/storage/database.ts");
+const relayBootstrapViewPath = resolve(process.cwd(), "src/discovery/relay-bootstrap-view.ts");
+const relayBootstrapViewStorePath = resolve(process.cwd(), "src/storage/relay-bootstrap-view-store.ts");
 const contactsStorePath = resolve(process.cwd(), "src/storage/contacts-store.ts");
 const contactFoldersStorePath = resolve(process.cwd(), "src/storage/contact-folders-store.ts");
 const contactFoldersSlicePath = resolve(process.cwd(), "src/state/slices/contact-folders-slice.ts");
@@ -360,7 +368,7 @@ void test("relay attach and message sealing keep canonical protocol state out of
   assert.match(useRelayTransport, /reconnectMaxAttempts = 6/);
   assert.match(useRelayTransport, /scheduleReconnect/);
   assert.match(useRelayTransport, /client\.heartbeatIntervalSeconds/);
-  assert.match(useRelayTransport, /for \(const \[index, route\] of attachmentRoutes\.entries\(\)\)/);
+  assert.match(useRelayTransport, /for \(const \[index, route\] of routesToAttach\.entries\(\)\)/);
   assert.match(useRelayTransport, /No discovered relay accepted attachment/);
   assert.match(useRelayTransport, /attachmentKey\(route, identity\.peerId\)/);
   assert.match(useRelayTransport, /attachmentRoutesForSelection\(discoveredRoutes, selectedRelayKey\)/);
@@ -414,6 +422,66 @@ void test("PWA chooses a deterministic local attachment order from the same vali
 
   assert.deepEqual(routes.map((route) => route.relayPublicKey), ["a", "z", "b"]);
   assert.match(selection, /Carrier ordering is untrusted presentation data/);
+});
+
+void test("PWA relay bootstrap view is bounded, expiry-aware, and rejects corrupt local state", async () => {
+  const now = 1_700_000_000_000;
+  const route = {
+    endpointUri: "wss://relay.example.test/relay/v0",
+    relayPublicKey: Buffer.alloc(32, 7).toString("base64url"),
+    profileMultihash: developmentProfileMultihash,
+    expiresAt: now + relayBootstrapRefreshIntervalMs + 120_000
+  };
+  const stored = makeStoredRelayBootstrapView([route], now, () => 0);
+  assert.deepEqual(decodeStoredRelayBootstrapView(stored, now)?.routes, [route]);
+  assert.equal(decodeStoredRelayBootstrapView(stored, now)?.stale, false);
+  assert.equal(decodeStoredRelayBootstrapView(stored, now + relayBootstrapRefreshIntervalMs)?.stale, true);
+  assert.equal(decodeStoredRelayBootstrapView(stored, route.expiresAt), null);
+  assert.equal(decodeStoredRelayBootstrapView({ ...stored, routes: [{ ...route, relayPublicKey: "corrupt" }] }, now), null);
+
+  const database = await readFile(databasePath, "utf8");
+  const view = await readFile(relayBootstrapViewPath, "utf8");
+  const viewStore = await readFile(relayBootstrapViewStorePath, "utf8");
+  const discovery = await readFile(findRelayRoutePath, "utf8");
+  assert.match(database, /const DATABASE_VERSION = 15/);
+  assert.match(database, /RELAY_BOOTSTRAP_VIEW_STORE/);
+  assert.match(viewStore, /deleteStoredRelayBootstrapView/);
+  assert.match(view, /maxStoredRelayBootstrapRoutes = 4/);
+  assert.match(view, /validateRouteMaterial/);
+  assert.doesNotMatch(view, /setInterval|setTimeout|fetch\(/);
+  assert.match(discovery, /resolveRelayRouteForForeground/);
+  assert.match(discovery, /loadStoredRelayBootstrapView/);
+  assert.match(discovery, /saveStoredRelayBootstrapView/);
+});
+
+void test("PWA automatic relay probes rank by measured latency with a deterministic tie and preserve manual pins", async () => {
+  const key = Buffer.alloc(32, 9).toString("base64url");
+  const ranked = orderRelayAttachmentProbeResults([
+    { route: { endpointUri: "wss://relay-b.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }, latencyMs: 20 },
+    { route: { endpointUri: "wss://relay-a.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }, latencyMs: 20 },
+    { route: { endpointUri: "wss://relay-c.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }, latencyMs: 5 }
+  ]);
+  assert.deepEqual(ranked.map((result) => result.route.endpointUri), [
+    "wss://relay-c.example.test/relay/v0",
+    "wss://relay-a.example.test/relay/v0",
+    "wss://relay-b.example.test/relay/v0"
+  ]);
+  const turnRoute = ranked[2]?.route;
+  if (turnRoute === undefined) throw new Error("missing deterministic probe candidate");
+  const turnPreferred = orderRelayAttachmentProbeResults(ranked, new Set([
+    `${turnRoute.endpointUri}\n${turnRoute.relayPublicKey}\n${turnRoute.profileMultihash}`
+  ]));
+  assert.equal(turnPreferred[0]?.route.endpointUri, "wss://relay-b.example.test/relay/v0");
+  const transport = await readFile(useRelayTransportPath, "utf8");
+  const session = await readFile(relaySessionPath, "utf8");
+  assert.match(transport, /selectedRelayKey === null/);
+  assert.match(transport, /probeRelayAttachments/);
+  assert.match(transport, /refillCarrierAfterAutomaticAttachFailure/);
+  assert.match(session, /maxConcurrentRelayAttachmentProbes = 2/);
+  assert.match(session, /relayAttachmentProbeTimeoutMs = 5_000/);
+  assert.match(session, /candidate\.attach\(\)/);
+  assert.match(session, /authenticatedTurnReadyRouteKeys/);
+  assert.match(transport, /Raw carrier metadata cannot write this set/);
 });
 
 void test("PWA relay test pin remains volatile, validated and fail-closed", () => {
@@ -685,7 +753,7 @@ void test("read-receipt policy defaults on and keeps an explicit device-owned op
   const settings = await readFile(settingsPagePath, "utf8");
   const hooks = await readFile(hooksPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 14/);
+  assert.match(database, /const DATABASE_VERSION = 15/);
   assert.match(database, /RECEIPT_POLICY_STORE/);
   assert.match(policyStore, /loadStoredReadReceiptPolicy/);
   assert.match(policyStore, /saveStoredReadReceiptPolicy/);
@@ -740,7 +808,7 @@ void test("PWA persists sender receipt targets beyond outbox settlement", async 
   const contacts = await readFile(contactsSlicePath, "utf8");
 
   assert.match(database, /MESSAGE_DELIVERY_TARGETS_STORE/);
-  assert.match(database, /const DATABASE_VERSION = 14/);
+  assert.match(database, /const DATABASE_VERSION = 15/);
   assert.match(targets, /maxStoredMessageDeliveryTargets = 128/);
   assert.match(targets, /byDeliveryId/);
   assert.match(outboxRuntime, /await saveStoredMessageDeliveryTarget/);
@@ -1374,7 +1442,7 @@ void test("contacts, messages, read state, inbound requests, and local receipt w
   const lastOpenedChatStore = await readFile(lastOpenedChatStorePath, "utf8");
   const app = await readFile(appPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 14/);
+  assert.match(database, /const DATABASE_VERSION = 15/);
   assert.match(database, /IDENTITY_STORE/);
   assert.match(database, /CONTACTS_STORE/);
   assert.match(database, /MESSAGES_STORE/);

@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 
 import { CHATS_PATH } from "../app/paths.js";
 import { pwaReleaseVersion } from "../app/pwa-release.js";
-import { findRelayRouteViaGitHub } from "../discovery/find-relay-route.js";
+import { findRelayRouteViaGitHub, resolveRelayRouteForForeground } from "../discovery/find-relay-route.js";
 import { useConnection } from "../state/hooks.js";
 
 export function DiscoveryPage(): React.JSX.Element {
@@ -23,13 +23,26 @@ export function DiscoveryPage(): React.JSX.Element {
     const controller = new AbortController();
     abortRef.current = controller;
     connection.setRouteSearching();
-    findRelayRouteViaGitHub(controller.signal)
+    resolveRelayRouteForForeground(controller.signal)
       .then((result) => {
         if (abortRef.current !== controller) {
           return;
         }
         if (result.routes.length > 0) {
           connection.setRouteFound(result.routes, result.source);
+          // The cache is already safe to use while its signed expiry holds.
+          // A stale view allows one foreground carrier refresh, never a
+          // service-worker or periodic background crawl.
+          if (result.stale) {
+            void findRelayRouteViaGitHub(controller.signal).then((refreshed) => {
+              if (abortRef.current !== controller || refreshed.routes.length === 0) return;
+              connection.setRouteFound(refreshed.routes, refreshed.source);
+            }).catch(() => {
+              // The still-unexpired local view remains the active candidate
+              // set; a carrier outage must not turn it into an attachment
+              // failure.
+            });
+          }
         } else {
           connection.setRouteFailed(result.message);
         }
@@ -77,8 +90,9 @@ export function DiscoveryPage(): React.JSX.Element {
       </div>
       <Typography.Paragraph>
         B.R.A.N.C.H. has no owned server. This device searches public GitHub repositories for a
-        signed relay bootstrap beacon before the messenger interface appears — every start is a
-        fresh search, not a cached login.
+        signed relay bootstrap beacon when its bounded, verified local view is empty or stale.
+        A cached beacon is never a login or attachment proof: the selected relay still completes
+        its normal live challenge.
       </Typography.Paragraph>
       <Spin spinning={isSearching}>
         <Typography.Text className="pwa-discovery-status" type="secondary">{connection.discoveryMessage}</Typography.Text>
