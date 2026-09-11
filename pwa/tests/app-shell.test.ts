@@ -814,6 +814,11 @@ void test("PWA persists active-chat read presentation locally and drains opted-i
   assert.match(slice, /receiptPending: queueReceipts/);
   assert.match(chatPage, /recordIncomingMessagesRead\(contact\.contactId, newlyPresented, receiptPolicy\.sendReadReceipts\)/);
   assert.match(runtime, /attachment-driven, never presence-driven/);
+  assert.match(runtime, /deliveryReceiptControlTTLms/);
+  assert.match(runtime, /readReceiptRetryDelayMs = 30_000/);
+  assert.match(runtime, /allowTargetRetry: true/);
+  assert.match(runtime, /read_attempt_sent/);
+  assert.match(runtime, /read_expired/);
   assert.doesNotMatch(runtime, /contactPresenceById|presencePong|sendPresencePing/);
   assert.match(transport, /startReadReceiptRuntime\(storeApi, attachedClient\)/);
   assert.match(transport, /stopReadReceiptRuntime\(\)/);

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { test } from "node:test";
 import {
   applicationControlSigningBytes,
@@ -91,6 +93,13 @@ void test("receipt body has a closed deterministic shape", () => {
   const body = encodeReceiptBody({ kind: "read", targetDeliveryId });
   assert.deepEqual(decodeReceiptBody(body), { kind: "read", targetDeliveryId });
   assert.throws(() => encodeReceiptBody({ kind: "read", targetDeliveryId: "wrong" }));
+});
+
+void test("read receipt sender keeps default duplicate suppression but exposes only an explicit retry escape hatch", async () => {
+  const source = await readFile(resolve(process.cwd(), "src/connectivity/delivery-receipt-control.ts"), "utf8");
+  assert.match(source, /readonly allowTargetRetry\?: boolean/);
+  assert.match(source, /!options\.allowTargetRetry && emittedReceiptTargets\.has\(emittedKey\)/);
+  assert.match(source, /!options\.allowTargetRetry && emittedReceiptTargets\.has\(emittedKey\)\) return false/);
 });
 
 async function signedReceipt(

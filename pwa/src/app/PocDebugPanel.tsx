@@ -1,8 +1,9 @@
-import { BugOutlined, ReloadOutlined, StopOutlined, ThunderboltOutlined } from "@ant-design/icons";
-import { Button, Checkbox, Select, Tag, Tooltip } from "antd";
+import { BugOutlined, DeleteOutlined, ReloadOutlined, StopOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { Button, Checkbox, Popconfirm, Select, Tag, Tooltip } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { browserPocBurstTimers, PocBurstRunner, type PocBurstProgress } from "./poc-burst.js";
+import { deleteStoredMessageDeliveryTarget } from "../storage/message-delivery-target-store.js";
 import { useAppStore } from "../state/StoreProvider.js";
 import type { TransportTraceEntry } from "../state/slices/transport-slice.js";
 
@@ -39,11 +40,14 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const [progress, setProgress] = useState<PocBurstProgress>({ sent: 0, total: 0, running: false });
   const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(defaultTraceCategories);
   const outbox = useAppStore((state) => state.outbox);
+  const settleOutboxMessage = useAppStore((state) => state.settleOutboxMessage);
+  const recordTransportTrace = useAppStore((state) => state.recordTransportTrace);
   const { awaitingDeliveryCount, deliveredAwaitingReadCount } = useMemo(() => {
     const localOutbox = outbox.filter((entry) => entry.contactId === contactId);
     const awaiting = localOutbox.filter((entry) => entry.deliveredAt === null).length;
     return { awaitingDeliveryCount: awaiting, deliveredAwaitingReadCount: localOutbox.length - awaiting };
   }, [contactId, outbox]);
+  const purgeableMessageIds = useMemo(() => purgeableOutboxMessageIds(outbox, contactId), [contactId, outbox]);
 
   useEffect(() => {
     runner.stop();
@@ -58,6 +62,13 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   };
 
   const stopBurst = (): void => { runner.stop(); };
+  const purgeDelivered = (): void => {
+    for (const messageId of purgeableMessageIds) {
+      settleOutboxMessage(messageId);
+      void deleteStoredMessageDeliveryTarget(messageId).catch(() => {});
+    }
+    if (purgeableMessageIds.length > 0) recordTransportTrace(`outbox: delivered_purged ${String(purgeableMessageIds.length)}`);
+  };
   const recentTrace = transportTrace
     .filter((entry) => selectedTraceCategories.includes(traceCategory(entry.detail)))
     .slice(-12)
@@ -70,7 +81,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
         <div><dt>Chat</dt><dd>{contactName}</dd></div>
         <div><dt>Relay</dt><dd><Tag color={attachStatus === "attached" ? "cyan" : "default"}>{attachStatus}</Tag></dd></div>
         <div><dt>Attached</dt><dd title={attachedRelayEndpoint ?? undefined}>{attachedRelayEndpoint ?? "none"}</dd></div>
-        <div><dt>Outbox</dt><dd>{String(queuedCount)} total · {String(awaitingDeliveryCount)} delivery · {String(deliveredAwaitingReadCount)} read</dd></div>
+        <div><dt>Outbox</dt><dd>{String(queuedCount)} total · {String(awaitingDeliveryCount)} await delivery · {String(deliveredAwaitingReadCount)} await read</dd></div>
       </dl>
       <div className="pwa-poc-debug-actions">
         <Select
@@ -89,6 +100,18 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       <div className="pwa-poc-debug-actions">
         <Button disabled={!enabled} icon={<ReloadOutlined />} onClick={onRendezvous} size="small">Rendezvous</Button>
         <span className="pwa-poc-debug-progress">{progress.total === 0 ? "Ready" : `${String(progress.sent)}/${String(progress.total)} ${progress.running ? "queueing" : "queued"}`}</span>
+      </div>
+      <div className="pwa-poc-debug-actions">
+        <Popconfirm
+          cancelText="Keep"
+          description="This removes only local Delivered-awaiting-Read records. It never marks a message Read and does not affect the peer."
+          okButtonProps={{ danger: true }}
+          okText="Purge local"
+          onConfirm={purgeDelivered}
+          title={`Purge ${String(purgeableMessageIds.length)} delivered records?`}
+        >
+          <Button danger disabled={purgeableMessageIds.length === 0} icon={<DeleteOutlined />} size="small">Purge delivered</Button>
+        </Popconfirm>
       </div>
       <p className="pwa-poc-debug-note">Burst is local pacing into the normal outbox; it creates no special relay traffic or retry policy.</p>
       <Checkbox.Group
@@ -114,6 +137,10 @@ export function traceCategory(detail: string): TraceCategory {
   if (detail === "incoming envelope: message" || detail === "incoming envelope: duplicate message") return "messages";
   if (detail.startsWith("application capabilities:") || detail.startsWith("image capabilities:") || detail.startsWith("rtc ") || detail.startsWith("attachment:") || detail.startsWith("contact probe:")) return "controls";
   return "transport";
+}
+
+export function purgeableOutboxMessageIds(entries: readonly { readonly messageId: string; readonly contactId: string; readonly deliveredAt: number | null }[], contactId: string): readonly string[] {
+  return entries.filter((entry) => entry.contactId === contactId && entry.deliveredAt !== null).map((entry) => entry.messageId);
 }
 
 function isTraceCategory(value: unknown): value is TraceCategory {

@@ -58,7 +58,12 @@ export const deliveryReceiptControlDescriptor: ApplicationControlDescriptor<Deli
 
 const receiptRegistry = createApplicationControlRegistry([deliveryReceiptControlDescriptor]);
 
-/** Sends one best-effort signed receipt and deliberately never queues a retry. */
+/**
+ * Sends one signed receipt.  The default target dedup protects the live
+ * delivered-receipt path from duplicate inbound envelopes.  A durable local
+ * read-presentation record may explicitly make a bounded re-attempt; that
+ * creates a fresh, signed and independently replay-protected control.
+ */
 export async function sendDeliveryReceipt(options: {
   readonly kind: DeliveryReceiptKind;
   readonly targetDeliveryId: string;
@@ -66,6 +71,7 @@ export async function sendDeliveryReceipt(options: {
   readonly recipientPeerId: string;
   readonly recipientHpkePublicKey: string;
   readonly attached: boolean;
+  readonly allowTargetRetry?: boolean;
 }): Promise<DeliveryReceiptSendResult> {
   if (!options.attached || !validDeliveryId(options.targetDeliveryId)) return "skipped";
   const keys = getLocalIdentityKeys();
@@ -73,7 +79,7 @@ export async function sendDeliveryReceipt(options: {
   const now = Date.now();
   prune(now);
   const emittedKey = `${options.kind}\n${options.recipientPeerId}\n${options.targetDeliveryId}`;
-  if (emittedReceiptTargets.has(emittedKey)) return "skipped";
+  if (!options.allowTargetRetry && emittedReceiptTargets.has(emittedKey)) return "skipped";
   let unsigned: ReturnType<typeof prepareOutboundApplicationControl<DeliveryReceiptBody>>;
   try {
     unsigned = prepareOutboundApplicationControl({
@@ -90,6 +96,7 @@ export async function sendDeliveryReceipt(options: {
       isKnownContact: (peerId) => peerId === options.recipientPeerId,
       isAllowed: () => true,
       consumeRateLimit: () => {
+        if (!options.allowTargetRetry && emittedReceiptTargets.has(emittedKey)) return false;
         if (emittedReceiptTargets.size >= maxReplayEntries) {
           const oldest = emittedReceiptTargets.keys().next().value;
           if (oldest !== undefined) emittedReceiptTargets.delete(oldest);

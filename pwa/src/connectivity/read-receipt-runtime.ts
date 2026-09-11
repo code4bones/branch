@@ -1,10 +1,10 @@
 import type { SameRelayTransportClient } from "@code4bones/branch-core";
 
-import { sendDeliveryReceipt } from "./delivery-receipt-control.js";
+import { deliveryReceiptControlTTLms, sendDeliveryReceipt } from "./delivery-receipt-control.js";
 import { getRelaySessionClient, hasAttachedRelaySession } from "./relay-session.js";
 import type { AppStoreApi } from "../state/store.js";
 
-const retryDelayMs = 5_000;
+const readReceiptRetryDelayMs = 30_000;
 const maxReadReceiptsPerRun = 128;
 
 interface ReadReceiptRuntime {
@@ -14,6 +14,7 @@ interface ReadReceiptRuntime {
   unsubscribe: (() => void) | null;
   stopped: boolean;
   running: boolean;
+  readonly retryAtByTarget: Map<string, number>;
 }
 
 let activeRuntime: ReadReceiptRuntime | null = null;
@@ -22,7 +23,15 @@ let activeRuntime: ReadReceiptRuntime | null = null;
 // local reader may have viewed a message while the contact was unavailable.
 export function startReadReceiptRuntime(storeApi: AppStoreApi, client: SameRelayTransportClient): void {
   stopReadReceiptRuntime();
-  const runtime: ReadReceiptRuntime = { storeApi, client, timer: null, unsubscribe: null, stopped: false, running: false };
+  const runtime: ReadReceiptRuntime = {
+    storeApi,
+    client,
+    timer: null,
+    unsubscribe: null,
+    stopped: false,
+    running: false,
+    retryAtByTarget: new Map()
+  };
   activeRuntime = runtime;
   runtime.unsubscribe = storeApi.subscribe((state, previous) => {
     if (
@@ -67,13 +76,36 @@ async function run(runtime: ReadReceiptRuntime): Promise<void> {
       .filter((entry) => entry.receiptPending)
       .sort((left, right) => left.readAt - right.readAt)
       .slice(0, maxReadReceiptsPerRun);
+    const pendingTargets = new Set(entries.map((entry) => entry.targetDeliveryId));
+    for (const targetDeliveryId of runtime.retryAtByTarget.keys()) {
+      if (!pendingTargets.has(targetDeliveryId)) runtime.retryAtByTarget.delete(targetDeliveryId);
+    }
+    let nextAttemptAt: number | null = null;
     for (const entry of entries) {
       if (getRelaySessionClient() !== runtime.client || !hasAttachedRelaySession()) return;
+      const now = Date.now();
+      const expiresAt = entry.readAt + deliveryReceiptControlTTLms;
+      if (now >= expiresAt) {
+        // A local queue age limit bounds duplicate signed controls.  This is
+        // cleanup only: the sender UI stays Delivered without a signed Read.
+        runtime.retryAtByTarget.delete(entry.targetDeliveryId);
+        state.settleReadReceipt(entry.targetDeliveryId);
+        state.recordTransportTrace("delivery receipt: read_expired");
+        continue;
+      }
+      const retryAt = runtime.retryAtByTarget.get(entry.targetDeliveryId);
+      if (retryAt !== undefined && retryAt > now) {
+        nextAttemptAt = earliest(nextAttemptAt, retryAt);
+        continue;
+      }
       const contact = state.contacts.find((candidate) => candidate.contactId === entry.contactId);
       if (contact === undefined || contact.peerId === null || contact.hpkePublicKey === null) {
         // Contact removal clears this record in the same local lifecycle;
         // incomplete route material may later be completed locally. Neither
         // case authorizes a route lookup or any presence-driven action here.
+        const next = nextRetryAt(now, expiresAt);
+        runtime.retryAtByTarget.set(entry.targetDeliveryId, next);
+        nextAttemptAt = earliest(nextAttemptAt, next);
         continue;
       }
       try {
@@ -83,24 +115,42 @@ async function run(runtime: ReadReceiptRuntime): Promise<void> {
           senderPeerId: state.identity.peerId,
           recipientPeerId: contact.peerId,
           recipientHpkePublicKey: contact.hpkePublicKey,
-          attached: true
+          attached: true,
+          allowTargetRetry: true
         });
         if (result === "sent") {
-          state.settleReadReceipt(entry.targetDeliveryId);
-          state.recordTransportTrace("delivery receipt: read_sent");
+          // Local admission to the attachment does not prove the recipient
+          // received the control. Retain this device-local presentation fact
+          // for a small bounded retry window; a later signed read remains
+          // the sender's sole proof for rendering Read.
+          const next = nextRetryAt(Date.now(), expiresAt);
+          runtime.retryAtByTarget.set(entry.targetDeliveryId, next);
+          nextAttemptAt = earliest(nextAttemptAt, next);
+          state.recordTransportTrace("delivery receipt: read_attempt_sent");
           continue;
         }
         // A syntactically invalid local record or unavailable keys cannot be
         // repaired by a retry. Do not transform it into network traffic.
+        runtime.retryAtByTarget.delete(entry.targetDeliveryId);
         state.settleReadReceipt(entry.targetDeliveryId);
         state.recordTransportTrace("delivery receipt: read_skipped");
       } catch {
+        const next = nextRetryAt(Date.now(), expiresAt);
+        runtime.retryAtByTarget.set(entry.targetDeliveryId, next);
         state.recordTransportTrace("delivery receipt: read_failed");
-        schedule(runtime, retryDelayMs);
-        return;
+        nextAttemptAt = earliest(nextAttemptAt, next);
       }
     }
+    if (nextAttemptAt !== null) schedule(runtime, Math.max(0, nextAttemptAt - Date.now()));
   } finally {
     runtime.running = false;
   }
+}
+
+function nextRetryAt(now: number, expiresAt: number): number {
+  return Math.min(expiresAt, now + readReceiptRetryDelayMs);
+}
+
+function earliest(current: number | null, candidate: number): number {
+  return current === null ? candidate : Math.min(current, candidate);
 }

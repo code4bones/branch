@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { traceCategory } from "../src/app/PocDebugPanel.js";
+import { purgeableOutboxMessageIds, traceCategory } from "../src/app/PocDebugPanel.js";
 import { maximumPocBurstMessages, PocBurstRunner, type PocBurstTimerPort } from "../src/app/poc-burst.js";
 
 void test("PoC burst is explicitly bounded, sequential, and has no hidden retry path", () => {
@@ -61,6 +61,14 @@ void test("PoC panel derives outbox counts after selecting the stable store arra
   assert.match(panel, /useAppStore\(\(state\) => state\.outbox\)/);
   assert.match(panel, /useMemo\(\(\) => \{[\s\S]*localOutbox = outbox\.filter/);
   assert.doesNotMatch(panel, /useAppStore\(\(state\) => state\.outbox\.filter/);
+});
+
+void test("PoC purge targets only locally delivered records in the selected chat", () => {
+  assert.deepEqual(purgeableOutboxMessageIds([
+    { messageId: "delivered-here", contactId: "contact-1", deliveredAt: 1 },
+    { messageId: "pending-here", contactId: "contact-1", deliveredAt: null },
+    { messageId: "delivered-elsewhere", contactId: "contact-2", deliveredAt: 1 }
+  ], "contact-1"), ["delivered-here"]);
 });
 
 class Timers implements PocBurstTimerPort {
