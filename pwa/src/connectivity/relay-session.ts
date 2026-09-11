@@ -1,6 +1,6 @@
 import {
   SameRelayTransportClient,
-  type RelayRouteMaterial,
+  type VerifiedRelayRouteMaterial,
   type SameRelayIdentity,
   type SameRelayTransportEvent
 } from "@code4bones/branch-core";
@@ -69,7 +69,7 @@ export function notifyLiveForwardedAck(deliveryId: string): void {
 }
 
 export async function attachRelaySession(
-  route: RelayRouteMaterial,
+  route: VerifiedRelayRouteMaterial,
   identity: SameRelayIdentity,
   onEvent: (event: SameRelayTransportEvent) => void
 ): Promise<SameRelayTransportClient> {
@@ -95,7 +95,7 @@ export async function attachRelaySession(
 }
 
 export interface RelayAttachmentProbeResult {
-  readonly route: RelayRouteMaterial;
+  readonly route: VerifiedRelayRouteMaterial;
   readonly latencyMs: number;
 }
 
@@ -106,7 +106,7 @@ export interface RelayAttachmentProbeResult {
  * future forwarding availability.
  */
 export async function probeRelayAttachments(
-  routes: readonly RelayRouteMaterial[],
+  routes: readonly VerifiedRelayRouteMaterial[],
   identity: SameRelayIdentity,
   signal?: AbortSignal,
   authenticatedTurnReadyRouteKeys: ReadonlySet<string> = new Set<string>()
@@ -148,7 +148,7 @@ export function orderRelayAttachmentProbeResults(
 }
 
 async function probeRelayAttachment(
-  route: RelayRouteMaterial,
+  route: VerifiedRelayRouteMaterial,
   identity: SameRelayIdentity,
   signal?: AbortSignal
 ): Promise<RelayAttachmentProbeResult | null> {
@@ -175,7 +175,7 @@ async function probeRelayAttachment(
   }
 }
 
-function routeComparisonKey(route: RelayRouteMaterial): string {
+function routeComparisonKey(route: VerifiedRelayRouteMaterial): string {
   return `${route.endpointUri}\n${route.relayPublicKey}\n${route.profileMultihash}`;
 }
 

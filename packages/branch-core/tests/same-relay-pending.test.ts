@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
-import { SameRelayTransportClient, makeVersionOffer, type SameRelayPendingEnvelope } from "../src/connectivity/same-relay.js";
+import {
+  SameRelayTransportClient,
+  createTrustedRelayRouteFixture,
+  makeVersionOffer,
+  type SameRelayPendingEnvelope
+} from "../src/connectivity/same-relay.js";
 import { contactDiscoveryLiveExtension } from "../src/protocol/v0/relay-attachment.js";
 
 void test("relay.forwarded releases only its live pending envelope before the ACK event", () => {
@@ -37,6 +42,18 @@ void test("client pending state has the explicit reference-relay live ceiling", 
   assert.equal(clientWithPending(maximum).pendingCount, 32);
   assert.throws(() => clientWithPending([...maximum, pending(33)]), /live pending envelope limit exceeded/);
   assert.throws(() => clientWithPending([], 0), /invalid live pending envelope limit/);
+});
+
+void test("same-relay transport rejects a structurally valid but unverified route", () => {
+  const route = {
+    endpointUri: "wss://relay.example/relay/v0",
+    relayPublicKey: token(41),
+    profileMultihash: developmentProfileMultihash
+  };
+  assert.throws(() => new SameRelayTransportClient({
+    route: route as unknown as ReturnType<typeof createTrustedRelayRouteFixture>,
+    identity: { peerId: token(42), publicKey: token(42), privateKey: {} as CryptoKey }
+  }), /unverified relay route material/);
 });
 
 void test("local abandonment releases exactly one pending slot without sending a frame", () => {
@@ -211,11 +228,11 @@ void test("a relay close forgets target lookup bindings before a fresh attachmen
 
 function clientWithPending(pendingEnvelopes: readonly SameRelayPendingEnvelope[], maxPendingEnvelopes?: number): SameRelayTransportClient {
   return new SameRelayTransportClient({
-    route: {
+    route: createTrustedRelayRouteFixture({
       endpointUri: "wss://relay.example/relay/v0",
       relayPublicKey: token(41),
       profileMultihash: developmentProfileMultihash
-    },
+    }),
     identity: { peerId: token(42), publicKey: token(42), privateKey: {} as CryptoKey },
     pendingEnvelopes,
     ...(maxPendingEnvelopes === undefined ? {} : { maxPendingEnvelopes })

@@ -1,4 +1,4 @@
-import type { RelayRouteMaterial } from "@code4bones/branch-core";
+import type { VerifiedRelayRouteMaterial } from "@code4bones/branch-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppStore } from "./StoreProvider.js";
@@ -436,12 +436,12 @@ const emptyMessages: readonly MessageSummary[] = [];
 
 export interface ConnectionControls {
   readonly routeStatus: RouteStatus;
-  readonly discoveredRoutes: readonly RelayRouteMaterial[];
+  readonly discoveredRoutes: readonly VerifiedRelayRouteMaterial[];
   readonly routeSource: string;
   readonly discoveryMessage: string;
   readonly selectedRelayKey: string | null;
   readonly setRouteSearching: () => void;
-  readonly setRouteFound: (routes: readonly RelayRouteMaterial[], source: string) => void;
+  readonly setRouteFound: (routes: readonly VerifiedRelayRouteMaterial[], source: string) => void;
   readonly setRouteFailed: (message: string) => void;
   readonly resetRoute: () => void;
   readonly setSelectedRelayKey: (relayKey: string | null) => void;

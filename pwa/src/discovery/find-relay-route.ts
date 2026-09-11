@@ -3,7 +3,7 @@ import {
   discoverClientBootstrapBeacons,
   githubDiscoveryDefaultQuery,
   verifiedRoutesFromBeaconObservations,
-  type RelayRouteMaterial,
+  type VerifiedRelayRouteSnapshot,
   type VerifiedRelayRouteMaterial
 } from "@code4bones/branch-core";
 
@@ -15,7 +15,7 @@ import {
 import { loadStoredRelayBootstrapView, saveStoredRelayBootstrapView } from "../storage/relay-bootstrap-view-store.js";
 
 export interface FindRelayRouteResult {
-  readonly routes: readonly RelayRouteMaterial[];
+  readonly routes: readonly VerifiedRelayRouteMaterial[];
   readonly source: string;
   readonly message: string;
 }
@@ -74,16 +74,12 @@ export async function resolveRelayRouteForForeground(signal?: AbortSignal): Prom
   return { ...discovered, stale: false, cacheUsed: false };
 }
 
-export function browserVerifiedRoutes(routes: readonly VerifiedRelayRouteMaterial[]): readonly VerifiedRelayBootstrapRoute[] {
+export function browserVerifiedRoutes(routes: readonly VerifiedRelayRouteSnapshot[]): readonly VerifiedRelayBootstrapRoute[] {
   return routes.map((route) => ({ ...route, expiresAt: unixSecondsToMilliseconds(route.expiresAt) }));
 }
 
-function routeMaterial(routes: readonly VerifiedRelayBootstrapRoute[]): readonly RelayRouteMaterial[] {
-  return routes.map((route): RelayRouteMaterial => {
-    const { expiresAt: ignored, ...material } = route;
-    void ignored;
-    return material;
-  });
+function routeMaterial(routes: readonly VerifiedRelayBootstrapRoute[]): readonly VerifiedRelayRouteMaterial[] {
+  return routes;
 }
 
 function unixSecondsToMilliseconds(value: number): number {

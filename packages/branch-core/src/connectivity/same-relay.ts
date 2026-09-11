@@ -18,6 +18,22 @@ export interface RelayRouteMaterial {
   readonly profileMultihash: string;
 }
 
+// This is intentionally not exported. A structurally valid endpoint/key pair
+// is not enough to authorize an attachment: only the discovery boundary may
+// mint this marker after a signed BootstrapBeacon has been accepted. The
+// marker is runtime-visible to the transport as a second line of defence
+// against an `as` cast at an adapter boundary.
+const verifiedRelayRouteMaterialBrand: unique symbol = Symbol("verified-relay-route-material");
+
+/**
+ * A relay route whose endpoint, key, and profile came from an accepted signed
+ * BootstrapBeacon (or one explicitly named trusted-local recovery fixture).
+ * Callers cannot construct this type from arbitrary carrier data.
+ */
+export interface VerifiedRelayRouteMaterial extends RelayRouteMaterial {
+  readonly [verifiedRelayRouteMaterialBrand]: true;
+}
+
 export interface RelayRouteHint {
   readonly transport: "wss" | "ws";
   readonly uri: string;
@@ -54,7 +70,7 @@ export interface BrowserRelaySocket {
 export type BrowserRelaySocketFactory = (url: string) => BrowserRelaySocket;
 
 export interface SameRelayTransportOptions {
-  readonly route: RelayRouteMaterial;
+  readonly route: VerifiedRelayRouteMaterial;
   readonly identity: SameRelayIdentity;
   readonly pendingEnvelopes?: readonly SameRelayPendingEnvelope[];
   readonly socketFactory?: BrowserRelaySocketFactory;
@@ -153,7 +169,7 @@ const defaultStreamID = 0;
 const defaultPathEpoch = 0;
 
 export class SameRelayTransportClient {
-  private readonly route: RelayRouteMaterial;
+  private readonly route: VerifiedRelayRouteMaterial;
   private readonly identity: SameRelayIdentity;
   private readonly socketFactory: BrowserRelaySocketFactory;
   private readonly cryptoProvider: Crypto;
@@ -176,7 +192,7 @@ export class SameRelayTransportClient {
   private sequence = 0;
 
   constructor(options: SameRelayTransportOptions) {
-    this.route = validateRouteMaterial(options.route);
+    this.route = assertVerifiedRelayRouteMaterial(options.route);
     this.identity = options.identity;
     this.cryptoProvider = options.crypto ?? globalThis.crypto;
     this.socketFactory = options.socketFactory ?? ((url) => new WebSocket(url));
@@ -911,6 +927,51 @@ export function validateRouteMaterial(route: RelayRouteMaterial): RelayRouteMate
     throw new Error("invalid relay endpoint");
   }
   return route;
+}
+
+/**
+ * Mint attachment material after the caller has accepted a signed
+ * BootstrapBeacon and extracted one of its bounded WSS endpoints. This is an
+ * implementation provenance boundary, not a new wire field or trust claim.
+ */
+export function routeMaterialFromValidatedBootstrapBeacon(route: RelayRouteMaterial): VerifiedRelayRouteMaterial {
+  return markVerifiedRelayRouteMaterial(route);
+}
+
+/**
+ * Rehydrate a route from a browser's own previously verified bootstrap view.
+ * The caller must still validate hostile local storage before invoking this;
+ * endpoint/key/profile validation is repeated here before attachment is
+ * possible. This function intentionally does not accept carrier observations.
+ */
+export function routeMaterialFromTrustedLocalBootstrapView(route: RelayRouteMaterial): VerifiedRelayRouteMaterial {
+  return markVerifiedRelayRouteMaterial(route);
+}
+
+/**
+ * Creates a deliberately named trusted local fixture for tests and local echo
+ * harnesses. Production carrier adapters must use the signed-beacon factory.
+ */
+export function createTrustedRelayRouteFixture(route: RelayRouteMaterial): VerifiedRelayRouteMaterial {
+  return markVerifiedRelayRouteMaterial(route);
+}
+
+function assertVerifiedRelayRouteMaterial(route: VerifiedRelayRouteMaterial): VerifiedRelayRouteMaterial {
+  if (route[verifiedRelayRouteMaterialBrand] !== true) {
+    throw new Error("unverified relay route material");
+  }
+  validateRouteMaterial(route);
+  return route;
+}
+
+function markVerifiedRelayRouteMaterial(route: RelayRouteMaterial): VerifiedRelayRouteMaterial {
+  const validated = validateRouteMaterial(route);
+  return Object.freeze({
+    endpointUri: validated.endpointUri,
+    relayPublicKey: validated.relayPublicKey,
+    profileMultihash: validated.profileMultihash,
+    [verifiedRelayRouteMaterialBrand]: true as const
+  }) as VerifiedRelayRouteMaterial;
 }
 
 function validateRouteHints(hints: readonly RelayRouteHint[]): readonly RelayRouteHint[] {

@@ -2,7 +2,7 @@ import {
   SameRelayTransportClient,
   type BrowserRelaySocketFactory,
   type RelayRouteHint,
-  type RelayRouteMaterial,
+  type VerifiedRelayRouteMaterial,
   type SameRelayIdentity,
   type SameRelayPendingEnvelope,
   type SameRelayTransportEvent
@@ -68,7 +68,7 @@ export interface CarrierHoppingTraceEvent {
 }
 
 export interface CarrierHoppingPoCOptions {
-  readonly routes: readonly RelayRouteMaterial[];
+  readonly routes: readonly VerifiedRelayRouteMaterial[];
   readonly routeHints?: readonly RelayRouteHint[];
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
@@ -323,8 +323,8 @@ export async function runCarrierHoppingPoC(options: CarrierHoppingPoCOptions): P
 }
 
 async function attachPair(
-  aliceRoute: RelayRouteMaterial,
-  bobRoute: RelayRouteMaterial | undefined,
+  aliceRoute: VerifiedRelayRouteMaterial,
+  bobRoute: VerifiedRelayRouteMaterial | undefined,
   routeHints: readonly RelayRouteHint[],
   alicePending: readonly SameRelayPendingEnvelope[],
   aliceIdentity: SameRelayIdentity,
@@ -405,7 +405,7 @@ async function sendEncryptedEnvelope(
   alice: SameRelayTransportClient,
   bob: SameRelayTransportClient,
   bobPayloadKey: BetaPayloadKeyPair,
-  route: RelayRouteMaterial,
+  route: VerifiedRelayRouteMaterial,
   plaintext: string,
   crypto: Crypto | undefined
 ): Promise<string> {
@@ -425,7 +425,7 @@ async function sendEncryptedEnvelope(
   return deliveryId;
 }
 
-function makeEnvelopeAAD(route: RelayRouteMaterial, originRouteId: string, senderPeerId: string, recipientPeerId: string, deliveryId: string, hpkeCiphertextBytes: number): Uint8Array {
+function makeEnvelopeAAD(route: VerifiedRelayRouteMaterial, originRouteId: string, senderPeerId: string, recipientPeerId: string, deliveryId: string, hpkeCiphertextBytes: number): Uint8Array {
   return makeBetaPayloadAAD({
     protocol: protocolID,
     profileMultihash: route.profileMultihash,
@@ -639,11 +639,11 @@ function boundedRelayPropagationWait(value: number): number {
   return Math.max(0, Math.min(1_000, Math.trunc(value)));
 }
 
-function routeLabel(route: RelayRouteMaterial): string {
+function routeLabel(route: VerifiedRelayRouteMaterial): string {
   return route.endpointUri;
 }
 
-function routeHintsForRoute(hints: readonly RelayRouteHint[], route: RelayRouteMaterial): readonly RelayRouteHint[] {
+function routeHintsForRoute(hints: readonly RelayRouteHint[], route: VerifiedRelayRouteMaterial): readonly RelayRouteHint[] {
   return hints
     .filter((hint) => hint.uri === route.endpointUri && hint.relayPublicKey === route.relayPublicKey)
     .slice(0, 8);

@@ -5,12 +5,13 @@ import {
   SameRelayTransportClient,
   validateRouteMaterial,
   type BrowserRelaySocketFactory,
-  type RelayRouteMaterial
+  type RelayRouteMaterial,
+  type VerifiedRelayRouteMaterial
 } from "./same-relay.js";
 
 export interface FederationSelfTestOptions {
   /** Already validated routes. Carrier discovery deliberately stays with the caller. */
-  readonly routes: readonly RelayRouteMaterial[];
+  readonly routes: readonly VerifiedRelayRouteMaterial[];
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
   readonly perAttemptTimeoutMs?: number;
@@ -28,8 +29,8 @@ export interface FederationSelfTestProgress {
 export type FederationSelfTestReport =
   | {
     readonly status: "ok";
-    readonly sourceRoute: RelayRouteMaterial;
-    readonly targetRoute: RelayRouteMaterial;
+    readonly sourceRoute: VerifiedRelayRouteMaterial;
+    readonly targetRoute: VerifiedRelayRouteMaterial;
     readonly latencyMs: number;
     readonly attempts: readonly FederationSelfTestAttempt[];
     readonly totalPairCount: number;
@@ -148,11 +149,11 @@ export async function runFederationSelfTest(options: FederationSelfTestOptions):
   };
 }
 
-function plannedPairs(routes: readonly RelayRouteMaterial[]): readonly {
-  readonly sourceRoute: RelayRouteMaterial;
-  readonly targetRoute: RelayRouteMaterial;
+function plannedPairs(routes: readonly VerifiedRelayRouteMaterial[]): readonly {
+  readonly sourceRoute: VerifiedRelayRouteMaterial;
+  readonly targetRoute: VerifiedRelayRouteMaterial;
 }[] {
-  const pairs: { sourceRoute: RelayRouteMaterial; targetRoute: RelayRouteMaterial }[] = [];
+  const pairs: { sourceRoute: VerifiedRelayRouteMaterial; targetRoute: VerifiedRelayRouteMaterial }[] = [];
   for (let offset = 1; offset < routes.length && pairs.length < maxPairs; offset += 1) {
     for (let sourceIndex = 0; sourceIndex < routes.length && pairs.length < maxPairs; sourceIndex += 1) {
       const sourceRoute = routes[sourceIndex];
@@ -165,18 +166,18 @@ function plannedPairs(routes: readonly RelayRouteMaterial[]): readonly {
   return pairs;
 }
 
-function distinctRoutes(input: readonly RelayRouteMaterial[]): readonly RelayRouteMaterial[] {
-  const routes: RelayRouteMaterial[] = [];
+function distinctRoutes(input: readonly VerifiedRelayRouteMaterial[]): readonly VerifiedRelayRouteMaterial[] {
+  const routes: VerifiedRelayRouteMaterial[] = [];
   const seen = new Set<string>();
   for (const route of input) {
     if (routes.length === maxRoutes) {
       break;
     }
     try {
-      const validated = validateRouteMaterial(route);
-      if (!seen.has(validated.endpointUri)) {
-        seen.add(validated.endpointUri);
-        routes.push(validated);
+      validateRouteMaterial(route);
+      if (!seen.has(route.endpointUri)) {
+        seen.add(route.endpointUri);
+        routes.push(route);
       }
     } catch {
       // The caller's discovery result can contain malformed candidates.

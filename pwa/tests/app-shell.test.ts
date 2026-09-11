@@ -24,6 +24,7 @@ import {
   maxDraftRelayCiphertextBytes,
   prepareOutboundApplicationControl,
   protocolID,
+  createTrustedRelayRouteFixture,
   contactCardControlKind,
   sealBetaPayload,
   SameRelayTransportClient,
@@ -410,6 +411,13 @@ void test("PWA relay trace is bounded local diagnostic state and never protocol 
   assert.match(settings, /TraceIcon/);
 });
 
+void test("PWA discovery UI cannot inject an arbitrary relay endpoint and key", async () => {
+  const discoveryPage = await readFile(resolve(process.cwd(), "src/pages/DiscoveryPage.tsx"), "utf8");
+  assert.match(discoveryPage, /must come from a verified signed bootstrap beacon/);
+  assert.doesNotMatch(discoveryPage, /manualEndpoint|manualRelayKey|handleManualRoute/);
+  assert.doesNotMatch(discoveryPage, /setRouteFound\(\[\{/);
+});
+
 void test("PWA chooses a deterministic local attachment order from the same validated relay set", async () => {
   const selection = await readFile(relayRouteSelectionPath, "utf8");
   const routes = orderedAttachmentRoutes([
@@ -425,9 +433,11 @@ void test("PWA chooses a deterministic local attachment order from the same vali
 void test("PWA relay bootstrap view is bounded, expiry-aware, and rejects corrupt local state", async () => {
   const now = 1_700_000_000_000;
   const route = {
+    ...createTrustedRelayRouteFixture({
     endpointUri: "wss://relay.example.test/relay/v0",
     relayPublicKey: Buffer.alloc(32, 7).toString("base64url"),
-    profileMultihash: developmentProfileMultihash,
+    profileMultihash: developmentProfileMultihash
+    }),
     expiresAt: now + relayBootstrapRefreshIntervalMs + 120_000
   };
   const stored = makeStoredRelayBootstrapView([route], now, () => 0);
@@ -454,9 +464,11 @@ void test("PWA relay bootstrap view is bounded, expiry-aware, and rejects corrup
 
 void test("PWA converts signed beacon Unix-second expiry at the browser clock boundary", () => {
   const route = browserVerifiedRoutes([{
+    ...createTrustedRelayRouteFixture({
     endpointUri: "wss://relay.example.test/relay/v0",
     relayPublicKey: Buffer.alloc(32, 8).toString("base64url"),
-    profileMultihash: developmentProfileMultihash,
+    profileMultihash: developmentProfileMultihash
+    }),
     expiresAt: 1_789_551_181
   }]);
   assert.equal(route[0]?.expiresAt, 1_789_551_181_000);
@@ -465,9 +477,9 @@ void test("PWA converts signed beacon Unix-second expiry at the browser clock bo
 void test("PWA automatic relay probes rank by measured latency with a deterministic tie and preserve manual pins", async () => {
   const key = Buffer.alloc(32, 9).toString("base64url");
   const ranked = orderRelayAttachmentProbeResults([
-    { route: { endpointUri: "wss://relay-b.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }, latencyMs: 20 },
-    { route: { endpointUri: "wss://relay-a.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }, latencyMs: 20 },
-    { route: { endpointUri: "wss://relay-c.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }, latencyMs: 5 }
+    { route: createTrustedRelayRouteFixture({ endpointUri: "wss://relay-b.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }), latencyMs: 20 },
+    { route: createTrustedRelayRouteFixture({ endpointUri: "wss://relay-a.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }), latencyMs: 20 },
+    { route: createTrustedRelayRouteFixture({ endpointUri: "wss://relay-c.example.test/relay/v0", relayPublicKey: key, profileMultihash: developmentProfileMultihash }), latencyMs: 5 }
   ]);
   assert.deepEqual(ranked.map((result) => result.route.endpointUri), [
     "wss://relay-c.example.test/relay/v0",

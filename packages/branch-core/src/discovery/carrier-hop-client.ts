@@ -4,9 +4,11 @@ import {
 } from "../connectivity/carrier-hopping-poc.js";
 import {
   parseRelayEndpointDescriptor,
+  routeMaterialFromValidatedBootstrapBeacon,
   type BrowserRelaySocketFactory,
   type RelayRouteHint,
-  type RelayRouteMaterial
+  type RelayRouteMaterial,
+  type VerifiedRelayRouteMaterial
 } from "../connectivity/same-relay.js";
 import {
   discoverClientBootstrapBeacons,
@@ -35,7 +37,7 @@ export interface DiscoveredCarrierHopOptions {
 
 export interface DiscoveredCarrierHopReport {
   readonly discovery: ClientDiscoveryReport;
-  readonly routeSnapshot: readonly RelayRouteMaterial[];
+  readonly routeSnapshot: readonly VerifiedRelayRouteMaterial[];
   readonly routeHintsSnapshot: readonly RelayRouteHint[];
   readonly transport: CarrierHoppingPoCReport;
 }
@@ -47,7 +49,7 @@ const maxRouteSnapshot = 4;
  * validator.  This is deliberately not a relay assertion: consumers still
  * have to perform the ordinary attachment challenge before using a route.
  */
-export interface VerifiedRelayRouteMaterial extends RelayRouteMaterial {
+export interface VerifiedRelayRouteSnapshot extends VerifiedRelayRouteMaterial {
   readonly expiresAt: number;
 }
 
@@ -72,7 +74,7 @@ export async function runDiscoveredCarrierHopPoC(options: DiscoveredCarrierHopOp
   };
 }
 
-export function routesFromBeaconObservations(observations: readonly BeaconObservation[]): readonly RelayRouteMaterial[] {
+export function routesFromBeaconObservations(observations: readonly BeaconObservation[]): readonly VerifiedRelayRouteMaterial[] {
   return verifiedRoutesFromBeaconObservations(observations).map(({ expiresAt: ignored, ...route }) => {
     void ignored;
     return route;
@@ -84,8 +86,8 @@ export function routesFromBeaconObservations(observations: readonly BeaconObserv
  * route-only helper above remains for live transport callers, which must not
  * confuse cached discovery material with an attachment or presence claim.
  */
-export function verifiedRoutesFromBeaconObservations(observations: readonly BeaconObservation[]): readonly VerifiedRelayRouteMaterial[] {
-  const routes: VerifiedRelayRouteMaterial[] = [];
+export function verifiedRoutesFromBeaconObservations(observations: readonly BeaconObservation[]): readonly VerifiedRelayRouteSnapshot[] {
+  const routes: VerifiedRelayRouteSnapshot[] = [];
   const seen = new Set<string>();
   for (const observation of observations) {
     if (
@@ -106,10 +108,14 @@ export function verifiedRoutesFromBeaconObservations(observations: readonly Beac
       continue;
     }
     seen.add(dedupeKey);
+    // The observation was produced only after the signed beacon validator
+    // accepted the wrapper. Preserve that provenance as the transport route.
     routes.push({
+      ...routeMaterialFromValidatedBootstrapBeacon({
       endpointUri: endpoint.uri,
       relayPublicKey: observation.senderPublicKey,
-      profileMultihash: observation.profileMultihash,
+      profileMultihash: observation.profileMultihash
+      }),
       expiresAt: observation.expiresAt
     });
     if (routes.length >= maxRouteSnapshot) {

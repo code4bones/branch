@@ -1,4 +1,4 @@
-import type { RelayRouteMaterial } from "@code4bones/branch-core";
+import type { VerifiedRelayRouteMaterial } from "@code4bones/branch-core";
 import type { StateCreator } from "zustand";
 
 import type { AppStore } from "../store.js";
@@ -10,13 +10,13 @@ export interface ConnectionSlice {
   readonly routeStatus: RouteStatus;
   // Bounded list of validated candidate routes. The primary chat session
   // tries them locally in order until one accepts attachment.
-  readonly discoveredRoutes: readonly RelayRouteMaterial[];
+  readonly discoveredRoutes: readonly VerifiedRelayRouteMaterial[];
   readonly routeSource: string;
   readonly discoveryMessage: string;
   /** A tab-local relay test pin; null retains deterministic automatic order. */
   readonly selectedRelayKey: string | null;
   readonly setRouteSearching: () => void;
-  readonly setRouteFound: (routes: readonly RelayRouteMaterial[], source: string) => void;
+  readonly setRouteFound: (routes: readonly VerifiedRelayRouteMaterial[], source: string) => void;
   readonly setRouteFailed: (message: string) => void;
   readonly resetRoute: () => void;
   readonly setSelectedRelayKey: (relayKey: string | null) => void;

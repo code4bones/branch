@@ -16,9 +16,11 @@ import {
 } from "./payload-crypto.js";
 import {
   SameRelayTransportClient,
+  routeMaterialFromValidatedBootstrapBeacon,
   validateRouteMaterial,
   type BrowserRelaySocketFactory,
   type RelayRouteMaterial,
+  type VerifiedRelayRouteMaterial,
   type SameRelayIdentity,
   type SameRelayIdentityExport,
   type SameRelayTransportEvent
@@ -45,7 +47,7 @@ export interface BetaEchoServiceKeyMaterial {
 }
 
 export interface EchoTestServiceOptions {
-  readonly route: RelayRouteMaterial;
+  readonly route: VerifiedRelayRouteMaterial;
   readonly keys: BetaEchoServiceKeyMaterial;
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
@@ -55,7 +57,7 @@ export interface EchoTestServiceOptions {
 }
 
 export interface MultiRouteEchoTestServiceOptions {
-  readonly routes: readonly RelayRouteMaterial[];
+  readonly routes: readonly VerifiedRelayRouteMaterial[];
   readonly keys: BetaEchoServiceKeyMaterial;
   readonly socketFactory?: BrowserRelaySocketFactory;
   readonly crypto?: Crypto;
@@ -65,12 +67,12 @@ export interface MultiRouteEchoTestServiceOptions {
 }
 
 export interface MultiRouteEchoStartReport {
-  readonly startedRoutes: readonly RelayRouteMaterial[];
+  readonly startedRoutes: readonly VerifiedRelayRouteMaterial[];
   readonly failedRoutes: readonly EchoRouteFailure[];
 }
 
 export interface EchoRouteFailure {
-  readonly route: RelayRouteMaterial;
+  readonly route: VerifiedRelayRouteMaterial;
   readonly message: string;
 }
 
@@ -80,7 +82,7 @@ export interface EchoRouteDiscoveryInput {
 }
 
 export interface EchoRouteDiscoveryReport {
-  readonly routes: readonly RelayRouteMaterial[];
+  readonly routes: readonly VerifiedRelayRouteMaterial[];
   readonly rejected: readonly EchoRouteDiscoveryRejection[];
 }
 
@@ -210,7 +212,7 @@ export async function echoRoutesFromBootstrapBeaconWrappers(
   if (inputs.length > maxEchoRouteWrappers) {
     throw new Error("too many echo route wrappers");
   }
-  const routes: RelayRouteMaterial[] = [];
+  const routes: VerifiedRelayRouteMaterial[] = [];
   const rejected: EchoRouteDiscoveryRejection[] = [];
   const seen = new Set<string>();
 
@@ -244,7 +246,7 @@ export async function echoRoutesFromBootstrapBeaconWrappers(
         continue;
       }
       try {
-        routes.push(validateRouteMaterial(route));
+        routes.push(routeMaterialFromValidatedBootstrapBeacon(route));
         seen.add(key);
       } catch {
         rejected.push({ source, wrapperPreview: previewWrapper(wrapper), reason: "invalid_route" });
@@ -259,7 +261,7 @@ export async function echoRoutesFromBootstrapBeaconWrappers(
 }
 
 export class MultiRouteEchoTestService {
-  private readonly routes: readonly RelayRouteMaterial[];
+  private readonly routes: readonly VerifiedRelayRouteMaterial[];
   private readonly keys: BetaEchoServiceKeyMaterial;
   private readonly socketFactory: BrowserRelaySocketFactory | undefined;
   private readonly crypto: Crypto | undefined;
@@ -301,8 +303,8 @@ export class MultiRouteEchoTestService {
     this.onEvent?.(event);
   }
 
-  private async startRoute(route: RelayRouteMaterial): Promise<{
-    readonly started: RelayRouteMaterial | null;
+  private async startRoute(route: VerifiedRelayRouteMaterial): Promise<{
+    readonly started: VerifiedRelayRouteMaterial | null;
     readonly failed: EchoRouteFailure | null;
   }> {
     const service = new EchoTestService({
@@ -332,7 +334,7 @@ export class MultiRouteEchoTestService {
 }
 
 export class EchoTestService {
-  private readonly route: RelayRouteMaterial;
+  private readonly route: VerifiedRelayRouteMaterial;
   private readonly keys: BetaEchoServiceKeyMaterial;
   private readonly socketFactory: BrowserRelaySocketFactory | undefined;
   private readonly crypto: Crypto | undefined;
@@ -495,7 +497,7 @@ function randomToken(size: number): string {
   return encodeBase64URL(bytes);
 }
 
-function validateRoutes(routes: readonly RelayRouteMaterial[]): readonly RelayRouteMaterial[] {
+function validateRoutes(routes: readonly VerifiedRelayRouteMaterial[]): readonly VerifiedRelayRouteMaterial[] {
   if (routes.length === 0) {
     throw new Error("at least one echo route is required");
   }
@@ -503,15 +505,15 @@ function validateRoutes(routes: readonly RelayRouteMaterial[]): readonly RelayRo
     throw new Error("too many echo routes");
   }
   const seen = new Set<string>();
-  const validated: RelayRouteMaterial[] = [];
+  const validated: VerifiedRelayRouteMaterial[] = [];
   for (const route of routes) {
-    const normalized = validateRouteMaterial(route);
-    const key = routeKey(normalized);
+    validateRouteMaterial(route);
+    const key = routeKey(route);
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
-    validated.push(normalized);
+    validated.push(route);
   }
   return validated;
 }

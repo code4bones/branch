@@ -1,10 +1,19 @@
-import { validateRouteMaterial, type RelayRouteMaterial } from "@code4bones/branch-core";
+import {
+  routeMaterialFromTrustedLocalBootstrapView,
+  validateRouteMaterial,
+  type RelayRouteMaterial,
+  type VerifiedRelayRouteMaterial
+} from "@code4bones/branch-core";
 
 export const maxStoredRelayBootstrapRoutes = 4;
 export const relayBootstrapRefreshIntervalMs = 60 * 60 * 1_000;
 export const relayBootstrapRefreshJitterMs = 5 * 60 * 1_000;
 
-export interface VerifiedRelayBootstrapRoute extends RelayRouteMaterial {
+export interface VerifiedRelayBootstrapRoute extends VerifiedRelayRouteMaterial {
+  readonly expiresAt: number;
+}
+
+interface StoredVerifiedRelayBootstrapRoute extends RelayRouteMaterial {
   readonly expiresAt: number;
 }
 
@@ -12,7 +21,7 @@ export interface StoredRelayBootstrapView {
   readonly schemaVersion: 1;
   readonly refreshedAt: number;
   readonly refreshAfter: number;
-  readonly routes: readonly VerifiedRelayBootstrapRoute[];
+  readonly routes: readonly StoredVerifiedRelayBootstrapRoute[];
 }
 
 export interface LoadedRelayBootstrapView {
@@ -36,7 +45,7 @@ export function decodeStoredRelayBootstrapView(value: unknown, now: number): Loa
       return null;
     }
     try {
-      const route = validateRouteMaterial({
+      const route = routeMaterialFromTrustedLocalBootstrapView({
         endpointUri: candidate.endpointUri,
         relayPublicKey: candidate.relayPublicKey,
         profileMultihash: candidate.profileMultihash
@@ -56,7 +65,15 @@ export function makeStoredRelayBootstrapView(routes: readonly VerifiedRelayBoots
   if (!isTimestamp(now) || routes.length < 1 || routes.length > maxStoredRelayBootstrapRoutes) {
     throw new Error("invalid verified relay bootstrap view");
   }
-  const normalized = routes.map((route) => ({ ...validateRouteMaterial(route), expiresAt: route.expiresAt }));
+  const normalized = routes.map((route): StoredVerifiedRelayBootstrapRoute => {
+    validateRouteMaterial(route);
+    return {
+      endpointUri: route.endpointUri,
+      relayPublicKey: route.relayPublicKey,
+      profileMultihash: route.profileMultihash,
+      expiresAt: route.expiresAt
+    };
+  });
   const decoded = decodeStoredRelayBootstrapView({
     schemaVersion: 1,
     refreshedAt: now,
@@ -70,11 +87,8 @@ export function makeStoredRelayBootstrapView(routes: readonly VerifiedRelayBoots
   return { schemaVersion: 1, refreshedAt: now, refreshAfter: now + relayBootstrapRefreshIntervalMs + jitter, routes: normalized };
 }
 
-export function relayRoutesFromBootstrapView(view: LoadedRelayBootstrapView): readonly RelayRouteMaterial[] {
-  return view.routes.map(({ expiresAt: ignored, ...route }) => {
-    void ignored;
-    return route;
-  });
+export function relayRoutesFromBootstrapView(view: LoadedRelayBootstrapView): readonly VerifiedRelayRouteMaterial[] {
+  return view.routes;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

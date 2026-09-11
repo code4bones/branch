@@ -1,7 +1,6 @@
-import { developmentProfileMultihash } from "@code4bones/branch-core";
 import { CheckCircleFilled, RadarChartOutlined, WarningFilled } from "@ant-design/icons";
-import { Alert, Button, Input, Space, Spin, Typography } from "antd";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Button, Space, Spin, Typography } from "antd";
+import { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { CHATS_PATH } from "../app/paths.js";
@@ -13,8 +12,6 @@ export function DiscoveryPage(): React.JSX.Element {
   const navigate = useNavigate();
   const connection = useConnection();
   const abortRef = useRef<AbortController | null>(null);
-  const [manualEndpoint, setManualEndpoint] = useState("");
-  const [manualRelayKey, setManualRelayKey] = useState("");
 
   const isSearching = connection.routeStatus === "idle" || connection.routeStatus === "searching";
 
@@ -68,15 +65,6 @@ export function DiscoveryPage(): React.JSX.Element {
     return undefined;
   }, [connection.routeStatus, navigate]);
 
-  const handleManualRoute = (): void => {
-    const endpointUri = manualEndpoint.trim();
-    const relayPublicKey = manualRelayKey.trim();
-    if (endpointUri === "" || relayPublicKey === "") {
-      return;
-    }
-    connection.setRouteFound([{ endpointUri, relayPublicKey, profileMultihash: developmentProfileMultihash }], "manual");
-  };
-
   return (
     <section className="pwa-discovery" aria-label="Relay discovery">
       <div className={`pwa-discovery-mark${isSearching ? " is-searching" : ""}`}>
@@ -103,20 +91,9 @@ export function DiscoveryPage(): React.JSX.Element {
           <Space>
             <Button onClick={runDiscovery} type="primary">Search again</Button>
           </Space>
-          <div className="pwa-discovery-manual">
-            <Typography.Text type="secondary">Or enter a known relay route manually</Typography.Text>
-            <Input
-              onChange={(event) => { setManualEndpoint(event.currentTarget.value); }}
-              placeholder="wss://relay.example.org"
-              value={manualEndpoint}
-            />
-            <Input
-              onChange={(event) => { setManualRelayKey(event.currentTarget.value); }}
-              placeholder="relay public key"
-              value={manualRelayKey}
-            />
-            <Button onClick={handleManualRoute}>Use this route</Button>
-          </div>
+          <Typography.Paragraph type="secondary">
+            Manual endpoint and key entry is unavailable: relay routes must come from a verified signed bootstrap beacon.
+          </Typography.Paragraph>
         </>
       )}
     </section>

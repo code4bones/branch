@@ -10,7 +10,7 @@ export function relayRouteKey(route: RelayRouteMaterial): string {
 // clients that observed the same valid beacon set must try the same bounded
 // relay order so their ordinary two-party chat does not unnecessarily depend
 // on a federation bridge.
-export function orderedAttachmentRoutes(routes: readonly RelayRouteMaterial[]): readonly RelayRouteMaterial[] {
+export function orderedAttachmentRoutes<Route extends RelayRouteMaterial>(routes: readonly Route[]): readonly Route[] {
   return [...routes].sort((left, right) => {
     const endpoint = left.endpointUri.localeCompare(right.endpointUri);
     if (endpoint !== 0) {
@@ -29,7 +29,7 @@ export function orderedAttachmentRoutes(routes: readonly RelayRouteMaterial[]): 
  * deliberately produces no candidate: silently falling back would make a
  * federated or direct-path acceptance test claim the wrong relay placement.
  */
-export function attachmentRoutesForSelection(routes: readonly RelayRouteMaterial[], pinnedRelayKey: string | null): readonly RelayRouteMaterial[] {
+export function attachmentRoutesForSelection<Route extends RelayRouteMaterial>(routes: readonly Route[], pinnedRelayKey: string | null): readonly Route[] {
   const ordered = orderedAttachmentRoutes(routes);
   if (pinnedRelayKey === null) return ordered;
   const pinned = ordered.find((route) => relayRouteKey(route) === pinnedRelayKey);

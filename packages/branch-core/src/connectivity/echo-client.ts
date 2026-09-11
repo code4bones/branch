@@ -3,7 +3,7 @@ import {
   SameRelayTransportClient,
   validateRouteMaterial,
   type BrowserRelaySocketFactory,
-  type RelayRouteMaterial
+  type VerifiedRelayRouteMaterial
 } from "./same-relay.js";
 import {
   betaEchoRequestType,
@@ -21,7 +21,7 @@ import {
 } from "./payload-crypto.js";
 
 export interface EchoRoundTripOptions {
-  readonly routes: readonly RelayRouteMaterial[];
+  readonly routes: readonly VerifiedRelayRouteMaterial[];
   readonly body: string;
   readonly contact?: BetaEchoContact;
   readonly socketFactory?: BrowserRelaySocketFactory;
@@ -33,7 +33,7 @@ export type EchoRoundTripReport =
   | {
     readonly status: "ok";
     readonly body: string;
-    readonly route: RelayRouteMaterial;
+    readonly route: VerifiedRelayRouteMaterial;
     readonly latencyMs: number;
     readonly attempts: readonly EchoRouteAttempt[];
   }
@@ -106,7 +106,7 @@ export async function runEchoRoundTrip(options: EchoRoundTripOptions): Promise<E
 }
 
 interface EchoAttemptSuccess {
-  readonly route: RelayRouteMaterial;
+  readonly route: VerifiedRelayRouteMaterial;
   readonly body: string;
   readonly latencyMs: number;
 }
@@ -128,7 +128,7 @@ class EchoAttemptController {
   private unsubscribe: (() => void) | null = null;
   private responseWaiter: EchoResponseWaiter | null = null;
 
-  constructor(readonly route: RelayRouteMaterial) {}
+  constructor(readonly route: VerifiedRelayRouteMaterial) {}
 
   async run(options: {
     readonly body: string;
@@ -318,18 +318,18 @@ async function firstResolved(promises: readonly Promise<EchoAttemptSuccess>[]): 
   return Promise.any(promises);
 }
 
-function validateEchoRoundTripRoutes(routes: readonly RelayRouteMaterial[]): readonly RelayRouteMaterial[] {
+function validateEchoRoundTripRoutes(routes: readonly VerifiedRelayRouteMaterial[]): readonly VerifiedRelayRouteMaterial[] {
   if (routes.length > maxEchoRoundTripRoutes) {
     throw new Error("too many echo routes");
   }
   const seen = new Set<string>();
-  const validated: RelayRouteMaterial[] = [];
+  const validated: VerifiedRelayRouteMaterial[] = [];
   for (const route of routes) {
-    const normalized = validateRouteMaterial(route);
-    const key = `${normalized.endpointUri}\0${normalized.relayPublicKey}\0${normalized.profileMultihash}`;
+    validateRouteMaterial(route);
+    const key = `${route.endpointUri}\0${route.relayPublicKey}\0${route.profileMultihash}`;
     if (!seen.has(key)) {
       seen.add(key);
-      validated.push(normalized);
+      validated.push(route);
     }
   }
   return validated;

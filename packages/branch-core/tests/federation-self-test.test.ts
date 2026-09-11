@@ -3,17 +3,22 @@ import test from "node:test";
 
 import { runFederationSelfTest } from "../src/connectivity/federation-self-test.js";
 import { developmentProfileMultihash } from "../src/protocol/v0/profile.js";
-import type { BrowserRelaySocket, RelaySocketEvent, RelaySocketEventType } from "../src/connectivity/same-relay.js";
+import {
+  createTrustedRelayRouteFixture,
+  type BrowserRelaySocket,
+  type RelaySocketEvent,
+  type RelaySocketEventType
+} from "../src/connectivity/same-relay.js";
 
 const relayKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 
 test("federation self-test rejects one route before opening a socket", async () => {
   const report = await runFederationSelfTest({
-    routes: [{
+    routes: [fixture({
       endpointUri: "wss://relay01.example.test/relay/v0",
       relayPublicKey: relayKey,
       profileMultihash: developmentProfileMultihash
-    }]
+    })]
   });
 
   assert.deepEqual(report, {
@@ -26,11 +31,11 @@ test("federation self-test rejects one route before opening a socket", async () 
 });
 
 test("federation self-test does not treat duplicate endpoints as distinct relays", async () => {
-  const route = {
+  const route = fixture({
     endpointUri: "wss://relay01.example.test/relay/v0",
     relayPublicKey: relayKey,
     profileMultihash: developmentProfileMultihash
-  };
+  });
   const report = await runFederationSelfTest({ routes: [route, { ...route }] });
 
   assert.equal(report.status, "failed");
@@ -42,7 +47,7 @@ test("federation self-test does not treat duplicate endpoints as distinct relays
 
 test("federation self-test schedules bounded pairs across every available relay", async () => {
   const report = await runFederationSelfTest({
-    routes: ["01", "02", "04", "05"].map((suffix) => ({
+    routes: ["01", "02", "04", "05"].map((suffix) => fixture({
       endpointUri: `wss://relay${suffix}.example.test/relay/v0`,
       relayPublicKey: relayKey,
       profileMultihash: developmentProfileMultihash
@@ -60,6 +65,10 @@ test("federation self-test schedules bounded pairs across every available relay"
     new Set(["wss://relay01.example.test/relay/v0", "wss://relay02.example.test/relay/v0", "wss://relay04.example.test/relay/v0", "wss://relay05.example.test/relay/v0"])
   );
 });
+
+function fixture(route: { readonly endpointUri: string; readonly relayPublicKey: string; readonly profileMultihash: string }) {
+  return createTrustedRelayRouteFixture(route);
+}
 
 function rejectedSocket(): BrowserRelaySocket {
   const listeners = new Map<RelaySocketEventType, Set<(event: RelaySocketEvent) => void>>();
