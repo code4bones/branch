@@ -826,6 +826,18 @@ void test("PWA persists active-chat read presentation locally and drains opted-i
   assert.match(transport, /stopReadReceiptRuntime\(\)/);
 });
 
+void test("PWA debug chat reset clears only one local conversation and preserves its contact boundary", async () => {
+  const conversations = await readFile(conversationsSlicePath, "utf8");
+  const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
+  assert.match(conversations, /clearLocalConversation/);
+  assert.match(conversations, /deleteStoredReadReceiptsForContact/);
+  assert.match(conversations, /deleteStoredMessageDeliveryTargetsForContact/);
+  assert.match(conversations, /deleteStoredMessagesForContact/);
+  assert.match(conversations, /identity, and[\s\S]*relay attachment state intact/);
+  assert.match(panel, /Reset chat/);
+  assert.match(panel, /Contact, identity and relay stay intact/);
+});
+
 void test("PWA persists sender receipt targets beyond outbox settlement", async () => {
   const database = await readFile(databasePath, "utf8");
   const targets = await readFile(messageDeliveryTargetStorePath, "utf8");

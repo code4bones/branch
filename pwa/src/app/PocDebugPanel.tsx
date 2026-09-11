@@ -41,6 +41,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(defaultTraceCategories);
   const outbox = useAppStore((state) => state.outbox);
   const settleOutboxMessage = useAppStore((state) => state.settleOutboxMessage);
+  const clearLocalConversation = useAppStore((state) => state.clearLocalConversation);
   const recordTransportTrace = useAppStore((state) => state.recordTransportTrace);
   const { awaitingDeliveryCount, deliveredAwaitingReadCount } = useMemo(() => {
     const localOutbox = outbox.filter((entry) => entry.contactId === contactId);
@@ -68,6 +69,10 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       void deleteStoredMessageDeliveryTarget(messageId).catch(() => {});
     }
     if (purgeableMessageIds.length > 0) recordTransportTrace(`outbox: delivery_mapping_purged ${String(purgeableMessageIds.length)}`);
+  };
+  const resetChat = (): void => {
+    clearLocalConversation(contactId);
+    recordTransportTrace("outbox: local_chat_reset");
   };
   const recentTrace = transportTrace
     .filter((entry) => selectedTraceCategories.includes(traceCategory(entry.detail)))
@@ -111,6 +116,16 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
           title={`Drop ${String(purgeableMessageIds.length)} local delivery mappings?`}
         >
           <Button danger disabled={purgeableMessageIds.length === 0} icon={<DeleteOutlined />} size="small">Purge mapping</Button>
+        </Popconfirm>
+        <Popconfirm
+          cancelText="Keep"
+          description="This device only: removes this chat's messages, local outbox, Read work and delivery mappings. Contact, identity and relay stay intact."
+          okButtonProps={{ danger: true }}
+          okText="Reset local chat"
+          onConfirm={resetChat}
+          title={`Reset all local test messages with ${contactName}?`}
+        >
+          <Button danger icon={<DeleteOutlined />} size="small">Reset chat</Button>
         </Popconfirm>
       </div>
       <p className="pwa-poc-debug-note">Burst is local pacing into the normal outbox; it creates no special relay traffic or retry policy.</p>

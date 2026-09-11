@@ -216,21 +216,35 @@ export async function replaceStoredMessageForRetry(previousMessageId: string, re
   }
 }
 
-export async function deleteStoredMessagesForContact(contactId: string): Promise<void> {
+export async function deleteStoredMessagesForContact(contactId: string, deletedAt: number = Date.now()): Promise<void> {
   const db = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction([MESSAGES_STORE, CHAT_TIMELINE_STORE], "readwrite");
+      const transaction = db.transaction([MESSAGES_STORE, CHAT_TIMELINE_STORE, LOCALLY_DELETED_MESSAGES_STORE], "readwrite");
       const request = transaction.objectStore(MESSAGES_STORE).index("byContactId").openCursor(IDBKeyRange.only(contactId));
       const timeline = transaction.objectStore(CHAT_TIMELINE_STORE);
+      const tombstones = transaction.objectStore(LOCALLY_DELETED_MESSAGES_STORE);
       request.onsuccess = () => {
         const cursor = request.result;
         if (cursor !== null) {
-          if (typeof cursor.primaryKey === "string") timeline.delete(cursor.primaryKey);
+          if (typeof cursor.primaryKey === "string") {
+            timeline.delete(cursor.primaryKey);
+            tombstones.put({ messageId: cursor.primaryKey, deletedAt });
+          }
           cursor.delete();
           cursor.continue();
         }
       };
+      let retained = 0;
+      const trimRequest = tombstones.index("byDeletedAt").openCursor(null, "prev");
+      trimRequest.onsuccess = () => {
+        const cursor = trimRequest.result;
+        if (cursor === null) return;
+        retained += 1;
+        if (retained > maxStoredLocalDeletionTombstones) cursor.delete();
+        cursor.continue();
+      };
+      trimRequest.onerror = () => { reject(trimRequest.error ?? new Error("failed to trim local deletion markers")); };
       request.onerror = () => { reject(request.error ?? new Error("failed to delete contact messages")); };
       transaction.oncomplete = () => { resolve(); };
       transaction.onerror = () => { reject(transaction.error ?? new Error("failed to delete contact messages")); };

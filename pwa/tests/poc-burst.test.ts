@@ -79,6 +79,13 @@ void test("PoC purge is explicitly labelled as dropping the local correlation, n
   assert.doesNotMatch(panel, /Purge delivered/);
 });
 
+void test("PoC reset chat is an explicit local test cleanup", async () => {
+  const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
+  assert.match(panel, /clearLocalConversation\(contactId\)/);
+  assert.match(panel, /outbox: local_chat_reset/);
+  assert.match(panel, /Reset local chat/);
+});
+
 class Timers implements PocBurstTimerPort {
   readonly callbacks: Array<() => void> = [];
 

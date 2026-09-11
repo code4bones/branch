@@ -1,8 +1,12 @@
 import type { StateCreator } from "zustand";
 
 import type { AppStore } from "../store.js";
-import { deleteStoredMessagesLocally, maxConversationTimelineEntries, replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
-import { deleteStoredImageMessages } from "../../storage/image-media-store.js";
+import { deleteStoredMessagesForContact, deleteStoredMessagesLocally, maxConversationTimelineEntries, replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
+import { deleteStoredImageMessages, deleteStoredImageMessagesForContact } from "../../storage/image-media-store.js";
+import { deleteStoredMessageDeliveryTargetsForContact } from "../../storage/message-delivery-target-store.js";
+import { deleteStoredOutboxForContact } from "../../storage/message-outbox-store.js";
+import { deleteStoredReadReceiptsForContact } from "../../storage/read-receipt-outbox-store.js";
+import { deleteStoredReadState } from "../../storage/read-state-store.js";
 
 // `received` remains an inbound/local compatibility value. Remote user-facing
 // outcomes for an outgoing message are explicit: a relay may say Relayed, but
@@ -33,6 +37,9 @@ export interface ConversationsSlice {
   readonly setMessageDeliveryState: (contactId: string, messageId: string, deliveryState: MessageDeliveryState) => void;
   // UI-initiated device-local removal. It has no transport/control side effect.
   readonly deleteMessagesLocally: (contactId: string, messageIds: readonly string[]) => readonly MessageSummary[];
+  // Debug-only local test cleanup. It preserves the contact, identity, and
+  // relay attachment while clearing this chat's visible history and work.
+  readonly clearLocalConversation: (contactId: string) => void;
 }
 
 export const createConversationsSlice: StateCreator<AppStore, [], [], ConversationsSlice> = (set, get) => ({
@@ -141,6 +148,37 @@ export const createConversationsSlice: StateCreator<AppStore, [], [], Conversati
       // removal can retry local byte cleanup when IndexedDB was unavailable.
     });
     return deleted;
+  },
+  clearLocalConversation: (contactId) => {
+    // Do not reuse contact removal: a test reset must leave the user-owned
+    // contact card and all live relay attachment state intact.
+    get().clearImageMessageProjectionsForContact(contactId);
+    set((state) => {
+      const { [contactId]: removedMessages, ...messagesByContactId } = state.messagesByContactId;
+      const { [contactId]: removedReadState, ...lastReadAtByContactId } = state.lastReadAtByContactId;
+      const { [contactId]: removedTyping, ...typingExpiresAtByContactId } = state.typingExpiresAtByContactId;
+      void removedMessages;
+      void removedReadState;
+      void removedTyping;
+      return {
+        messagesByContactId,
+        outbox: state.outbox.filter((entry) => entry.contactId !== contactId),
+        readReceiptOutbox: state.readReceiptOutbox.filter((entry) => entry.contactId !== contactId),
+        lastReadAtByContactId,
+        typingExpiresAtByContactId
+      };
+    });
+    void Promise.all([
+      deleteStoredMessagesForContact(contactId),
+      deleteStoredReadState(contactId),
+      deleteStoredOutboxForContact(contactId),
+      deleteStoredReadReceiptsForContact(contactId),
+      deleteStoredMessageDeliveryTargetsForContact(contactId),
+      deleteStoredImageMessagesForContact(contactId)
+    ]).catch(() => {
+      // The current tab has already reset its local projection. No reset
+      // action emits transport traffic or retries storage failures.
+    });
   }
 });
 
