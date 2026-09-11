@@ -19,7 +19,17 @@ fi
 
 go test ./...
 go test -race ./...
-go test ./protocol/v0 -run=^$ -fuzz=Fuzz -fuzztime=10s
+# Go 1.25 rejects a -fuzz expression that matches multiple fuzz targets. List
+# only valid Fuzz names, then run each target independently so every protocol
+# parser still receives the same bounded fuzz budget.
+fuzz_targets="$(go test ./protocol/v0 -list '^Fuzz' | grep -E '^Fuzz[[:alnum:]_]*$')"
+if [ -z "$fuzz_targets" ]; then
+	printf '%s\n' 'no protocol fuzz targets discovered' >&2
+	exit 1
+fi
+for fuzz_target in $fuzz_targets; do
+	go test ./protocol/v0 -run=^$ -fuzz="^${fuzz_target}$" -fuzztime=10s
+done
 go vet ./...
 
 go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
