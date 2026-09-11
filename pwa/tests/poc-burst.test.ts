@@ -56,6 +56,13 @@ void test("PoC trace categories keep semantic diagnostics visible without raw fr
   assert.equal(traceCategory("relay notice: peer unavailable"), "transport");
 });
 
+void test("PoC panel derives outbox counts after selecting the stable store array", async () => {
+  const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
+  assert.match(panel, /useAppStore\(\(state\) => state\.outbox\)/);
+  assert.match(panel, /useMemo\(\(\) => \{[\s\S]*localOutbox = outbox\.filter/);
+  assert.doesNotMatch(panel, /useAppStore\(\(state\) => state\.outbox\.filter/);
+});
+
 class Timers implements PocBurstTimerPort {
   readonly callbacks: Array<() => void> = [];
 

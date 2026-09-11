@@ -38,9 +38,12 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const [burstCount, setBurstCount] = useState<(typeof burstOptions)[number]>(8);
   const [progress, setProgress] = useState<PocBurstProgress>({ sent: 0, total: 0, running: false });
   const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(defaultTraceCategories);
-  const localOutbox = useAppStore((state) => state.outbox.filter((entry) => entry.contactId === contactId));
-  const awaitingDeliveryCount = localOutbox.filter((entry) => entry.deliveredAt === null).length;
-  const deliveredAwaitingReadCount = localOutbox.length - awaitingDeliveryCount;
+  const outbox = useAppStore((state) => state.outbox);
+  const { awaitingDeliveryCount, deliveredAwaitingReadCount } = useMemo(() => {
+    const localOutbox = outbox.filter((entry) => entry.contactId === contactId);
+    const awaiting = localOutbox.filter((entry) => entry.deliveredAt === null).length;
+    return { awaitingDeliveryCount: awaiting, deliveredAwaitingReadCount: localOutbox.length - awaiting };
+  }, [contactId, outbox]);
 
   useEffect(() => {
     runner.stop();
