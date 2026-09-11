@@ -15,6 +15,7 @@ go:
   tags:
     - branch_lc
   script:
+    - deployments/gitlab/test-deploy-branch-node.sh
     - deployments/gitlab/docker-cli.sh run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e GOMODCACHE=/tmp/gomodcache -e GOCACHE=/tmp/gocache -e GOPATH=/tmp/gopath "$BRANCH_BUILDER_IMAGE" deployments/gitlab/go-checks.sh
 
 web:

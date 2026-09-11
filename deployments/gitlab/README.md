@@ -177,6 +177,32 @@ Set these in GitLab project CI/CD variables:
 | `BRANCH_MONITOR_MASTER_URL` | relay monitor | Optional. MASTER webhook URL, usually `https://branch.undoo.ru/node-admin/relay-monitor/reports`. |
 | `BRANCH_MONITOR_PUSH_TOKEN` | relay monitor | Optional. Masked and protected. Must match MASTER `BRANCH_MONITOR_INGEST_TOKEN`. |
 
+### Optional relay-scoped TURN test profile
+
+TURN remains off unless the specific relay's variable is exactly `true`. To
+test it only on the `relay04` VM, set these GitLab CI/CD variables, scoped to
+the protected `relay/relay04` environment:
+
+| Variable | Protection | Value |
+| --- | --- | --- |
+| `BRANCH_RELAY04_TURN_ENABLED` | protected | `true` explicitly enables only `deploy:relay04`. Any empty or `false` value removes a stale `branch-turn` container. |
+| `BRANCH_RELAY04_TURN_REALM` | protected | Stable authentication label, for example `branch-relay04`; it is not required to be a DNS name. |
+| `BRANCH_RELAY04_TURN_AUTH_SECRET` | masked + protected | Fresh random REST-auth secret. It reaches only relay04's mode-0600 `compose.env`. |
+| `BRANCH_RELAY04_TURN_EXTERNAL_IP` | protected | Public WAN address, or `public-ip/container-private-ip` for an explicit NAT mapping. Do not use the VM's RFC1918 LAN address. |
+| `BRANCH_RELAY04_TURN_BIND` | protected, optional | Host bind address; default is `0.0.0.0`. |
+| `BRANCH_RELAY04_TURN_PORT` | protected, optional | Listener port; default is `3478`. |
+
+Forward and permit these ports from the public router address to the VM that
+runs the `relay04` Compose project: `3478/TCP`, `3478/UDP`, and the complete
+`49160-49200/UDP` relay range. The current profile deliberately has no
+TLS/DTLS listener, so `5349` is not required. Router forwarding cannot make a
+carrier-grade NAT address reachable; confirm that the router has a public WAN
+address. These ports are separate from NPM and the WSS proxy port.
+
+This starts only a transient coturn process. It does not advertise TURN to a
+PWA, issue credentials, or change relay capability until the future
+T-BRANCH-189 protocol work.
+
 Optional variables:
 
 | Variable | Default | Notes |

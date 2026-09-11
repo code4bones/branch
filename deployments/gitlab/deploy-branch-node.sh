@@ -20,7 +20,7 @@ require_command() {
 require_var BRANCH_RELAY_NAME
 require_command curl
 require_command docker
-cert_bundle="/etc/ssl/certs/ca-certificates.crt"
+cert_bundle="${BRANCH_CA_CERT_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
 if [ ! -r "$cert_bundle" ]; then
   printf 'required CA bundle is missing or unreadable: %s\n' "$cert_bundle" >&2
   exit 2
@@ -77,6 +77,18 @@ relay_var() {
   printf '%s' "$value"
 }
 
+# TURN exposure is deliberately stricter than the ordinary relay settings:
+# only a per-relay variable may enable it. A global fallback could accidentally
+# expose a public allocation service on every deploy target.
+relay_scoped_var() {
+  local suffix="$1"
+  local prefixed_name="${BRANCH_RELAY_ENV_PREFIX}_${suffix}"
+  if [ -z "$BRANCH_RELAY_ENV_PREFIX" ]; then
+    return 0
+  fi
+  printf '%s' "${!prefixed_name:-}"
+}
+
 monitor_var() {
   local suffix="$1"
   local fallback_name="BRANCH_MONITOR_${suffix}"
@@ -98,6 +110,12 @@ BRANCH_PROXY_BIND="$(relay_var PROXY_BIND)"
 BRANCH_PROXY_PORT="$(relay_var PROXY_PORT)"
 BRANCH_ADMIN_HOST_PORT="$(relay_var ADMIN_HOST_PORT)"
 BRANCH_WSS_ORIGIN_PATTERNS="$(relay_var WSS_ORIGIN_PATTERNS)"
+BRANCH_TURN_ENABLED="$(relay_scoped_var TURN_ENABLED)"
+BRANCH_TURN_REALM="$(relay_scoped_var TURN_REALM)"
+BRANCH_TURN_AUTH_SECRET="$(relay_scoped_var TURN_AUTH_SECRET)"
+BRANCH_TURN_EXTERNAL_IP="$(relay_scoped_var TURN_EXTERNAL_IP)"
+BRANCH_TURN_BIND="$(relay_scoped_var TURN_BIND)"
+BRANCH_TURN_PORT="$(relay_scoped_var TURN_PORT)"
 BRANCH_FEDERATION_GITHUB_ENABLED="${BRANCH_RELAY_FEDERATION_GITHUB_ENABLED:-false}"
 BRANCH_MONITOR_RELAY_ID="$(monitor_var RELAY_ID)"
 BRANCH_MONITOR_PUBLIC_ENDPOINT="$(monitor_var PUBLIC_ENDPOINT)"
@@ -110,6 +128,22 @@ require_var BRANCH_ADMIN_TOKEN
 
 BRANCH_GOARCH="${BRANCH_GOARCH:-amd64}"
 BRANCH_PROXY_BIND="${BRANCH_PROXY_BIND:-0.0.0.0}"
+case "$BRANCH_TURN_ENABLED" in
+  "" | false)
+    BRANCH_TURN_ENABLED=false
+    ;;
+  true)
+    ;;
+  *)
+    printf 'invalid %s_TURN_ENABLED value: expected true or false\n' "${BRANCH_RELAY_ENV_PREFIX}" >&2
+    exit 2
+    ;;
+esac
+if [ "$BRANCH_TURN_ENABLED" = true ]; then
+  require_var BRANCH_TURN_REALM
+  require_var BRANCH_TURN_AUTH_SECRET
+  require_var BRANCH_TURN_EXTERNAL_IP
+fi
 if [ -z "${BRANCH_DEPLOY_BASE:-}" ]; then
   if [ "${#SUDO[@]}" -gt 0 ] || [ "$(id -u)" = "0" ]; then
     BRANCH_DEPLOY_BASE="/opt/branch/relays"
@@ -192,10 +226,26 @@ chmod 0600 "$compose_env_file"
   printf 'BRANCH_MONITOR_MASTER_URL=%s\n' "$BRANCH_MONITOR_MASTER_URL"
   printf 'BRANCH_MONITOR_PUSH_TOKEN=%s\n' "$BRANCH_MONITOR_PUSH_TOKEN"
   printf 'BRANCH_MONITOR_INTERVAL=%s\n' "$BRANCH_MONITOR_INTERVAL"
+  if [ "$BRANCH_TURN_ENABLED" = true ]; then
+    printf 'BRANCH_TURN_REALM=%s\n' "$BRANCH_TURN_REALM"
+    printf 'BRANCH_TURN_AUTH_SECRET=%s\n' "$BRANCH_TURN_AUTH_SECRET"
+    printf 'BRANCH_TURN_EXTERNAL_IP=%s\n' "$BRANCH_TURN_EXTERNAL_IP"
+    printf 'BRANCH_TURN_BIND=%s\n' "$BRANCH_TURN_BIND"
+    printf 'BRANCH_TURN_PORT=%s\n' "$BRANCH_TURN_PORT"
+  fi
 } >"$compose_env_file"
 "${SUDO[@]}" install -m 0600 "${INSTALL_OWNER_ARGS[@]}" "$compose_env_file" "${BRANCH_DEPLOY_DIR}/compose.env"
 
-"${COMPOSE[@]}" --env-file "${BRANCH_DEPLOY_DIR}/compose.env" -p "$BRANCH_COMPOSE_PROJECT" -f "${BRANCH_DEPLOY_DIR}/compose.yml" up -d --build --remove-orphans
+compose_args=(--env-file "${BRANCH_DEPLOY_DIR}/compose.env" -p "$BRANCH_COMPOSE_PROJECT" -f "${BRANCH_DEPLOY_DIR}/compose.yml")
+if [ "$BRANCH_TURN_ENABLED" = true ]; then
+  "${COMPOSE[@]}" "${compose_args[@]}" --profile turn up -d --build --remove-orphans
+else
+  # A profile omitted from `up` is not a reliable removal request. Explicitly
+  # remove an older TURN container before returning this relay to the default
+  # WSS-only stack.
+  "${COMPOSE[@]}" "${compose_args[@]}" --profile turn rm -f -s branch-turn >/dev/null 2>&1 || true
+  "${COMPOSE[@]}" "${compose_args[@]}" up -d --build --remove-orphans
+fi
 
 for attempt in 1 2 3 4 5; do
   if curl -fsS -H "Authorization: Bearer ${BRANCH_ADMIN_TOKEN}" "http://127.0.0.1:${BRANCH_ADMIN_HOST_PORT}/readyz" >/dev/null; then
