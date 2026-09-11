@@ -10,6 +10,12 @@ import (
 const (
 	maxDecodedCBOREntries = 64
 	maxDecodedCBORBytes   = 48 * 1024
+
+	// MaxDeterministicCBORNestingDepth is the maximum number of array/map
+	// containers on one decoded CBOR path. The outermost array or map is depth
+	// one. It is a wire-level bound shared by every deterministic-CBOR body so
+	// hostile input cannot create unbounded parser recursion.
+	MaxDeterministicCBORNestingDepth = 8
 )
 
 var (
@@ -33,7 +39,7 @@ func decodeDeterministicCBORWithTextLimit(input []byte, maxTextBytes int) (any, 
 		return nil, errInvalidCBOR
 	}
 	decoder := cborDecoder{input: input, maxTextBytes: maxTextBytes}
-	value, err := decoder.readValue()
+	value, err := decoder.readValue(0)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +62,7 @@ type cborDecoder struct {
 	maxTextBytes int
 }
 
-func (decoder *cborDecoder) readValue() (any, error) {
+func (decoder *cborDecoder) readValue(nestingDepth int) (any, error) {
 	initial, err := decoder.readByte()
 	if err != nil {
 		return nil, err
@@ -86,9 +92,15 @@ func (decoder *cborDecoder) readValue() (any, error) {
 	case 3:
 		return decoder.readTextString(argument)
 	case 4:
-		return decoder.readArray(argument)
+		if nestingDepth >= MaxDeterministicCBORNestingDepth {
+			return nil, errInvalidCBOR
+		}
+		return decoder.readArray(argument, nestingDepth+1)
 	case 5:
-		return decoder.readMap(argument)
+		if nestingDepth >= MaxDeterministicCBORNestingDepth {
+			return nil, errInvalidCBOR
+		}
+		return decoder.readMap(argument, nestingDepth+1)
 	default:
 		return nil, errInvalidCBOR
 	}
@@ -164,13 +176,13 @@ func (decoder *cborDecoder) readTextString(size uint64) (string, error) {
 	return string(data), nil
 }
 
-func (decoder *cborDecoder) readArray(size uint64) (cborArrayValue, error) {
+func (decoder *cborDecoder) readArray(size uint64, nestingDepth int) (cborArrayValue, error) {
 	if size > maxDecodedCBOREntries {
 		return cborArrayValue{}, errInvalidCBOR
 	}
 	values := make([]any, 0, int(size))
 	for range size {
-		value, err := decoder.readValue()
+		value, err := decoder.readValue(nestingDepth)
 		if err != nil {
 			return cborArrayValue{}, err
 		}
@@ -179,7 +191,7 @@ func (decoder *cborDecoder) readArray(size uint64) (cborArrayValue, error) {
 	return cborArrayValue{values: values}, nil
 }
 
-func (decoder *cborDecoder) readMap(size uint64) (cborMapValue, error) {
+func (decoder *cborDecoder) readMap(size uint64, nestingDepth int) (cborMapValue, error) {
 	if size > maxDecodedCBOREntries {
 		return cborMapValue{}, errInvalidCBOR
 	}
@@ -188,7 +200,7 @@ func (decoder *cborDecoder) readMap(size uint64) (cborMapValue, error) {
 	var previousKey []byte
 	for range size {
 		keyOffset := decoder.offset
-		keyValue, err := decoder.readValue()
+		keyValue, err := decoder.readValue(nestingDepth)
 		if err != nil {
 			return cborMapValue{}, err
 		}
@@ -206,7 +218,7 @@ func (decoder *cborDecoder) readMap(size uint64) (cborMapValue, error) {
 		}
 		previousKey = append(previousKey[:0], encodedKey...)
 
-		value, err := decoder.readValue()
+		value, err := decoder.readValue(nestingDepth)
 		if err != nil {
 			return cborMapValue{}, err
 		}

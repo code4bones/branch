@@ -31,3 +31,17 @@ func FuzzDecodeDraftEnvelope(f *testing.F) {
 		_, _ = DecodeDraftEnvelope(data)
 	})
 }
+
+func FuzzDecodeDeterministicCBOR(f *testing.F) {
+	for _, depth := range []int{MaxDeterministicCBORNestingDepth - 1, MaxDeterministicCBORNestingDepth, MaxDeterministicCBORNestingDepth + 1} {
+		encoded, err := encodeCbor(nestedCBORArray(depth))
+		if err != nil {
+			f.Fatalf("encode nesting seed %d: %v", depth, err)
+		}
+		f.Add(encoded)
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_, _ = decodeDeterministicCBOR(data)
+	})
+}

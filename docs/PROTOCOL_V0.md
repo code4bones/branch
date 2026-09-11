@@ -1051,6 +1051,14 @@ integer or length encodings. Tags, floating point values, indefinite length
 items, duplicate top-level fields, and unknown top-level fields are rejected for
 `branch/connectivity/0`.
 
+Every deterministic-CBOR input in this draft, including an envelope and each
+nested protocol body decoded independently, permits at most **8** nested
+array/map containers on one value path. The outermost array or map is depth 1;
+strings, byte strings, unsigned integers, and booleans do not add nesting.
+An implementation MUST reject depth 9 or greater as invalid CBOR before
+constructing the decoded protocol value. This is an interoperable hostile-input
+bound, not an application-specific schema rule.
+
 The signature input is:
 
 ```text
