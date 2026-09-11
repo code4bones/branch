@@ -92,6 +92,13 @@ connection, handshake, route selection, relay use, and route migration.
 Production traces are local to an operator boundary unless an explicit
 diagnostic session enables temporary correlation.
 
+Federation carrier refresh may report only fixed aggregate outcomes: startup
+refill, scheduled refill, cache-ready, cache-expired, rate-limited, and source
+unavailable. It never reports beacon wrapper bytes, repository names, endpoint
+URLs, relay keys, peer/identity references, route/session identifiers, or
+whether a particular user was found. A cache-ready observation is not emitted
+per forwarded frame.
+
 ### PWA diagnostic journal
 
 The PWA records a bounded local sequence of state transitions and outcomes. It

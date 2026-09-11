@@ -38,15 +38,16 @@ type DiscoveredPeerRouterConfig struct {
 	MaxFrameBytes  int64
 	DialTimeout    time.Duration
 	WriteTimeout   time.Duration
-	// CarrierPassMinInterval bounds anonymous GitHub carrier pressure without
-	// retaining carrier results. Zero selects the safe GitHub default; other
-	// sources remain unpaced unless a future profile defines its own policy.
+	// CarrierPassMinInterval bounds anonymous GitHub carrier refills. Zero
+	// selects the safe GitHub default; other sources remain unpaced unless a
+	// future profile defines its own policy.
 	CarrierPassMinInterval time.Duration
 	Observer               FederationObserver
 }
 
-// DiscoveredPeerRouter derives up to eight ephemeral WSS candidates from one
-// carrier pass. It keeps neither a relay topology nor a durable candidate cache.
+// DiscoveredPeerRouter keeps a bounded process-local view of already validated
+// public relay beacons. It is not a presence view, route map, or durable
+// topology: entries expire with their signed beacons and disappear on restart.
 type DiscoveredPeerRouter struct {
 	source                 discovery.BootstrapBeaconLookupSource
 	identity               FederationIdentity
@@ -59,9 +60,20 @@ type DiscoveredPeerRouter struct {
 	backoff         map[string]time.Time
 	carrierPassMu   sync.Mutex
 	nextCarrierPass time.Time
+	refreshMu       sync.Mutex
+	viewMu          sync.Mutex
+	view            federationDiscoveryView
 	discoveryMu     sync.Mutex
 	discoveryStatus FederationCarrierObservation
 }
+
+type federationDiscoveryView struct {
+	localBeacon  string
+	localExpires time.Time
+	candidates   []federationCandidate
+}
+
+const federationRefreshInterval = time.Hour
 
 // FederationCarrierObservation is a short-lived, protected operator summary
 // of one carrier pass. It contains no candidate endpoint, identity, route,
@@ -112,9 +124,9 @@ func NewDiscoveredPeerRouter(config DiscoveredPeerRouterConfig) (*DiscoveredPeer
 
 func (*DiscoveredPeerRouter) ID() string { return "relay_discovery" }
 
-// LookupFederatedPeer makes exactly one source call for this local miss. A
-// candidate's key/profile come solely from its verified signed beacon, never
-// from client hints or carrier metadata.
+// LookupFederatedPeer probes the bounded verified local view before requesting
+// a paced carrier refill. A candidate's key/profile come solely from its
+// validated signed beacon, never from client hints or carrier metadata.
 func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) (relay.FederatedForwarder, bool) {
 	_ = hints
 	lookupStarted := router.now()
@@ -123,6 +135,27 @@ func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, pee
 		router.observe(ctx, FederationRouteUnavailable, "carrier_unavailable", router.now().Sub(lookupStarted))
 		return nil, false
 	}
+	if forwarder, ok := router.probeFederatedPeer(ctx, peerID, localBeacon, candidates, now, lookupStarted); ok {
+		return forwarder, true
+	}
+	if !router.candidatesExhausted(candidates, now) {
+		router.observe(ctx, FederationRouteUnavailable, "no_candidate", router.now().Sub(lookupStarted))
+		return nil, false
+	}
+	router.clearDiscoveryView()
+	localBeacon, candidates = router.refresh(ctx, now, false)
+	if localBeacon == "" {
+		router.observe(ctx, FederationRouteUnavailable, "carrier_unavailable", router.now().Sub(lookupStarted))
+		return nil, false
+	}
+	if forwarder, ok := router.probeFederatedPeer(ctx, peerID, localBeacon, candidates, now, lookupStarted); ok {
+		return forwarder, true
+	}
+	router.observe(ctx, FederationRouteUnavailable, "no_candidate", router.now().Sub(lookupStarted))
+	return nil, false
+}
+
+func (router *DiscoveredPeerRouter) probeFederatedPeer(ctx context.Context, peerID relay.PeerID, localBeacon string, candidates []federationCandidate, now time.Time, lookupStarted time.Time) (relay.FederatedForwarder, bool) {
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return nil, false
@@ -160,7 +193,6 @@ func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, pee
 			observer: router.observer,
 		}, true
 	}
-	router.observe(ctx, FederationRouteUnavailable, "no_candidate", router.now().Sub(lookupStarted))
 	return nil, false
 }
 
@@ -243,7 +275,104 @@ func (router *DiscoveredPeerRouter) FederationCarrierSnapshot() *FederationCarri
 	return &observation
 }
 
+// Seed performs one bounded startup refresh. Failure is observational: an
+// unavailable carrier cannot prevent the relay itself from serving live local
+// traffic.
+func (router *DiscoveredPeerRouter) Seed(ctx context.Context) {
+	router.refresh(ctx, router.now(), true)
+}
+
+// Run refreshes the process-local view at a bounded identity-jittered cadence.
+// It owns no state outside the process and returns immediately when the node
+// context is cancelled.
+func (router *DiscoveredPeerRouter) Run(ctx context.Context) {
+	timer := time.NewTimer(router.refreshDelay())
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			router.refresh(ctx, router.now(), true)
+			timer.Reset(router.refreshDelay())
+		}
+	}
+}
+
+func (router *DiscoveredPeerRouter) refreshDelay() time.Duration {
+	// Public relay keys are stable only for this node lifetime. Deriving a
+	// bounded offset from the local key avoids synchronized hourly refreshes
+	// without retaining an extra schedule or using carrier input.
+	key := router.identity.PublicKey()
+	var offset uint64
+	for _, byteValue := range key[:8] {
+		offset = offset<<8 | uint64(byteValue)
+	}
+	return federationRefreshInterval + time.Duration(offset%(uint64(5*time.Minute)))
+}
+
 func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time) (string, []federationCandidate) {
+	if localBeacon, candidates := router.cachedDiscovery(now); localBeacon != "" {
+		router.recordCarrierObservation("ready", "cache_ready", len(candidates), now)
+		return localBeacon, candidates
+	}
+	return router.refresh(ctx, now, false)
+}
+
+func (router *DiscoveredPeerRouter) cachedDiscovery(now time.Time) (string, []federationCandidate) {
+	router.viewMu.Lock()
+	defer router.viewMu.Unlock()
+	if router.view.localBeacon == "" || !router.view.localExpires.After(now) {
+		router.view = federationDiscoveryView{}
+		return "", nil
+	}
+	candidates := make([]federationCandidate, 0, len(router.view.candidates))
+	for _, candidate := range router.view.candidates {
+		if candidate.expiresAt.After(now) {
+			candidates = append(candidates, cloneFederationCandidate(candidate))
+		}
+	}
+	if len(candidates) == 0 {
+		router.view = federationDiscoveryView{}
+		return "", nil
+	}
+	router.view.candidates = candidates
+	return router.view.localBeacon, append([]federationCandidate(nil), candidates...)
+}
+
+func (router *DiscoveredPeerRouter) clearDiscoveryView() {
+	router.viewMu.Lock()
+	router.view = federationDiscoveryView{}
+	router.viewMu.Unlock()
+}
+
+func (router *DiscoveredPeerRouter) candidatesExhausted(candidates []federationCandidate, now time.Time) bool {
+	if len(candidates) == 0 {
+		return true
+	}
+	for _, candidate := range candidates {
+		if !router.backoffActive(candidate.identityKey, now) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneFederationCandidate(candidate federationCandidate) federationCandidate {
+	candidate.relayPublicKey = append([]byte(nil), candidate.relayPublicKey...)
+	return candidate
+}
+
+func (router *DiscoveredPeerRouter) refresh(ctx context.Context, now time.Time, force bool) (string, []federationCandidate) {
+	if !router.refreshMu.TryLock() {
+		return router.cachedDiscovery(now)
+	}
+	defer router.refreshMu.Unlock()
+	if !force {
+		if localBeacon, candidates := router.cachedDiscovery(now); localBeacon != "" {
+			return localBeacon, candidates
+		}
+	}
 	started := router.now()
 	router.observe(ctx, FederationCarrierLookupStarted, "", 0)
 	if !router.reserveCarrierPass(now) {
@@ -280,10 +409,12 @@ func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time)
 		}
 	}
 	localBeacon := ""
+	var localExpires time.Time
 	candidates := make([]federationCandidate, 0, maxFederationPeers)
 	for identityKey, beacon := range validated {
 		if bytes.Equal(beacon.Envelope.Sender.PublicKey, localKey) {
 			localBeacon = beacon.Wrapper
+			localExpires = time.Unix(beacon.Payload.ExpiresAt, 0)
 			continue
 		}
 		profile := firstSupportedProfile(beacon.Payload.ProfileMultihashes)
@@ -329,11 +460,25 @@ func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time)
 	}
 	router.recordCarrierObservation(carrierState, carrierReason, len(candidates), now)
 	if carrierState == "ready" {
+		router.storeDiscoveryView(localBeacon, localExpires, candidates)
 		router.observe(ctx, FederationCarrierLookupCompleted, "success", router.now().Sub(started))
 	} else {
 		router.observe(ctx, FederationCarrierLookupFailed, "carrier_unavailable", router.now().Sub(started))
 	}
 	return localBeacon, candidates
+}
+
+func (router *DiscoveredPeerRouter) storeDiscoveryView(localBeacon string, localExpires time.Time, candidates []federationCandidate) {
+	if localBeacon == "" || len(candidates) == 0 || len(candidates) > maxFederationPeers {
+		return
+	}
+	copyCandidates := make([]federationCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		copyCandidates = append(copyCandidates, cloneFederationCandidate(candidate))
+	}
+	router.viewMu.Lock()
+	router.view = federationDiscoveryView{localBeacon: localBeacon, localExpires: localExpires, candidates: copyCandidates}
+	router.viewMu.Unlock()
 }
 
 func federationObserverOrNoop(observer FederationObserver) FederationObserver {

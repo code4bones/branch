@@ -2393,22 +2393,26 @@ database. A client may carry signed beacons between relay islands; authenticity
 comes from issuer signatures and freshness checks, not from the relay that
 transported the record.
 
-The beta federation slice derives a peer candidate only from a fresh validated
-signed `bootstrap.beacon`, as recorded in D-BRANCH-048. The candidate binds the
-beacon sender's Ed25519 key, one ordered `wss` endpoint, an accepted profile
-multihash, and `relay.forward.live/0`; carrier rank, GitLab/GitHub ownership,
-MASTER reports, peer lists, and client-provided route hints are not provenance
-for relay admission. Relay discovery is on demand after a local authenticated
-`LOOKUP` miss: one bounded configured SearchCarrier pass, at most eight distinct
-relay identities, and no periodic crawl, topology exchange, directory, or
-durable cache. Candidate state is memory-only and expires no later than the
-beacon. A local hit never triggers carrier discovery.
+The beta federation slice derives a peer candidate only from a validated signed
+`bootstrap.beacon`, as recorded in D-BRANCH-102. The candidate binds the beacon
+sender's Ed25519 key, one ordered `wss` endpoint, an accepted profile multihash,
+and `relay.forward.live/0`; carrier rank, GitLab/GitHub ownership, MASTER
+reports, peer lists, and client-provided route hints are not provenance for
+relay admission. A relay keeps at most eight such already-validated public
+records in one process-local view. Each entry is rechecked for expiry and
+endpoint policy before a live probe, expires no later than its beacon, and is
+discarded on restart. This view is neither user presence, a peer/route map, a
+topology exchange, nor a durable cache. A local hit never triggers a carrier
+pass.
 
-The anonymous GitHub carrier is additionally paced per relay: at most one
-carrier pass starts in each 12-second interval. A miss during that interval
-returns a bounded transient rate-limit result and retains neither source bytes
-nor candidate state for later use. The next permitted pass reads and validates
-fresh signed public records normally.
+When the optional carrier is enabled, the relay seeds that view with one paced
+startup pass and refreshes it while live on one bounded identity-jittered hourly
+lifecycle. There is no recursive lookup, fan-out crawl, or concurrent refresh;
+a failed refresh retains the prior unexpired view. An empty, expired, or
+exhausted view may cause one on-demand refill. The anonymous GitHub refill is
+additionally paced per relay: at most one carrier pass starts in each 12-second
+interval. That limiter applies to source reads, never to probing still-valid
+entries in the local view.
 
 Within one carrier pass, observations merge by the beacon sender key. Only the
 highest valid signed sequence for one sender can supply a candidate; two

@@ -20,14 +20,69 @@ type testBootstrapBeaconSource struct {
 	observations []discovery.BootstrapBeaconCandidate
 	err          error
 	id           string
+	called       chan struct{}
 }
 
 func (source *testBootstrapBeaconSource) LookupBootstrapBeacons(context.Context) ([]discovery.BootstrapBeaconCandidate, error) {
 	source.calls++
+	if source.called != nil {
+		select {
+		case source.called <- struct{}{}:
+		default:
+		}
+	}
 	if source.err != nil {
 		return nil, source.err
 	}
 	return append([]discovery.BootstrapBeaconCandidate(nil), source.observations...), nil
+}
+
+func TestDiscoveredPeerRouterRunSeedsVolatileViewAndStops(t *testing.T) {
+	now := time.Date(2026, 9, 11, 19, 0, 0, 0, time.UTC)
+	localIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate local identity: %v", err)
+	}
+	remotePublicKey, remotePrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate remote identity: %v", err)
+	}
+	source := &testBootstrapBeaconSource{called: make(chan struct{}, 1), observations: []discovery.BootstrapBeaconCandidate{
+		{Wrapper: testFederationBeacon(t, now, localIdentity.PublicKey(), localIdentity.Sign, "wss://local.example.test:443/relay/v0", 0)},
+		{Wrapper: testFederationBeacon(t, now, remotePublicKey, func(input []byte) []byte { return ed25519.Sign(remotePrivateKey, input) }, "wss://remote.example.test:443/relay/v0", 1)},
+	}}
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewDiscoveredPeerRouter(DiscoveredPeerRouterConfig{Source: source, Identity: localIdentity, LocalHub: hub, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	router.Seed(ctx)
+	select {
+	case <-source.called:
+	case <-time.After(time.Second):
+		t.Fatal("startup refresh did not call source")
+	}
+	done := make(chan struct{})
+	go func() {
+		router.Run(ctx)
+		close(done)
+	}()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("refresh loop did not stop after cancellation")
+	}
+	if local, candidates := router.cachedDiscovery(now); local == "" || len(candidates) != 1 {
+		t.Fatalf("startup view = local %q candidates %+v", local, candidates)
+	}
+	if delay := router.refreshDelay(); delay < federationRefreshInterval || delay >= federationRefreshInterval+5*time.Minute {
+		t.Fatalf("refresh delay = %s", delay)
+	}
 }
 
 func (source *testBootstrapBeaconSource) ID() string {
@@ -106,13 +161,15 @@ func TestDiscoveredPeerRouterDerivesEphemeralCandidatesFromSignedBeacons(t *test
 	if candidates[0].endpoint != "wss://remote.example.test:443/relay/v0" || string(candidates[0].relayPublicKey) != string(remotePublicKey) {
 		t.Fatalf("candidate = %+v", candidates[0])
 	}
-	_, _ = router.discover(context.Background(), now)
-	if source.calls != 2 {
-		t.Fatalf("source was cached; calls = %d", source.calls)
+	if local, candidates := router.discover(context.Background(), now); local != localWrapper || len(candidates) != 1 {
+		t.Fatalf("cached discovery = local %q candidates %+v", local, candidates)
+	}
+	if source.calls != 1 {
+		t.Fatalf("cached source calls = %d", source.calls)
 	}
 }
 
-func TestDiscoveredPeerRouterPacesGitHubPassesWithoutCandidateCache(t *testing.T) {
+func TestDiscoveredPeerRouterReusesCacheAndPacesRefill(t *testing.T) {
 	now := time.Date(2026, 9, 11, 18, 0, 0, 0, time.UTC)
 	localIdentity, err := identity.Generate()
 	if err != nil {
@@ -138,11 +195,17 @@ func TestDiscoveredPeerRouterPacesGitHubPassesWithoutCandidateCache(t *testing.T
 	if local, candidates := router.discover(context.Background(), now); local != localWrapper || len(candidates) != 1 {
 		t.Fatalf("first discovery = local %q candidates %+v", local, candidates)
 	}
-	if local, candidates := router.discover(context.Background(), now.Add(time.Second)); local != "" || len(candidates) != 0 {
-		t.Fatalf("paced discovery retained candidates: local %q candidates %+v", local, candidates)
+	if local, candidates := router.discover(context.Background(), now.Add(time.Second)); local != localWrapper || len(candidates) != 1 {
+		t.Fatalf("cached discovery = local %q candidates %+v", local, candidates)
 	}
 	if source.calls != 1 {
-		t.Fatalf("paced source calls = %d, want 1", source.calls)
+		t.Fatalf("cached source calls = %d, want 1", source.calls)
+	}
+	router.viewMu.Lock()
+	router.view = federationDiscoveryView{}
+	router.viewMu.Unlock()
+	if local, candidates := router.discover(context.Background(), now.Add(time.Second)); local != "" || len(candidates) != 0 {
+		t.Fatalf("rate-limited refill = local %q candidates %+v", local, candidates)
 	}
 	observation := router.FederationCarrierSnapshot()
 	if observation == nil || observation.LastReason != "carrier_rate_limited" || observation.CandidateCount != 0 {
@@ -153,6 +216,40 @@ func TestDiscoveredPeerRouterPacesGitHubPassesWithoutCandidateCache(t *testing.T
 	}
 	if source.calls != 2 {
 		t.Fatalf("retry source calls = %d, want 2", source.calls)
+	}
+}
+
+func TestDiscoveredPeerRouterRetainsUnexpiredViewAfterFailedRefresh(t *testing.T) {
+	now := time.Date(2026, 9, 11, 19, 0, 0, 0, time.UTC)
+	localIdentity, err := identity.Generate()
+	if err != nil {
+		t.Fatalf("generate local identity: %v", err)
+	}
+	remotePublicKey, remotePrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate remote identity: %v", err)
+	}
+	localWrapper := testFederationBeacon(t, now, localIdentity.PublicKey(), localIdentity.Sign, "wss://local.example.test:443/relay/v0", 0)
+	remoteWrapper := testFederationBeacon(t, now, remotePublicKey, func(input []byte) []byte { return ed25519.Sign(remotePrivateKey, input) }, "wss://remote.example.test:443/relay/v0", 1)
+	source := &testBootstrapBeaconSource{observations: []discovery.BootstrapBeaconCandidate{{Wrapper: localWrapper}, {Wrapper: remoteWrapper}}}
+	hub, err := relay.NewHub(relay.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	router, err := NewDiscoveredPeerRouter(DiscoveredPeerRouterConfig{Source: source, Identity: localIdentity, LocalHub: hub, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	if local, candidates := router.discover(context.Background(), now); local == "" || len(candidates) != 1 {
+		t.Fatalf("initial view = local %q candidates %+v", local, candidates)
+	}
+	source.err = discovery.NewBootstrapBeaconLookupFailure("github_timeout", context.DeadlineExceeded)
+	router.refresh(context.Background(), now.Add(12*time.Second), true)
+	if source.calls != 2 {
+		t.Fatalf("source calls = %d, want 2", source.calls)
+	}
+	if local, candidates := router.cachedDiscovery(now.Add(12 * time.Second)); local != localWrapper || len(candidates) != 1 {
+		t.Fatalf("failed refresh discarded view: local %q candidates %+v", local, candidates)
 	}
 }
 

@@ -59,6 +59,10 @@ type App struct {
 	identityLookup *discovery.IdentityContactLookup
 	diagnostics    *observability.Recorder
 	exporter       *observability.AsyncSink
+	federationLoop interface {
+		Seed(context.Context)
+		Run(context.Context)
+	}
 }
 
 // New creates the node composition root.
@@ -107,6 +111,10 @@ func New(config Config) (*App, error) {
 	var federationCarrierMonitor interface {
 		FederationCarrierSnapshot() *wss.FederationCarrierObservation
 	}
+	var federationLoop interface {
+		Seed(context.Context)
+		Run(context.Context)
+	}
 	if config.GitHubFederationDiscovery {
 		githubSource, sourceErr := githubcarrier.NewIdentityContactSource(githubcarrier.IdentityContactSourceConfig{})
 		if sourceErr != nil {
@@ -128,6 +136,7 @@ func New(config Config) (*App, error) {
 		forwardingPeerRouter = discoveredRouter
 		federationMonitor = discoveredRouter
 		federationCarrierMonitor = discoveredRouter
+		federationLoop = discoveredRouter
 		identitySources = []discovery.IdentityContactLookupSource{discoveredRouter}
 	}
 	if config.GitHubIdentityLookup {
@@ -207,6 +216,7 @@ func New(config Config) (*App, error) {
 		identityLookup: identityLookup,
 		diagnostics:    diagnostics,
 		exporter:       exporter,
+		federationLoop: federationLoop,
 		publicServer: &http.Server{
 			Addr:              config.PublicAddr,
 			Handler:           publicMux,
@@ -252,8 +262,14 @@ func (app *App) Hub() *relay.Hub {
 func (app *App) Run(ctx context.Context) error {
 	defer app.closeObservability()
 	runCtx, cancel := context.WithCancel(ctx)
+	if app.federationLoop != nil {
+		app.federationLoop.Seed(runCtx)
+	}
 	sweepDone := make(chan struct{})
 	go app.sweepExpired(runCtx, sweepDone)
+	if app.federationLoop != nil {
+		go app.federationLoop.Run(runCtx)
+	}
 	defer func() {
 		cancel()
 		<-sweepDone
