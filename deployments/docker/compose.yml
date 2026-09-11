@@ -36,5 +36,30 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
+  # An operator must opt in explicitly: `docker compose --profile turn up -d`.
+  # This container is deliberately independent of branch-node. It neither
+  # grants credentials nor advertises a capability; T-BRANCH-189 owns that
+  # future authenticated live protocol boundary.
+  branch-turn:
+    image: coturn/coturn:4.18.0-r0
+    profiles: ["turn"]
+    restart: unless-stopped
+    environment:
+      BRANCH_TURN_AUTH_SECRET: ${BRANCH_TURN_AUTH_SECRET:-}
+      BRANCH_TURN_REALM: ${BRANCH_TURN_REALM:-}
+      BRANCH_TURN_EXTERNAL_IP: ${BRANCH_TURN_EXTERNAL_IP:-}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        test -n "$${BRANCH_TURN_AUTH_SECRET}" || { echo "BRANCH_TURN_AUTH_SECRET is required" >&2; exit 64; }
+        test -n "$${BRANCH_TURN_REALM}" || { echo "BRANCH_TURN_REALM is required" >&2; exit 64; }
+        set -- --no-cli --no-tls --no-dtls --fingerprint --stale-nonce --no-auth-pings --use-auth-secret --static-auth-secret="$${BRANCH_TURN_AUTH_SECRET}" --realm="$${BRANCH_TURN_REALM}" --min-port=49160 --max-port=49200 --user-quota=4 --total-quota=120 --max-bps=3000000 --no-loopback-peers --no-multicast-peers --log-file=stdout
+        if [ -n "$${BRANCH_TURN_EXTERNAL_IP}" ]; then set -- "$$@" --external-ip="$${BRANCH_TURN_EXTERNAL_IP}"; fi
+        exec turnserver "$$@"
+    ports:
+      - "${BRANCH_TURN_BIND:-0.0.0.0}:${BRANCH_TURN_PORT:-3478}:3478/tcp"
+      - "${BRANCH_TURN_BIND:-0.0.0.0}:${BRANCH_TURN_PORT:-3478}:3478/udp"
+      - "${BRANCH_TURN_BIND:-0.0.0.0}:49160-49200:49160-49200/udp"
+
 volumes:
   branch-node-state:

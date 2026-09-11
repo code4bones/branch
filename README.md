@@ -65,3 +65,11 @@ operated relays.
   test strategy, and quality gates.
 - [OBSERVABILITY.md](docs/OBSERVABILITY.md) — logs, metrics, traces,
   diagnostics, privacy boundaries, and optional development monitoring.
+
+## Optional local TURN profile
+
+The Docker deployment includes an opt-in, operator-owned coturn profile for
+WebRTC validation. It is not advertised to clients and does not issue ICE
+credentials: the authenticated, short-lived credential flow remains future
+protocol work. Operators can find the required environment variables, firewall
+ports, and start command in [deployments/docker/README.md](deployments/docker/README.md).
