@@ -11,6 +11,7 @@ import (
 	githubcarrier "github.com/code4bones/branch/internal/carrier/github"
 	"github.com/code4bones/branch/internal/discovery"
 	"github.com/code4bones/branch/internal/identity"
+	"github.com/code4bones/branch/internal/observability"
 	"github.com/code4bones/branch/internal/relay"
 	"github.com/code4bones/branch/internal/relay/wss"
 	protocol "github.com/code4bones/branch/protocol/v0"
@@ -32,16 +33,18 @@ type Config struct {
 	FederationEndpointPolicy  wss.FederationEndpointPolicy
 	GitHubIdentityLookup      bool
 	GitHubFederationDiscovery bool
+	ObservabilityMode         observability.Mode
 }
 
 // DefaultConfig returns development-safe defaults for a relay behind a local
 // reverse proxy.
 func DefaultConfig() Config {
 	return Config{
-		PublicAddr: ":8080",
-		AdminAddr:  "127.0.0.1:8081",
-		Relay:      relay.DefaultConfig(),
-		Version:    "0.0.0-dev",
+		PublicAddr:        ":8080",
+		AdminAddr:         "127.0.0.1:8081",
+		Relay:             relay.DefaultConfig(),
+		Version:           "0.0.0-dev",
+		ObservabilityMode: observability.ModeOperator,
 	}
 }
 
@@ -54,6 +57,8 @@ type App struct {
 	adminServer    *http.Server
 	monitor        *relayMonitorReporter
 	identityLookup *discovery.IdentityContactLookup
+	diagnostics    *observability.Recorder
+	exporter       *observability.AsyncSink
 }
 
 // New creates the node composition root.
@@ -64,6 +69,14 @@ func New(config Config) (*App, error) {
 	if config.Relay == (relay.Config{}) {
 		config.Relay = relay.DefaultConfig()
 	}
+	if config.ObservabilityMode == "" {
+		config.ObservabilityMode = observability.ModeOperator
+	}
+	if !observability.KnownMode(config.ObservabilityMode) {
+		return nil, ErrInvalidConfig
+	}
+	diagnostics := observability.NewRecorder(observability.RecorderOptions{})
+	federationObserver, fanout := newFederationObserver(config.ObservabilityMode, diagnostics, config.Version)
 	nodeIdentity, err := identity.LoadOrCreate(config.IdentityPath)
 	if err != nil {
 		return nil, fmt.Errorf("load node identity: %w", err)
@@ -107,6 +120,7 @@ func New(config Config) (*App, error) {
 			MaxFrameBytes:  int64(config.Relay.MaxFrameBytes),
 			DialTimeout:    2 * time.Second,
 			WriteTimeout:   5 * time.Second,
+			Observer:       federationObserver,
 		})
 		if routerErr != nil {
 			return nil, fmt.Errorf("create discovered relay federation router: %w", routerErr)
@@ -160,6 +174,7 @@ func New(config Config) (*App, error) {
 	adminMux := admin.NewHTTPHandler(
 		admin.NewHandler(
 			statusProvider,
+			admin.WithDiagnosticsProvider(diagnostics),
 			admin.WithBootstrapBeaconProvider(bootstrapProvider),
 			admin.WithIdentityContactLookupProvider(identityLookup),
 			admin.WithRelayMonitorRegistry(relayMonitorRegistry),
@@ -171,9 +186,17 @@ func New(config Config) (*App, error) {
 			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
 		})),
 	)
-	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor, carrierRouter: federationCarrierMonitor})
+	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor, carrierRouter: federationCarrierMonitor}, diagnostics)
 	if err != nil {
 		return nil, err
+	}
+	var exporter *observability.AsyncSink
+	if fanout != nil {
+		exporter, err = observability.NewAsyncSink(context.Background(), observability.NewSlogSink(nil, config.ObservabilityMode), observability.DefaultExporterQueueCapacity)
+		if err != nil {
+			return nil, fmt.Errorf("create observability exporter: %w", err)
+		}
+		fanout.slog = exporter
 	}
 
 	return &App{
@@ -181,6 +204,8 @@ func New(config Config) (*App, error) {
 		hub:            hub,
 		monitor:        monitorReporter,
 		identityLookup: identityLookup,
+		diagnostics:    diagnostics,
+		exporter:       exporter,
 		publicServer: &http.Server{
 			Addr:              config.PublicAddr,
 			Handler:           publicMux,
@@ -193,6 +218,10 @@ func New(config Config) (*App, error) {
 		},
 	}, nil
 }
+
+type noopNodeFederationObserver struct{}
+
+func (noopNodeFederationObserver) ObserveFederation(context.Context, wss.FederationObservation) {}
 
 func relayCapabilities(githubFederationDiscovery bool) []string {
 	capabilities := []string{"relay.forward.live/0", "route.relay.wss/0"}
@@ -220,6 +249,7 @@ func (app *App) Hub() *relay.Hub {
 
 // Run starts configured listeners until ctx is cancelled.
 func (app *App) Run(ctx context.Context) error {
+	defer app.closeObservability()
 	runCtx, cancel := context.WithCancel(ctx)
 	sweepDone := make(chan struct{})
 	go app.sweepExpired(runCtx, sweepDone)
@@ -253,6 +283,12 @@ func (app *App) Run(ctx context.Context) error {
 			return nil
 		}
 		return err
+	}
+}
+
+func (app *App) closeObservability() {
+	if app.exporter != nil {
+		app.exporter.Close()
 	}
 }
 

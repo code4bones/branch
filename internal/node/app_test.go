@@ -53,6 +53,14 @@ func TestNewComposesPublicRelayAndProtectedAdminSurfaces(t *testing.T) {
 	if len(snapshot.ProtocolVersions) != 1 || len(snapshot.Capabilities) != 2 {
 		t.Fatalf("snapshot missing protocol/capabilities: %+v", snapshot)
 	}
+
+	diagnosticsRequest := httptest.NewRequest(http.MethodGet, "/diagnostics", nil)
+	diagnosticsRequest.Header.Set("authorization", "Bearer test-token")
+	diagnosticsResponse := httptest.NewRecorder()
+	app.AdminHandler().ServeHTTP(diagnosticsResponse, diagnosticsRequest)
+	if diagnosticsResponse.Code != http.StatusOK {
+		t.Fatalf("diagnostics status = %d", diagnosticsResponse.Code)
+	}
 	for _, forbidden := range []string{"peer_id", "session_id", "public_key", "ciphertext"} {
 		if strings.Contains(adminResponse.Body.String(), forbidden) {
 			t.Fatalf("admin snapshot leaked %q: %s", forbidden, adminResponse.Body.String())
@@ -116,6 +124,7 @@ func newTestApp(t *testing.T) *App {
 	if app.PublicHandler() == nil || app.AdminHandler() == nil || app.Hub() == nil {
 		t.Fatalf("app missing composed surfaces")
 	}
+	t.Cleanup(app.closeObservability)
 	publicMux := app.PublicHandler()
 	request := httptest.NewRequest(http.MethodGet, wss.Path, nil)
 	response := httptest.NewRecorder()

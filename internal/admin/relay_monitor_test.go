@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/code4bones/branch/internal/observability"
 )
 
 func TestRelayMonitorRegistryListsFreshAndStaleObservations(t *testing.T) {
@@ -56,6 +58,25 @@ func TestRelayMonitorRegistryRejectsUnboundedReports(t *testing.T) {
 	report.Snapshot.QueueDepth = -1
 
 	err := registry.Accept(report, time.Now())
+	if err != ErrRelayMonitorInvalidReport {
+		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
+	}
+
+	report = validRelayMonitorReport()
+	report.Diagnostics = &RelayMonitorDiagnostics{RecentEvents: make([]RelayMonitorDiagnosticEvent, maxRelayMonitorDiagnosticEvents+1)}
+	err = registry.Accept(report, time.Now())
+	if err != ErrRelayMonitorInvalidReport {
+		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
+	}
+
+	report = validRelayMonitorReport()
+	report.Diagnostics = &RelayMonitorDiagnostics{TotalEvents: 1, RecentEvents: []RelayMonitorDiagnosticEvent{{
+		Timestamp:  time.Now(),
+		Event:      observability.EventRouteSelected,
+		Level:      observability.LevelInfo,
+		ReasonCode: "unbounded_reason",
+	}}}
+	err = registry.Accept(report, time.Now())
 	if err != ErrRelayMonitorInvalidReport {
 		t.Fatalf("error = %v, want %v", err, ErrRelayMonitorInvalidReport)
 	}

@@ -31,11 +31,12 @@ type RelayMonitorConfig struct {
 }
 
 type relayMonitorReporter struct {
-	config             RelayMonitorConfig
-	provider           admin.SnapshotProvider
-	bootstrapProvider  admin.BootstrapBeaconProvider
-	federationProvider relayMonitorFederationProvider
-	client             *http.Client
+	config              RelayMonitorConfig
+	provider            admin.SnapshotProvider
+	bootstrapProvider   admin.BootstrapBeaconProvider
+	federationProvider  relayMonitorFederationProvider
+	diagnosticsProvider admin.DiagnosticsSnapshotProvider
+	client              *http.Client
 }
 
 type relayMonitorFederationProvider interface {
@@ -43,7 +44,7 @@ type relayMonitorFederationProvider interface {
 	FederationCarrier() *admin.RelayMonitorFederationCarrier
 }
 
-func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotProvider, bootstrapProvider admin.BootstrapBeaconProvider, federationProvider relayMonitorFederationProvider) (*relayMonitorReporter, error) {
+func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotProvider, bootstrapProvider admin.BootstrapBeaconProvider, federationProvider relayMonitorFederationProvider, diagnosticsProvider admin.DiagnosticsSnapshotProvider) (*relayMonitorReporter, error) {
 	if !config.enabled() {
 		return nil, nil
 	}
@@ -64,10 +65,11 @@ func newRelayMonitorReporter(config RelayMonitorConfig, provider admin.SnapshotP
 		config.Interval = minRelayMonitorInterval
 	}
 	return &relayMonitorReporter{
-		config:             config,
-		provider:           provider,
-		bootstrapProvider:  bootstrapProvider,
-		federationProvider: federationProvider,
+		config:              config,
+		provider:            provider,
+		bootstrapProvider:   bootstrapProvider,
+		federationProvider:  federationProvider,
+		diagnosticsProvider: diagnosticsProvider,
 		client: &http.Client{
 			Timeout: relayMonitorPostTimeout,
 		},
@@ -105,6 +107,7 @@ func (reporter *relayMonitorReporter) reportOnce(ctx context.Context) {
 		BootstrapBeacon:   reporter.bootstrapBeacon(),
 		Federation:        reporter.federationLinks(),
 		FederationCarrier: reporter.federationCarrier(),
+		Diagnostics:       reporter.diagnostics(),
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
@@ -128,6 +131,32 @@ func (reporter *relayMonitorReporter) reportOnce(ctx context.Context) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1024))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		slog.Warn("relay.monitor.report.failed", "reason", "unexpected_status", "status", response.StatusCode)
+	}
+}
+
+func (reporter *relayMonitorReporter) diagnostics() *admin.RelayMonitorDiagnostics {
+	if reporter.diagnosticsProvider == nil {
+		return nil
+	}
+	snapshot := reporter.diagnosticsProvider.DiagnosticsSnapshot()
+	start := len(snapshot.RecentEvents) - 16
+	if start < 0 {
+		start = 0
+	}
+	events := make([]admin.RelayMonitorDiagnosticEvent, 0, len(snapshot.RecentEvents)-start)
+	for _, event := range snapshot.RecentEvents[start:] {
+		events = append(events, admin.RelayMonitorDiagnosticEvent{
+			Timestamp:      event.Timestamp.UTC(),
+			DurationMillis: event.DurationMillis,
+			Event:          event.Event,
+			Level:          event.Level,
+			ReasonCode:     event.ReasonCode,
+		})
+	}
+	return &admin.RelayMonitorDiagnostics{
+		TotalEvents:   snapshot.TotalEvents,
+		DroppedEvents: snapshot.DroppedEvents,
+		RecentEvents:  events,
 	}
 }
 

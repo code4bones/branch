@@ -213,6 +213,7 @@ Optional variables:
 | `BRANCH_RELAY01_ADMIN_HOST_PORT`, `BRANCH_RELAY02_ADMIN_HOST_PORT` | `18081` / `18082` | Loopback admin ports used by deploy checks. |
 | `BRANCH_RELAY01_WSS_ORIGIN_PATTERNS`, `BRANCH_RELAY02_WSS_ORIGIN_PATTERNS` | `BRANCH_WSS_ORIGIN_PATTERNS` | Per-relay browser Origin host allowlist override. |
 | `BRANCH_RELAY_FEDERATION_GITHUB_ENABLED` | `false` | Enables bounded signed BootstrapBeacon carrier discovery for every deployed relay; it does not configure relay peer addresses. |
+| `BRANCH_OBSERVABILITY_MODE` or `BRANCH_RELAY0X_OBSERVABILITY_MODE` | `operator` | `operator` emits redacted structured federation lifecycle logs and exposes a protected bounded diagnostic ring. Use `off` only when local relay diagnostics are intentionally disabled. |
 | `BRANCH_RELAY04_GOARCH`, `BRANCH_RELAY05_GOARCH` | `amd64` | Use `arm64` for ARM builder/runtime hosts. |
 | `BRANCH_RELAY04_PROXY_BIND`, `BRANCH_RELAY05_PROXY_BIND` | `0.0.0.0` | Host bind address for the nginx container port. |
 | `BRANCH_RELAY04_PROXY_PORT`, `BRANCH_RELAY05_PROXY_PORT` | `8092` / `8093` | Host port NPM forwards to. |
@@ -222,7 +223,7 @@ Optional variables:
 | `BRANCH_RELAY01_MONITOR_PUSH_TOKEN`, `BRANCH_RELAY02_MONITOR_PUSH_TOKEN` | `BRANCH_MONITOR_PUSH_TOKEN` | Per-relay monitor token override. |
 | `BRANCH_RELAY01_MONITOR_RELAY_ID`, `BRANCH_RELAY02_MONITOR_RELAY_ID` | `relay01` / `relay02` | Per-relay monitor id override. |
 | `BRANCH_RELAY01_MONITOR_PUBLIC_ENDPOINT`, `BRANCH_RELAY02_MONITOR_PUBLIC_ENDPOINT` | relay public endpoint | Per-relay monitor endpoint override. |
-| `BRANCH_RELAY01_MONITOR_INTERVAL`, `BRANCH_RELAY02_MONITOR_INTERVAL` | `30s` | Per-relay monitor push interval. Minimum enforced by the node is `5s`. |
+| `BRANCH_RELAY01_MONITOR_INTERVAL`, `BRANCH_RELAY02_MONITOR_INTERVAL` | `30s` | Per-relay monitor push interval. Use `5s` during an active investigation; minimum enforced by the node is `5s`. |
 | `BRANCH_RELAY04_MONITOR_*`, `BRANCH_RELAY05_MONITOR_*` | shared monitor values | Same per-relay monitor override pattern as relay01 and relay02. |
 | `BRANCH_DEPLOY_BASE` | `/opt/branch/relays` with sudo, `$HOME/branch/relays` without sudo | Runtime compose directory base on the deploy runner. |
 | `BRANCH_DOCKER_PRUNE_UNTIL` | `24h` | Manual cleanup age filter. |

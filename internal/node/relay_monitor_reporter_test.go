@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/code4bones/branch/internal/admin"
+	"github.com/code4bones/branch/internal/observability"
 	protocol "github.com/code4bones/branch/protocol/v0"
 )
 
 func TestRelayMonitorReporterDisabledWhenUnconfigured(t *testing.T) {
-	reporter, err := newRelayMonitorReporter(RelayMonitorConfig{}, staticNodeStatusProvider{}, nil, nil)
+	reporter, err := newRelayMonitorReporter(RelayMonitorConfig{}, staticNodeStatusProvider{}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("reporter error = %v", err)
 	}
@@ -24,7 +25,7 @@ func TestRelayMonitorReporterDisabledWhenUnconfigured(t *testing.T) {
 }
 
 func TestRelayMonitorReporterRejectsPartialConfig(t *testing.T) {
-	_, err := newRelayMonitorReporter(RelayMonitorConfig{RelayID: "relay01"}, staticNodeStatusProvider{}, nil, nil)
+	_, err := newRelayMonitorReporter(RelayMonitorConfig{RelayID: "relay01"}, staticNodeStatusProvider{}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected partial config error")
 	}
@@ -67,7 +68,12 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 		State:        "configured",
 		LookupCount:  0,
 		BridgeCount:  0,
-	}}})
+	}}}, staticNodeDiagnosticsProvider{snapshot: observability.Snapshot{TotalEvents: 2, RecentEvents: []observability.EventSummary{{
+		Timestamp:      time.Date(2026, 9, 11, 15, 0, 0, 0, time.UTC),
+		DurationMillis: 42,
+		Event:          observability.EventRouteSelected,
+		Level:          observability.LevelInfo,
+	}}}})
 	if err != nil {
 		t.Fatalf("reporter error = %v", err)
 	}
@@ -91,8 +97,32 @@ func TestRelayMonitorReporterPostsBoundedSnapshot(t *testing.T) {
 		if len(report.Federation) != 1 || report.Federation[0].PeerEndpoint != "peer-1" {
 			t.Fatalf("unexpected federation links: %+v", report.Federation)
 		}
+		if report.Diagnostics == nil || len(report.Diagnostics.RecentEvents) != 1 || report.Diagnostics.RecentEvents[0].DurationMillis != 42 {
+			t.Fatalf("unexpected diagnostics: %+v", report.Diagnostics)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("report not posted")
+	}
+}
+
+func TestRelayMonitorReporterRetainsOnlyNewestSixteenDiagnosticEvents(t *testing.T) {
+	events := make([]observability.EventSummary, 17)
+	for index := range events {
+		events[index] = observability.EventSummary{
+			Timestamp: time.Date(2026, 9, 11, 15, 0, index, 0, time.UTC),
+			Event:     observability.EventRouteSelected,
+			Level:     observability.LevelInfo,
+		}
+	}
+	reporter := &relayMonitorReporter{diagnosticsProvider: staticNodeDiagnosticsProvider{snapshot: observability.Snapshot{
+		TotalEvents:   17,
+		DroppedEvents: 1,
+		RecentEvents:  events,
+	}}}
+
+	diagnostics := reporter.diagnostics()
+	if diagnostics == nil || len(diagnostics.RecentEvents) != 16 || diagnostics.RecentEvents[0].Timestamp.Second() != 1 || diagnostics.DroppedEvents != 1 {
+		t.Fatalf("unexpected bounded diagnostics: %+v", diagnostics)
 	}
 }
 
@@ -116,6 +146,7 @@ func TestNewComposesRelayMonitorReporter(t *testing.T) {
 	if app.monitor == nil {
 		t.Fatal("expected monitor reporter")
 	}
+	t.Cleanup(app.closeObservability)
 	if app.monitor.config.Interval != defaultRelayMonitorInterval {
 		t.Fatalf("interval = %s, want %s", app.monitor.config.Interval, defaultRelayMonitorInterval)
 	}
@@ -123,6 +154,14 @@ func TestNewComposesRelayMonitorReporter(t *testing.T) {
 
 type staticNodeStatusProvider struct {
 	snapshot admin.StatusSnapshot
+}
+
+type staticNodeDiagnosticsProvider struct {
+	snapshot observability.Snapshot
+}
+
+func (provider staticNodeDiagnosticsProvider) DiagnosticsSnapshot() observability.Snapshot {
+	return provider.snapshot
 }
 
 func (provider staticNodeStatusProvider) Snapshot() admin.StatusSnapshot {

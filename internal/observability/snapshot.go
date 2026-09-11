@@ -26,6 +26,7 @@ type Snapshot struct {
 // EventSummary is a redacted recent-event projection for admin diagnostics.
 type EventSummary struct {
 	Timestamp       time.Time               `json:"timestamp"`
+	DurationMillis  uint64                  `json:"duration_ms,omitempty"`
 	Event           EventName               `json:"event"`
 	Level           Level                   `json:"level"`
 	ProtocolVersion string                  `json:"protocol_version,omitempty"`
@@ -131,9 +132,15 @@ func (recorder *Recorder) Snapshot() Snapshot {
 	}
 }
 
+// DiagnosticsSnapshot satisfies the protected admin diagnostics provider.
+func (recorder *Recorder) DiagnosticsSnapshot() Snapshot {
+	return recorder.Snapshot()
+}
+
 func summarizeEnvelope(envelope Envelope) EventSummary {
 	return EventSummary{
 		Timestamp:       envelope.Timestamp.UTC(),
+		DurationMillis:  envelope.DurationMillis,
 		Event:           envelope.Event,
 		Level:           envelope.Level,
 		ProtocolVersion: sanitizeValue(envelope.ProtocolVersion),

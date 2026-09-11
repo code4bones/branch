@@ -38,6 +38,7 @@ type DiscoveredPeerRouterConfig struct {
 	MaxFrameBytes  int64
 	DialTimeout    time.Duration
 	WriteTimeout   time.Duration
+	Observer       FederationObserver
 }
 
 // DiscoveredPeerRouter derives up to eight ephemeral WSS candidates from one
@@ -47,6 +48,7 @@ type DiscoveredPeerRouter struct {
 	identity FederationIdentity
 	base     *StaticPeerRouter
 	now      func() time.Time
+	observer FederationObserver
 
 	backoffMu       sync.Mutex
 	backoff         map[string]time.Time
@@ -91,6 +93,7 @@ func NewDiscoveredPeerRouter(config DiscoveredPeerRouterConfig) (*DiscoveredPeer
 		identity: config.Identity,
 		base:     base,
 		now:      now,
+		observer: federationObserverOrNoop(config.Observer),
 		backoff:  make(map[string]time.Time, maxFederationPeers),
 	}, nil
 }
@@ -102,8 +105,10 @@ func (*DiscoveredPeerRouter) ID() string { return "relay_discovery" }
 // from client hints or carrier metadata.
 func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, peerID relay.PeerID, hints []FederationRouteHint, now time.Time) (relay.FederatedForwarder, bool) {
 	_ = hints
+	lookupStarted := router.now()
 	localBeacon, candidates := router.discover(ctx, now)
 	if localBeacon == "" {
+		router.observe(ctx, FederationRouteUnavailable, "carrier_unavailable", router.now().Sub(lookupStarted))
 		return nil, false
 	}
 	for _, candidate := range candidates {
@@ -111,22 +116,27 @@ func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, pee
 			return nil, false
 		}
 		if router.backoffActive(candidate.identityKey, now) {
+			router.observe(ctx, FederationCandidateRejected, "relay_backoff", 0)
 			continue
 		}
+		candidateStarted := router.now()
 		client, err := router.dial(ctx, candidate, localBeacon)
 		if err != nil {
 			router.recordCandidateObservation(candidate, "unreachable", "discovered_dial_failed", 0, now)
 			router.recordBackoff(candidate, now)
+			router.observe(ctx, FederationCandidateRejected, federationFailureReason(err), router.now().Sub(candidateStarted))
 			continue
 		}
 		err = client.lookup(ctx, peerID)
 		client.close()
 		if err != nil {
 			router.recordLookupFailure(candidate, err, now)
+			router.observe(ctx, FederationCandidateRejected, federationFailureReason(err), router.now().Sub(candidateStarted))
 			continue
 		}
 		router.clearBackoff(candidate.identityKey)
 		router.recordCandidateObservation(candidate, "reachable", "discovered_lookup_ok", 1, now)
+		router.observe(ctx, FederationRouteSelected, "success", router.now().Sub(lookupStarted))
 		return &federatedWSSForwarder{
 			router:         router.base,
 			endpoint:       candidate.endpoint,
@@ -135,8 +145,10 @@ func (router *DiscoveredPeerRouter) LookupFederatedPeer(ctx context.Context, pee
 			dial: func(callCtx context.Context, forwarded federationCandidate) (*federationClient, error) {
 				return router.dial(callCtx, forwarded, localBeacon)
 			},
+			observer: router.observer,
 		}, true
 	}
+	router.observe(ctx, FederationRouteUnavailable, "no_candidate", router.now().Sub(lookupStarted))
 	return nil, false
 }
 
@@ -220,9 +232,12 @@ func (router *DiscoveredPeerRouter) FederationCarrierSnapshot() *FederationCarri
 }
 
 func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time) (string, []federationCandidate) {
+	started := router.now()
+	router.observe(ctx, FederationCarrierLookupStarted, "", 0)
 	observations, err := router.source.LookupBootstrapBeacons(ctx)
 	if err != nil {
 		router.recordCarrierObservation("unavailable", carrierLookupFailureReason(err), 0, now)
+		router.observe(ctx, FederationCarrierLookupFailed, federationFailureReason(err), router.now().Sub(started))
 		return "", nil
 	}
 	localKey := router.identity.PublicKey()
@@ -296,7 +311,34 @@ func (router *DiscoveredPeerRouter) discover(ctx context.Context, now time.Time)
 		carrierState, carrierReason = "unavailable", "no_valid_candidates"
 	}
 	router.recordCarrierObservation(carrierState, carrierReason, len(candidates), now)
+	if carrierState == "ready" {
+		router.observe(ctx, FederationCarrierLookupCompleted, "success", router.now().Sub(started))
+	} else {
+		router.observe(ctx, FederationCarrierLookupFailed, "carrier_unavailable", router.now().Sub(started))
+	}
 	return localBeacon, candidates
+}
+
+func federationObserverOrNoop(observer FederationObserver) FederationObserver {
+	if observer == nil {
+		return noopFederationObserver{}
+	}
+	return observer
+}
+
+func (router *DiscoveredPeerRouter) observe(ctx context.Context, kind FederationObservationKind, reason string, duration time.Duration) {
+	router.observer.ObserveFederation(ctx, FederationObservation{Kind: kind, Reason: reason, Duration: duration})
+}
+
+func federationFailureReason(err error) string {
+	switch {
+	case errors.Is(err, relay.ErrPeerUnavailable):
+		return "peer_unavailable"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	default:
+		return "relay_unavailable"
+	}
 }
 
 func (router *DiscoveredPeerRouter) recordCarrierObservation(state string, reason string, candidateCount int, now time.Time) {

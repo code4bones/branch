@@ -364,6 +364,7 @@ type federatedWSSForwarder struct {
 	client         *federationClient
 	routeID        relay.RouteID
 	closed         bool
+	observer       FederationObserver
 }
 
 func (forwarder *federatedWSSForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte, senderPeerID relay.PeerID) error {
@@ -400,6 +401,7 @@ func (forwarder *federatedWSSForwarder) liveClientLocked(ctx context.Context, ro
 		}
 		return forwarder.client, nil
 	}
+	started := time.Now()
 	dial := forwarder.dial
 	if dial == nil {
 		dial = forwarder.router.dial
@@ -410,6 +412,7 @@ func (forwarder *federatedWSSForwarder) liveClientLocked(ctx context.Context, ro
 		profileMultihash: protocol.DevelopmentProfileMultihash,
 	})
 	if err != nil {
+		forwarder.observe(ctx, FederationBridgeFailed, federationFailureReason(err), time.Since(started))
 		return nil, err
 	}
 	lookup := client.writeLookup
@@ -418,16 +421,23 @@ func (forwarder *federatedWSSForwarder) liveClientLocked(ctx context.Context, ro
 	}
 	if err := lookup(ctx, forwarder.peerID); err != nil {
 		client.close()
+		forwarder.observe(ctx, FederationBridgeFailed, federationFailureReason(err), time.Since(started))
 		return nil, err
 	}
 	if err := client.writeRendezvous(ctx, routeID, forwarder.peerID); err != nil {
 		client.close()
+		forwarder.observe(ctx, FederationBridgeFailed, federationFailureReason(err), time.Since(started))
 		return nil, err
 	}
 	client.startReadLoop(forwarder.router.localHub, routeID)
 	forwarder.client = client
 	forwarder.routeID = routeID
+	forwarder.observe(ctx, FederationBridgeEstablished, "success", time.Since(started))
 	return client, nil
+}
+
+func (forwarder *federatedWSSForwarder) observe(ctx context.Context, kind FederationObservationKind, reason string, duration time.Duration) {
+	federationObserverOrNoop(forwarder.observer).ObserveFederation(ctx, FederationObservation{Kind: kind, Reason: reason, Duration: duration})
 }
 
 func (forwarder *federatedWSSForwarder) closeLocked() {

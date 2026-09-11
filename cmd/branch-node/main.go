@@ -14,10 +14,12 @@ import (
 	"time"
 
 	"github.com/code4bones/branch/internal/node"
+	"github.com/code4bones/branch/internal/observability"
 	"github.com/code4bones/branch/internal/relay/wss"
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	config, err := parseConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config rejected: %v\n", err)
@@ -76,6 +78,11 @@ func parseConfig() (node.Config, error) {
 		return node.Config{}, err
 	}
 	flag.BoolVar(&githubFederationDiscovery, "federation-github-enabled", githubFederationDiscovery, "enable on-demand signed BootstrapBeacon federation discovery; defaults to BRANCH_FEDERATION_GITHUB_ENABLED")
+	observabilityMode := string(config.ObservabilityMode)
+	if raw := strings.TrimSpace(os.Getenv("BRANCH_OBSERVABILITY_MODE")); raw != "" {
+		observabilityMode = raw
+	}
+	flag.StringVar(&observabilityMode, "observability-mode", observabilityMode, "off, operator, development, or diagnostic; defaults to BRANCH_OBSERVABILITY_MODE")
 	monitorInterval, err := envDuration("BRANCH_MONITOR_INTERVAL")
 	if err != nil {
 		return node.Config{}, err
@@ -89,6 +96,10 @@ func parseConfig() (node.Config, error) {
 	}
 	config.GitHubIdentityLookup = githubIdentityLookup
 	config.GitHubFederationDiscovery = githubFederationDiscovery
+	config.ObservabilityMode = observability.Mode(observabilityMode)
+	if !observability.KnownMode(config.ObservabilityMode) {
+		return node.Config{}, fmt.Errorf("invalid observability mode %q", observabilityMode)
+	}
 	return config, nil
 }
 

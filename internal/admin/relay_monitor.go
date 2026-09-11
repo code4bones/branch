@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/code4bones/branch/internal/observability"
 	protocol "github.com/code4bones/branch/protocol/v0"
 )
 
@@ -19,14 +20,16 @@ const (
 	DefaultRelayMonitorStaleAfter = 90 * time.Second
 	DefaultRelayMonitorMaxEntries = 64
 
-	maxRelayMonitorIDLength       = 64
-	maxRelayMonitorEndpointLength = 512
-	maxRelayMonitorServiceLength  = 96
-	maxRelayMonitorVersionLength  = 96
-	maxRelayMonitorItems          = 16
-	maxRelayMonitorItemLength     = 96
-	maxRelayMonitorCounter        = 1_000_000_000
-	maxRelayMonitorWrapperLength  = 8192
+	maxRelayMonitorIDLength         = 64
+	maxRelayMonitorEndpointLength   = 512
+	maxRelayMonitorServiceLength    = 96
+	maxRelayMonitorVersionLength    = 96
+	maxRelayMonitorItems            = 16
+	maxRelayMonitorItemLength       = 96
+	maxRelayMonitorCounter          = 1_000_000_000
+	maxRelayMonitorWrapperLength    = 8192
+	maxRelayMonitorDiagnosticEvents = 16
+	maxRelayMonitorDurationMillis   = 120_000
 )
 
 var (
@@ -53,6 +56,7 @@ type RelayMonitorReport struct {
 	BootstrapBeacon   *RelayMonitorBootstrapBeacon   `json:"bootstrap_beacon,omitempty"`
 	Federation        []RelayMonitorFederationLink   `json:"federation,omitempty"`
 	FederationCarrier *RelayMonitorFederationCarrier `json:"federation_carrier,omitempty"`
+	Diagnostics       *RelayMonitorDiagnostics       `json:"diagnostics,omitempty"`
 }
 
 // RelayMonitorObservation is the MASTER-side operator view of one relay report.
@@ -67,6 +71,26 @@ type RelayMonitorObservation struct {
 	BootstrapBeacon   *RelayMonitorBootstrapBeacon   `json:"bootstrap_beacon,omitempty"`
 	Federation        []RelayMonitorFederationLink   `json:"federation,omitempty"`
 	FederationCarrier *RelayMonitorFederationCarrier `json:"federation_carrier,omitempty"`
+	Diagnostics       *RelayMonitorDiagnostics       `json:"diagnostics,omitempty"`
+}
+
+// RelayMonitorDiagnostics is a bounded redacted recent-event slice. It is
+// optional beta monitoring metadata, never a relay input or durable log store.
+type RelayMonitorDiagnostics struct {
+	TotalEvents   uint64                        `json:"total_events"`
+	DroppedEvents uint64                        `json:"dropped_events"`
+	RecentEvents  []RelayMonitorDiagnosticEvent `json:"recent_events,omitempty"`
+}
+
+// RelayMonitorDiagnosticEvent intentionally has no attributes or correlation
+// fields, so a centralized beta view cannot acquire route, peer, endpoint,
+// session, identity, payload, or secret data.
+type RelayMonitorDiagnosticEvent struct {
+	Timestamp      time.Time                `json:"timestamp"`
+	DurationMillis uint64                   `json:"duration_ms,omitempty"`
+	Event          observability.EventName  `json:"event"`
+	Level          observability.Level      `json:"level"`
+	ReasonCode     observability.ReasonCode `json:"reason_code,omitempty"`
 }
 
 // RelayMonitorBootstrapBeacon is a public, relay-owned signed carrier record
@@ -159,6 +183,7 @@ func (registry *RelayMonitorRegistry) Accept(report RelayMonitorReport, now time
 		BootstrapBeacon:   cloneRelayMonitorBootstrapBeacon(report.BootstrapBeacon),
 		Federation:        cloneRelayMonitorFederationLinks(report.Federation),
 		FederationCarrier: cloneRelayMonitorFederationCarrier(report.FederationCarrier),
+		Diagnostics:       cloneRelayMonitorDiagnostics(report.Diagnostics),
 	}
 	return nil
 }
@@ -216,6 +241,9 @@ func validateRelayMonitorReport(report RelayMonitorReport) error {
 	if report.FederationCarrier != nil && !validRelayMonitorFederationCarrier(*report.FederationCarrier) {
 		return ErrRelayMonitorInvalidReport
 	}
+	if report.Diagnostics != nil && !validRelayMonitorDiagnostics(*report.Diagnostics) {
+		return ErrRelayMonitorInvalidReport
+	}
 	for _, counter := range []int{
 		report.Snapshot.SessionsActive,
 		report.Snapshot.RoutesActive,
@@ -227,6 +255,42 @@ func validateRelayMonitorReport(report RelayMonitorReport) error {
 		}
 	}
 	return nil
+}
+
+func validRelayMonitorDiagnostics(diagnostics RelayMonitorDiagnostics) bool {
+	if diagnostics.TotalEvents > uint64(maxRelayMonitorCounter) || diagnostics.TotalEvents < uint64(len(diagnostics.RecentEvents)) || diagnostics.DroppedEvents > diagnostics.TotalEvents || len(diagnostics.RecentEvents) > maxRelayMonitorDiagnosticEvents {
+		return false
+	}
+	var previous time.Time
+	for _, event := range diagnostics.RecentEvents {
+		if event.Timestamp.IsZero() || event.DurationMillis > maxRelayMonitorDurationMillis || !observability.KnownEvent(event.Event) || !observability.KnownLevel(event.Level) {
+			return false
+		}
+		if !previous.IsZero() && event.Timestamp.Before(previous) {
+			return false
+		}
+		previous = event.Timestamp
+		if event.ReasonCode != "" && !observability.KnownReason(event.ReasonCode) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneRelayMonitorDiagnostics(diagnostics *RelayMonitorDiagnostics) *RelayMonitorDiagnostics {
+	if diagnostics == nil {
+		return nil
+	}
+	cloned := &RelayMonitorDiagnostics{
+		TotalEvents:   diagnostics.TotalEvents,
+		DroppedEvents: diagnostics.DroppedEvents,
+		RecentEvents:  make([]RelayMonitorDiagnosticEvent, len(diagnostics.RecentEvents)),
+	}
+	copy(cloned.RecentEvents, diagnostics.RecentEvents)
+	for index := range cloned.RecentEvents {
+		cloned.RecentEvents[index].Timestamp = cloned.RecentEvents[index].Timestamp.UTC()
+	}
+	return cloned
 }
 
 func validRelayMonitorBootstrapBeacon(beacon RelayMonitorBootstrapBeacon) bool {

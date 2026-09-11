@@ -34,6 +34,9 @@ func (sink *SlogSink) Emit(ctx context.Context, envelope Envelope) error {
 		slog.String("event", string(envelope.Event)),
 		slog.String("level", string(envelope.Level)),
 	}
+	if envelope.DurationMillis > 0 {
+		attrs = append(attrs, slog.Uint64("duration_ms", envelope.DurationMillis))
+	}
 	appendStringAttr := func(key, value string) {
 		if value != "" {
 			attrs = append(attrs, slog.String(key, sanitizeValue(value)))

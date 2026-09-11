@@ -122,6 +122,7 @@ type Attribute struct {
 
 type Envelope struct {
 	Timestamp             time.Time
+	DurationMillis        uint64
 	Event                 EventName
 	Level                 Level
 	ServiceName           string
@@ -189,6 +190,18 @@ func WithService(name, version, instanceID, environment, nodeRole string) Option
 func WithProtocolVersion(protocolVersion string) Option {
 	return func(envelope *Envelope) error {
 		envelope.ProtocolVersion = sanitizeValue(protocolVersion)
+		return nil
+	}
+}
+
+// WithDuration records elapsed work time rounded down to milliseconds. It is
+// safe operator metadata, not a trace or a correlation identifier.
+func WithDuration(duration time.Duration) Option {
+	return func(envelope *Envelope) error {
+		if duration < 0 {
+			return ErrInvalidEvent
+		}
+		envelope.DurationMillis = uint64(duration / time.Millisecond)
 		return nil
 	}
 }
@@ -286,6 +299,16 @@ func KnownEvent(event EventName) bool {
 func KnownLevel(level Level) bool {
 	switch level {
 	case LevelDebug, LevelInfo, LevelWarn, LevelError:
+		return true
+	default:
+		return false
+	}
+}
+
+// KnownMode reports whether a configured observability mode is supported.
+func KnownMode(mode Mode) bool {
+	switch mode {
+	case ModeOff, ModeOperator, ModeDevelopment, ModeDiagnostic:
 		return true
 	default:
 		return false

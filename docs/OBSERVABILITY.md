@@ -71,6 +71,9 @@ The reference slog sink accepts only validated observability envelopes. Off mode
 is a no-op. Operator logs omit trace, span, session, service-instance, peer,
 address, and identity correlation fields by default; development-only
 correlation belongs to a separate trace adapter or explicit diagnostic session.
+Elapsed duration in milliseconds is permitted for a redacted lifecycle event;
+it is not a trace identifier and must not be paired with a peer, route,
+endpoint, session, identity, or payload reference.
 
 Exporter adapters sit behind a bounded asynchronous sink. Full queues and
 exporter errors are counted and dropped locally instead of blocking or failing
@@ -340,9 +343,11 @@ versions, advertised aggregate capabilities, aggregate counters such as active
 sessions, routes, presence, and queue depth, and an optional public signed
 relay-owned `bootstrap.beacon` wrapper with its expiry for operator publication
 tooling. A report may additionally carry one short-lived bounded carrier lookup
-summary: a fixed carrier label, safe reason code, timestamp, freshness, and
-candidate count. This summary is operator-only and must not contain carrier
-response data, repository names, URLs, endpoint URLs, relay keys, or identity
+summary and at most sixteen redacted recent lifecycle events. Each centralized
+event is limited to timestamp, stable event name, severity, controlled reason,
+and elapsed milliseconds; attributes and correlation fields are excluded. This
+summary is operator-only and must not contain carrier response data, repository
+names, URLs, endpoint URLs, relay keys, or identity
 material. Reports must not include message bodies, files, private keys, raw key
 exports, capability tokens, admin tokens, GitLab or GitHub tokens, cookies,
 mailbox state, repository contents, IP addresses, peer identifiers, session
