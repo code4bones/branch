@@ -25,6 +25,9 @@ type contactTarget struct {
 	conn      *connection
 }
 
+// contactRequestWindow maps a request ID to the relay-observed arrival time.
+// Client expiry bounds the probe's usefulness, but must not let a requester
+// shorten the relay's rolling anti-enumeration window.
 type contactRequestWindow struct{ entries map[string]time.Time }
 
 func newContactDiscovery() contactDiscovery {
@@ -56,20 +59,25 @@ func (state *contactDiscovery) removeLocked(sessionID relay.SessionID) {
 }
 
 // reserve returns a target exactly once only when requester replay/rate and
-// target probe limits are live-valid. All state expires with the connection.
-func (state *contactDiscovery) reserve(requester relay.SessionID, requestID, branchID string, now, expiresAt time.Time) (contactTarget, bool) {
+// target probe limits are live-valid. Requester accounting is based solely on
+// relay-observed arrival time; all state expires with the connection.
+func (state *contactDiscovery) reserve(requester relay.SessionID, requestID, branchID string, now time.Time, _ time.Time) (contactTarget, bool) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	window := state.lookups[requester]
 	if window.entries == nil {
 		window.entries = make(map[string]time.Time, 4)
 	}
-	for id, expiry := range window.entries {
-		if !expiry.After(now) {
+	cutoff := now.Add(-contactDiscoveryWindow)
+	for id, observedAt := range window.entries {
+		if !observedAt.After(cutoff) {
 			delete(window.entries, id)
 		}
 	}
-	if len(window.entries) >= 4 || window.entries[requestID].After(now) {
+	if len(window.entries) >= 4 {
+		return contactTarget{}, false
+	}
+	if _, duplicate := window.entries[requestID]; duplicate {
 		return contactTarget{}, false
 	}
 	target, ok := state.byBranch[branchID]
@@ -77,10 +85,10 @@ func (state *contactDiscovery) reserve(requester relay.SessionID, requestID, bra
 		return contactTarget{}, false
 	}
 	probes := state.probes[target.sessionID]
-	cutoff := now.Add(-contactDiscoveryWindow)
+	probeCutoff := now.Add(-contactDiscoveryWindow)
 	kept := probes[:0]
 	for _, at := range probes {
-		if at.After(cutoff) {
+		if at.After(probeCutoff) {
 			kept = append(kept, at)
 		}
 	}
@@ -88,7 +96,7 @@ func (state *contactDiscovery) reserve(requester relay.SessionID, requestID, bra
 		state.probes[target.sessionID] = kept
 		return contactTarget{}, false
 	}
-	window.entries[requestID] = expiresAt
+	window.entries[requestID] = now
 	state.lookups[requester] = window
 	state.probes[target.sessionID] = append(kept, now)
 	return target, true

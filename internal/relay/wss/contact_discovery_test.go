@@ -1,6 +1,7 @@
 package wss
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -41,5 +42,47 @@ func TestContactDiscoveryBoundsTargetProbeWindow(t *testing.T) {
 	}
 	if _, ok := state.reserve("fifth", "fifth", "br1.exact", now, now.Add(time.Minute)); ok {
 		t.Fatal("fifth target probe accepted")
+	}
+}
+
+func TestContactDiscoveryRequesterWindowUsesRelayObservedArrival(t *testing.T) {
+	state := newContactDiscovery()
+	now := time.Unix(1_700_000_000, 0)
+	for index := 0; index < 6; index++ {
+		state.announce(relay.SessionID(fmt.Sprintf("target-%d", index)), fmt.Sprintf("br1.target-%d", index), "target-peer", &connection{}, true)
+	}
+
+	shortExpiry := now.Add(time.Millisecond)
+	for index := 0; index < 4; index++ {
+		if _, ok := state.reserve("requester", fmt.Sprintf("request-%d", index), fmt.Sprintf("br1.target-%d", index), now, shortExpiry); !ok {
+			t.Fatalf("accepted lookup %d rejected", index)
+		}
+	}
+	if _, ok := state.reserve("requester", "short-ttl-bypass", "br1.target-4", now.Add(2*time.Millisecond), now.Add(3*time.Millisecond)); ok {
+		t.Fatal("short client TTL bypassed relay-observed requester window")
+	}
+	if _, ok := state.reserve("requester", "window-boundary", "br1.target-5", now.Add(contactDiscoveryWindow), now.Add(contactDiscoveryWindow+time.Millisecond)); !ok {
+		t.Fatal("relay-observed requester window did not expire at its 60-second boundary")
+	}
+}
+
+func TestContactDiscoveryRequesterDuplicateAndSessionCleanup(t *testing.T) {
+	state := newContactDiscovery()
+	now := time.Unix(1_700_000_000, 0)
+	requester := relay.SessionID("requester")
+	state.announce("target", "br1.exact", "target-peer", &connection{}, true)
+
+	if _, ok := state.reserve(requester, "request-one", "br1.exact", now, now.Add(time.Millisecond)); !ok {
+		t.Fatal("initial lookup rejected")
+	}
+	if _, ok := state.reserve(requester, "request-one", "br1.exact", now.Add(time.Second), now.Add(2*time.Second)); ok {
+		t.Fatal("duplicate request was accepted after its client TTL but inside relay window")
+	}
+	state.remove(requester)
+	if _, retained := state.lookups[requester]; retained {
+		t.Fatal("requester lookup window survived session cleanup")
+	}
+	if _, ok := state.reserve(requester, "request-one", "br1.exact", now.Add(time.Second), now.Add(2*time.Second)); !ok {
+		t.Fatal("session cleanup retained duplicate request state")
 	}
 }
