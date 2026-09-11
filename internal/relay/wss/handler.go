@@ -43,16 +43,17 @@ var (
 
 // Config defines explicit adapter bounds and dependencies.
 type Config struct {
-	Hub              *relay.Hub
-	Identity         *identity.NodeIdentity
-	IdentityContacts *discovery.IdentityContactCache
-	PeerRouter       PeerRouter
-	Random           io.Reader
-	Now              func() time.Time
-	OriginPatterns   []string
-	MaxFrameBytes    int64
-	HandshakeTimeout time.Duration
-	WriteTimeout     time.Duration
+	Hub                *relay.Hub
+	Identity           *identity.NodeIdentity
+	IdentityContacts   *discovery.IdentityContactCache
+	PeerRouter         PeerRouter
+	Random             io.Reader
+	Now                func() time.Time
+	OriginPatterns     []string
+	MaxFrameBytes      int64
+	HandshakeTimeout   time.Duration
+	WriteTimeout       time.Duration
+	FederationObserver FederationObserver
 }
 
 // PeerRouter locates a live remote relay path for one peer lookup. It is an
@@ -82,6 +83,7 @@ type Handler struct {
 	maxFrameBytes      int64
 	handshakeTimeout   time.Duration
 	writeTimeout       time.Duration
+	federationObserver FederationObserver
 	federationRequests federationRequestWindow
 	contactDiscovery   contactDiscovery
 }
@@ -121,6 +123,7 @@ func NewHandler(config Config) (*Handler, error) {
 		maxFrameBytes:      config.MaxFrameBytes,
 		handshakeTimeout:   config.HandshakeTimeout,
 		writeTimeout:       config.WriteTimeout,
+		federationObserver: federationObserverOrNoop(config.FederationObserver),
 		federationRequests: federationRequestWindow{entries: make(map[federationRequestKey]time.Time, maxFederationRequestEntries)},
 		contactDiscovery:   newContactDiscovery(),
 	}, nil
@@ -400,6 +403,7 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 				return err
 			}
 			if federationAttachment {
+				handler.observeFederation(ctx, FederationRendezvousRejected, "peer_unavailable")
 				return relay.ErrPeerUnavailable
 			}
 			if federatedErr := handler.announceFederatedPeer(ctx, peerID, hints, now); federatedErr != nil {
@@ -416,6 +420,9 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 		}
 		err = session.SendDelivery(ctx, routeID, raw, delivery, handler.now())
 		if err != nil && !errors.Is(err, relay.ErrDuplicateDelivery) {
+			if federationAttachment {
+				handler.observeFederation(ctx, FederationInboundForwardFailed, federationFailureReason(err))
+			}
 			return err
 		}
 		if ackRequested, _ := frame["ack_requested"].(bool); ackRequested {
@@ -425,6 +432,10 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	default:
 		return nil
 	}
+}
+
+func (handler *Handler) observeFederation(ctx context.Context, kind FederationObservationKind, reason string) {
+	handler.federationObserver.ObserveFederation(ctx, FederationObservation{Kind: kind, Reason: reason})
 }
 
 func offerHasExtension(offer map[string]any, extension string) bool {

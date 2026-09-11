@@ -145,14 +145,15 @@ func New(config Config) (*App, error) {
 		return nil, fmt.Errorf("create identity contact lookup: %w", err)
 	}
 	relayHandler, err := wss.NewHandler(wss.Config{
-		Hub:              hub,
-		Identity:         nodeIdentity,
-		IdentityContacts: identityContactCache,
-		PeerRouter:       forwardingPeerRouter,
-		OriginPatterns:   config.WSSOrigins,
-		MaxFrameBytes:    int64(config.Relay.MaxFrameBytes),
-		HandshakeTimeout: 10 * time.Second,
-		WriteTimeout:     5 * time.Second,
+		Hub:                hub,
+		Identity:           nodeIdentity,
+		IdentityContacts:   identityContactCache,
+		PeerRouter:         forwardingPeerRouter,
+		OriginPatterns:     config.WSSOrigins,
+		MaxFrameBytes:      int64(config.Relay.MaxFrameBytes),
+		HandshakeTimeout:   10 * time.Second,
+		WriteTimeout:       5 * time.Second,
+		FederationObserver: federationObserver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create wss relay handler: %w", err)

@@ -21,8 +21,13 @@ const (
 	// FederationForwardFailed is emitted only when an already-established
 	// bridge cannot obtain the remote relay.forwarded outcome. Successful
 	// ordinary ENVELOPE forwarding remains intentionally unobserved.
-	FederationForwardFailed    FederationObservationKind = "forward_failed"
-	FederationRouteUnavailable FederationObservationKind = "route_unavailable"
+	FederationForwardFailed FederationObservationKind = "forward_failed"
+	// FederationRendezvousRejected and FederationInboundForwardFailed are
+	// emitted only by the receiving relay when a federated live attachment
+	// cannot create its transient route or deliver one opaque frame.
+	FederationRendezvousRejected   FederationObservationKind = "rendezvous_rejected"
+	FederationInboundForwardFailed FederationObservationKind = "inbound_forward_failed"
+	FederationRouteUnavailable     FederationObservationKind = "route_unavailable"
 )
 
 // FederationObservation is an optional diagnostic signal emitted after a

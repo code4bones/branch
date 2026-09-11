@@ -570,6 +570,35 @@ func TestStaticPeerRouterFederatesThroughRemoteWSS(t *testing.T) {
 	}
 }
 
+func TestHandlerObservesFederatedRendezvousRejection(t *testing.T) {
+	hub, rawHandler := newTestHubAndHandler(t)
+	handler := rawHandler.(*Handler)
+	observer := &testFederationObserver{}
+	handler.federationObserver = observer
+
+	session := attachBridgeSession(t, hub, testB64x32)
+	raw, err := json.Marshal(map[string]any{
+		"type":       "RENDEZVOUS",
+		"session_id": testB64x32,
+		"route_id":   testB64x16,
+		"peer_id":    testPeerID,
+		"sequence":   1,
+	})
+	if err != nil {
+		t.Fatalf("marshal rendezvous: %v", err)
+	}
+	err = handler.handleFrame(context.Background(), nil, session, testB64x32, relay.PeerID(testAlicePeerID), true, false, &sequenceTracker{}, raw)
+	if !errors.Is(err, relay.ErrPeerUnavailable) {
+		t.Fatalf("rendezvous error = %v, want peer unavailable", err)
+	}
+	if len(observer.observations) != 1 {
+		t.Fatalf("observations = %+v", observer.observations)
+	}
+	if observation := observer.observations[0]; observation.Kind != FederationRendezvousRejected || observation.Reason != "peer_unavailable" {
+		t.Fatalf("unexpected observation: %+v", observation)
+	}
+}
+
 func TestHandlerRejectsClientRouteHintsBeforeFederationDial(t *testing.T) {
 	rightHub, rightIdentity, rightHandler := newTestHubIdentityAndHandler(t)
 	rightServer := httptest.NewServer(rightHandler)
@@ -1338,6 +1367,14 @@ type testFederationForwarder struct {
 	target     *relay.Session
 	targetPeer relay.PeerID
 	now        time.Time
+}
+
+type testFederationObserver struct {
+	observations []FederationObservation
+}
+
+func (observer *testFederationObserver) ObserveFederation(_ context.Context, observation FederationObservation) {
+	observer.observations = append(observer.observations, observation)
 }
 
 func (forwarder testFederationForwarder) Forward(ctx context.Context, routeID relay.RouteID, payload []byte, _ relay.PeerID) error {

@@ -45,9 +45,15 @@ func TestFederationObservabilityClassifiesCarrierAndHandshakeTimeouts(t *testing
 }
 
 func TestFederationObservabilityMapsForwardFailureToRouteFailure(t *testing.T) {
-	event, level, result := federationEvent(wss.FederationForwardFailed)
-	if event != observability.EventRouteMigrationFailed || level != observability.LevelWarn || result != "unavailable" {
-		t.Fatalf("forward failure mapping = %q %q %q", event, level, result)
+	for _, kind := range []wss.FederationObservationKind{
+		wss.FederationForwardFailed,
+		wss.FederationRendezvousRejected,
+		wss.FederationInboundForwardFailed,
+	} {
+		event, level, result := federationEvent(kind)
+		if event != observability.EventRouteMigrationFailed || level != observability.LevelWarn || result != "unavailable" {
+			t.Fatalf("%s mapping = %q %q %q", kind, event, level, result)
+		}
 	}
 }
 
