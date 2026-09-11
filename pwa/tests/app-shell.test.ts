@@ -315,7 +315,7 @@ void test("relay attach and message sealing keep canonical protocol state out of
   assert.match(relaySession, /hasAttachedRelaySession/);
   assert.match(relaySession, /client !== null && client\.routeId !== null/);
   assert.match(relaySession, /maxTrackedDeliveries = 64/);
-  assert.match(relaySession, /relayAcknowledgementTimeoutMs = 12_000/);
+  assert.match(relaySession, /relayAcknowledgementTimeoutMs = 30_000/);
   assert.match(relaySession, /setLiveForwardedAckListener/);
   assert.match(relaySession, /notifyLiveForwardedAck/);
   assert.match(relaySession, /liveForwardedAckListener = null/);

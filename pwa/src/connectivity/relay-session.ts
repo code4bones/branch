@@ -17,7 +17,12 @@ const incomingDeliveryIds = new DeliveryDedupWindow();
 let liveForwardedAckListener: ((deliveryId: string) => void) | null = null;
 
 const maxTrackedDeliveries = 64;
-const relayAcknowledgementTimeoutMs = 12_000;
+// A first route through independent relays can include one bounded carrier
+// pass and a transient federation attachment before relay.forwarded returns.
+// This remains a foreground, client-only wait; it is not a relay queue or a
+// delivery promise. Attachment transfer deliberately keeps its own stricter
+// per-chunk timer.
+export const relayAcknowledgementTimeoutMs = 30_000;
 export const bestEffortEnvelopeTimeoutMs = 8_000;
 
 interface PendingEnvelopeClient {
