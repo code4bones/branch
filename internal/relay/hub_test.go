@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"testing"
 	"time"
@@ -263,6 +264,54 @@ func TestHubRendezvousIsIdempotentOnlyForSameLiveBinding(t *testing.T) {
 	}
 	if err := charlie.Rendezvous("route-recovery", "bob-peer", now); !errors.Is(err, ErrRouteExists) {
 		t.Fatalf("different session reused route id: %v", err)
+	}
+}
+
+func TestHubDeliveryDeduplicationRejectsDuplicatesAndConflictsAcrossOverlappingRoutes(t *testing.T) {
+	now := time.Now().UTC()
+	hub := newTestHub(t, Config{
+		MaxSessions:                2,
+		MaxQueueDepth:              2,
+		MaxFrameBytes:              16,
+		MaxFramesPerSession:        4,
+		MaxBytesPerSession:         64,
+		MaxReplayEntriesPerSession: 2,
+		PresenceTTL:                time.Second,
+	})
+	alice := attach(t, hub, "alice")
+	bob := attach(t, hub, "bob")
+	if err := alice.AnnouncePresence("alice-peer", now); err != nil {
+		t.Fatalf("announce alice presence: %v", err)
+	}
+	if err := hub.Pair("route-old", alice.ID(), bob.ID()); err != nil {
+		t.Fatalf("pair old route: %v", err)
+	}
+	if err := hub.Pair("route-new", alice.ID(), bob.ID()); err != nil {
+		t.Fatalf("pair new route: %v", err)
+	}
+
+	payload := []byte("opaque")
+	delivery := Delivery{StreamID: 7, ID: "delivery-1", Digest: sha256.Sum256(payload)}
+	if err := alice.SendDelivery(context.Background(), "route-old", payload, delivery, now); err != nil {
+		t.Fatalf("first delivery: %v", err)
+	}
+	if got := receive(t, bob); got.RouteID != "route-old" || string(got.Payload) != string(payload) {
+		t.Fatalf("first delivery frame = %+v", got)
+	}
+
+	if err := alice.SendDelivery(context.Background(), "route-new", payload, delivery, now); !errors.Is(err, ErrDuplicateDelivery) {
+		t.Fatalf("duplicate over overlapping route error = %v", err)
+	}
+	conflictingPayload := []byte("changed")
+	conflict := delivery
+	conflict.Digest = sha256.Sum256(conflictingPayload)
+	if err := alice.SendDelivery(context.Background(), "route-new", conflictingPayload, conflict, now); !errors.Is(err, ErrDeliveryConflict) {
+		t.Fatalf("conflicting delivery over overlapping route error = %v", err)
+	}
+
+	snapshot := hub.Snapshot()
+	if snapshot.ForwardedFrames != 1 || snapshot.ForwardedBytes != uint64(len(payload)) || snapshot.QueueDepth != 0 {
+		t.Fatalf("duplicate or conflict changed live forwarding state: %+v", snapshot)
 	}
 }
 
