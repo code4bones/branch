@@ -260,7 +260,7 @@ async function run(runtime: OutboxRuntime): Promise<void> {
         messageId: due.messageId,
         contactId: due.contactId,
         deliveryId,
-        createdAt: due.createdAt
+        createdAt: Date.now()
       });
       await sealAndSendApplicationTextMessage({
         senderPeerId: state.identity.peerId,

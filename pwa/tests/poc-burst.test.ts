@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
+import { traceCategory } from "../src/app/PocDebugPanel.js";
 import { maximumPocBurstMessages, PocBurstRunner, type PocBurstTimerPort } from "../src/app/poc-burst.js";
 
 void test("PoC burst is explicitly bounded, sequential, and has no hidden retry path", () => {
@@ -42,6 +43,17 @@ void test("chat exposes the floating PoC panel while compact CSS keeps it out of
   assert.match(chat, /sendPocBurstMessage/);
   assert.match(css, /\.pwa-poc-debug \{[\s\S]*position: absolute/);
   assert.match(css, /@media \(max-width: 767px\) \{[\s\S]*\.pwa-poc-debug \{ display: none; \}/);
+});
+
+void test("PoC trace categories keep semantic diagnostics visible without raw frame noise", () => {
+  assert.equal(traceCategory("outbound frame: ENVELOPE"), "frames");
+  assert.equal(traceCategory("incoming envelope: opened"), "frames");
+  assert.equal(traceCategory("incoming envelope: message"), "messages");
+  assert.equal(traceCategory("incoming envelope: presence_pong"), "presence");
+  assert.equal(traceCategory("delivery receipt: read_matched"), "receipts");
+  assert.equal(traceCategory("outbox: retry_sent"), "outbox");
+  assert.equal(traceCategory("application capabilities: accepted"), "controls");
+  assert.equal(traceCategory("relay notice: peer unavailable"), "transport");
 });
 
 class Timers implements PocBurstTimerPort {

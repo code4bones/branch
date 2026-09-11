@@ -4,6 +4,8 @@
 // from different modules is a real way to deadlock IndexedDB upgrades.
 
 const DATABASE_NAME = "branch-pwa";
+// v16 retains a bounded retry window of outer delivery IDs per local message,
+// so a late signed receipt can still resolve the stable message after retry.
 // v15 adds one bounded, user-owned view of already verified public relay
 // bootstrap material. It contains no messages, peers, routes-in-use, or
 // attachment state; the normal live attachment challenge is still required.
@@ -18,7 +20,7 @@ const DATABASE_NAME = "branch-pwa";
 // v11 adds bounded device-local deletion tombstones. They prevent an older
 // asynchronous message write from reviving a locally deleted bubble; neither
 // they nor the deletion action ever leave this browser's DB.
-const DATABASE_VERSION = 15;
+const DATABASE_VERSION = 16;
 
 export const IDENTITY_STORE = "identity";
 export const CONTACTS_STORE = "contacts";
@@ -50,7 +52,7 @@ export const RELAY_BOOTSTRAP_VIEW_STORE = "relayBootstrapView";
 export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       if (!db.objectStoreNames.contains(IDENTITY_STORE)) {
         db.createObjectStore(IDENTITY_STORE);
@@ -99,9 +101,26 @@ export function openDatabase(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(MESSAGE_DELIVERY_TARGETS_STORE)) {
         const deliveryTargets = db.createObjectStore(MESSAGE_DELIVERY_TARGETS_STORE, { keyPath: "messageId" });
-        deliveryTargets.createIndex("byDeliveryId", "deliveryId");
+        deliveryTargets.createIndex("byDeliveryId", "deliveryIds", { multiEntry: true });
         deliveryTargets.createIndex("byContactId", "contactId");
         deliveryTargets.createIndex("byCreatedAt", "createdAt");
+      } else {
+        const deliveryTargets = request.transaction?.objectStore(MESSAGE_DELIVERY_TARGETS_STORE);
+        if (deliveryTargets !== undefined && event.oldVersion < 16) {
+          if (deliveryTargets.indexNames.contains("byDeliveryId")) deliveryTargets.deleteIndex("byDeliveryId");
+          deliveryTargets.createIndex("byDeliveryId", "deliveryIds", { multiEntry: true });
+          const cursorRequest = deliveryTargets.openCursor();
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (cursor === null) return;
+            const value = cursor.value as { deliveryId?: unknown; deliveryIds?: unknown };
+            const deliveryIds = Array.isArray(value.deliveryIds)
+              ? value.deliveryIds.filter((candidate): candidate is string => typeof candidate === "string")
+              : typeof value.deliveryId === "string" ? [value.deliveryId] : [];
+            cursor.update({ ...value, deliveryIds });
+            cursor.continue();
+          };
+        }
       }
       if (!db.objectStoreNames.contains(LOCALLY_DELETED_MESSAGES_STORE)) {
         const tombstones = db.createObjectStore(LOCALLY_DELETED_MESSAGES_STORE, { keyPath: "messageId" });

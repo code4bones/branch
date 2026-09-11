@@ -626,20 +626,23 @@ async function handleIncomingEnvelope(
       knownContactId
     });
     if (receipt.handled) {
-      state.recordTransportTrace(`delivery receipt: ${receipt.outcome ?? "rejected"}`);
       if (receipt.outcome === "accepted" && receipt.receipt !== undefined && knownContactId !== null) {
         // A retry seals the same application message into a fresh live
-        // delivery id. Resolve the local outbox by that latest outer id while
-        // retaining compatibility with pre-outbox messages where both IDs are
-        // identical.
+        // delivery id. The bounded device-local target window retains prior
+        // outer IDs while their signed controls can still arrive.
         const outboxEntry = state.outbox.find((entry) => (
           entry.contactId === knownContactId && entry.lastDeliveryId === receipt.receipt?.targetDeliveryId
         ));
         const storedTarget = outboxEntry === undefined
           ? await findStoredMessageDeliveryTarget(knownContactId, receipt.receipt.targetDeliveryId)
           : null;
-        const messageId = outboxEntry?.messageId ?? storedTarget?.messageId ?? receipt.receipt.targetDeliveryId;
+        const messageId = outboxEntry?.messageId ?? storedTarget?.messageId;
+        if (messageId === undefined) {
+          state.recordTransportTrace(`delivery receipt: ${receipt.receipt.kind}_unmatched`);
+          return true;
+        }
         state.setMessageDeliveryState(knownContactId, messageId, receipt.receipt.kind);
+        state.recordTransportTrace(`delivery receipt: ${receipt.receipt.kind}_matched`);
         if (receipt.receipt.kind === "delivered") {
           // Keep only the bounded device-local outer-id correlation: a later
           // signed Read targets the same outer delivery after this Delivered
@@ -651,6 +654,8 @@ async function handleIncomingEnvelope(
             void deleteStoredMessageDeliveryTarget(messageId).catch(() => {});
           }
         }
+      } else {
+        state.recordTransportTrace(`delivery receipt: ${receipt.outcome ?? "rejected"}`);
       }
       return true;
     }

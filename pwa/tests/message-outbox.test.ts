@@ -14,6 +14,7 @@ import {
   restartMessageOutboxDrainAfterPresencePong
 } from "../src/connectivity/message-outbox-runtime.js";
 import { maxStoredOutboxEntries } from "../src/storage/message-outbox-store.js";
+import { maxDeliveryTargetsPerMessage, rememberedDeliveryIds } from "../src/storage/message-delivery-target-store.js";
 import { maxStoredReceivedApplicationMessages } from "../src/storage/received-application-messages-store.js";
 import { createAppStore } from "../src/state/store.js";
 
@@ -122,4 +123,48 @@ void test("Delivered retains local outer-delivery correlation until Read settles
 
   store.getState().settleOutboxMessage("message-1");
   assert.deepEqual(store.getState().outbox, []);
+});
+
+void test("a late Read for a prior retry delivery resolves and settles the stable local message", () => {
+  const messageId = "message-1";
+  const firstDeliveryId = "outer-delivery-1";
+  const latestDeliveryId = "outer-delivery-2";
+  const deliveryIds = rememberedDeliveryIds([firstDeliveryId], latestDeliveryId);
+  assert.deepEqual(deliveryIds, [latestDeliveryId, firstDeliveryId]);
+
+  const store = createAppStore();
+  store.getState().appendMessage({
+    messageId,
+    contactId: "contact-1",
+    direction: "outgoing",
+    body: "burst message",
+    sentAt: 1,
+    deliveryState: "delivered"
+  });
+  store.getState().hydrateOutbox([{
+    messageId,
+    contactId: "contact-1",
+    applicationMessageId: "application-1",
+    createdAt: 1,
+    nextAttemptAt: 2,
+    attempts: 2,
+    lastDeliveryId: latestDeliveryId,
+    deliveredAt: 2
+  }]);
+
+  // `findStoredMessageDeliveryTarget(contactId, firstDeliveryId)` returns
+  // this stable entry even though the outbox now names the retry delivery.
+  assert.ok(deliveryIds.includes(firstDeliveryId));
+  store.getState().setMessageDeliveryState("contact-1", messageId, "read");
+  store.getState().settleOutboxMessage(messageId);
+  assert.equal(store.getState().messagesByContactId["contact-1"]?.[0]?.deliveryState, "read");
+  assert.deepEqual(store.getState().outbox, []);
+});
+
+void test("receipt target history is deduplicated and has an explicit per-message bound", () => {
+  const history = Array.from({ length: maxDeliveryTargetsPerMessage + 2 }, (_, index) => `delivery-${String(index)}`)
+    .reduce<readonly string[]>((previous, deliveryId) => rememberedDeliveryIds(previous, deliveryId), []);
+  assert.equal(history.length, maxDeliveryTargetsPerMessage);
+  assert.deepEqual(history, Array.from({ length: maxDeliveryTargetsPerMessage }, (_, index) => `delivery-${String(index + 2)}`).reverse());
+  assert.deepEqual(rememberedDeliveryIds(history, "delivery-5").filter((id) => id === "delivery-5"), ["delivery-5"]);
 });

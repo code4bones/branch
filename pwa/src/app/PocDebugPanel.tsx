@@ -1,11 +1,27 @@
 import { BugOutlined, ReloadOutlined, StopOutlined, ThunderboltOutlined } from "@ant-design/icons";
-import { Button, Select, Tag, Tooltip } from "antd";
+import { Button, Checkbox, Select, Tag, Tooltip } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { browserPocBurstTimers, PocBurstRunner, type PocBurstProgress } from "./poc-burst.js";
+import { useAppStore } from "../state/StoreProvider.js";
 import type { TransportTraceEntry } from "../state/slices/transport-slice.js";
 
 const burstOptions = [4, 8, 16] as const;
+
+const traceCategories = ["messages", "presence", "receipts", "outbox", "controls", "transport", "frames"] as const;
+type TraceCategory = (typeof traceCategories)[number];
+
+const defaultTraceCategories: TraceCategory[] = ["messages", "presence", "receipts", "outbox", "controls", "transport"];
+
+const traceCategoryOptions: { label: string; value: TraceCategory }[] = [
+  { label: "Messages", value: "messages" },
+  { label: "Presence", value: "presence" },
+  { label: "Receipts", value: "receipts" },
+  { label: "Outbox", value: "outbox" },
+  { label: "Controls", value: "controls" },
+  { label: "Transport", value: "transport" },
+  { label: "Frames", value: "frames" }
+];
 
 export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEndpoint, attachStatus, queuedCount, transportTrace, onBurstMessage, onRendezvous }: {
   readonly contactId: string;
@@ -21,6 +37,10 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const runner = useMemo(() => new PocBurstRunner(browserPocBurstTimers), []);
   const [burstCount, setBurstCount] = useState<(typeof burstOptions)[number]>(8);
   const [progress, setProgress] = useState<PocBurstProgress>({ sent: 0, total: 0, running: false });
+  const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(defaultTraceCategories);
+  const localOutbox = useAppStore((state) => state.outbox.filter((entry) => entry.contactId === contactId));
+  const awaitingDeliveryCount = localOutbox.filter((entry) => entry.deliveredAt === null).length;
+  const deliveredAwaitingReadCount = localOutbox.length - awaitingDeliveryCount;
 
   useEffect(() => {
     runner.stop();
@@ -35,7 +55,10 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   };
 
   const stopBurst = (): void => { runner.stop(); };
-  const recentTrace = transportTrace.slice(-8).reverse();
+  const recentTrace = transportTrace
+    .filter((entry) => selectedTraceCategories.includes(traceCategory(entry.detail)))
+    .slice(-12)
+    .reverse();
 
   return (
     <aside aria-label="PoC debug panel" className="pwa-poc-debug">
@@ -44,7 +67,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
         <div><dt>Chat</dt><dd>{contactName}</dd></div>
         <div><dt>Relay</dt><dd><Tag color={attachStatus === "attached" ? "cyan" : "default"}>{attachStatus}</Tag></dd></div>
         <div><dt>Attached</dt><dd title={attachedRelayEndpoint ?? undefined}>{attachedRelayEndpoint ?? "none"}</dd></div>
-        <div><dt>Outbox</dt><dd>{String(queuedCount)} queued</dd></div>
+        <div><dt>Outbox</dt><dd>{String(queuedCount)} total · {String(awaitingDeliveryCount)} delivery · {String(deliveredAwaitingReadCount)} read</dd></div>
       </dl>
       <div className="pwa-poc-debug-actions">
         <Select
@@ -65,6 +88,12 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
         <span className="pwa-poc-debug-progress">{progress.total === 0 ? "Ready" : `${String(progress.sent)}/${String(progress.total)} ${progress.running ? "queueing" : "queued"}`}</span>
       </div>
       <p className="pwa-poc-debug-note">Burst is local pacing into the normal outbox; it creates no special relay traffic or retry policy.</p>
+      <Checkbox.Group
+        aria-label="Trace categories"
+        onChange={(values) => { setSelectedTraceCategories(values.filter(isTraceCategory)); }}
+        options={traceCategoryOptions}
+        value={selectedTraceCategories}
+      />
       <ol aria-label="Recent local relay trace" className="pwa-poc-debug-trace">
         {recentTrace.length === 0 ? <li>No local events yet.</li> : recentTrace.map((entry) => (
           <li key={`${String(entry.at)}-${entry.detail}`}><time>{formatTime(entry.at)}</time> {entry.detail}</li>
@@ -72,6 +101,20 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       </ol>
     </aside>
   );
+}
+
+export function traceCategory(detail: string): TraceCategory {
+  if (detail.startsWith("outbound frame:") || detail === "incoming envelope: received" || detail === "incoming envelope: opened") return "frames";
+  if (detail.startsWith("delivery receipt:")) return "receipts";
+  if (detail.startsWith("outbox:")) return "outbox";
+  if (detail.includes("presence_") || detail.startsWith("typing control:")) return "presence";
+  if (detail === "incoming envelope: message" || detail === "incoming envelope: duplicate message") return "messages";
+  if (detail.startsWith("application capabilities:") || detail.startsWith("image capabilities:") || detail.startsWith("rtc ") || detail.startsWith("attachment:") || detail.startsWith("contact probe:")) return "controls";
+  return "transport";
+}
+
+function isTraceCategory(value: unknown): value is TraceCategory {
+  return typeof value === "string" && (traceCategories as readonly string[]).includes(value);
 }
 
 function formatTime(at: number): string {

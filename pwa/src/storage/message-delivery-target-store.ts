@@ -1,37 +1,53 @@
 import { MESSAGE_DELIVERY_TARGETS_STORE, openDatabase } from "./database.js";
 
 export const maxStoredMessageDeliveryTargets = 128;
+// Read controls expire after five minutes. Retaining the most recent bounded
+// retry window per visible message lets a late control resolve its stable
+// local message without turning device storage into a delivery ledger.
+export const maxDeliveryTargetsPerMessage = 8;
 
 // The outer delivery id is transport metadata. Keeping it outside MessageSummary
 // prevents it from becoming portable conversation content or an E2EE payload.
 export interface StoredMessageDeliveryTarget {
   readonly messageId: string;
   readonly contactId: string;
+  readonly deliveryIds: readonly string[];
+  readonly createdAt: number;
+}
+
+export interface NewMessageDeliveryTarget {
+  readonly messageId: string;
+  readonly contactId: string;
   readonly deliveryId: string;
   readonly createdAt: number;
 }
 
-export async function saveStoredMessageDeliveryTarget(entry: StoredMessageDeliveryTarget): Promise<void> {
+export async function saveStoredMessageDeliveryTarget(entry: NewMessageDeliveryTarget): Promise<void> {
   const db = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(MESSAGE_DELIVERY_TARGETS_STORE, "readwrite");
       const store = transaction.objectStore(MESSAGE_DELIVERY_TARGETS_STORE);
-      store.put(entry);
-      let retained = 0;
-      const cursorRequest = store.index("byCreatedAt").openCursor();
-      cursorRequest.onsuccess = () => {
-        const cursor = cursorRequest.result;
-        if (cursor === null) return;
-        retained += 1;
-        if (retained > maxStoredMessageDeliveryTargets) cursor.delete();
-        cursor.continue();
+      const previousRequest = store.get(entry.messageId);
+      previousRequest.onsuccess = () => {
+        const previous = previousRequest.result as StoredMessageDeliveryTarget | undefined;
+        store.put({
+          messageId: entry.messageId,
+          contactId: entry.contactId,
+          deliveryIds: rememberedDeliveryIds(previous?.deliveryIds ?? [], entry.deliveryId),
+          createdAt: entry.createdAt
+        } satisfies StoredMessageDeliveryTarget);
+        trimStoredTargets(store);
       };
-      cursorRequest.onerror = () => { reject(cursorRequest.error ?? new Error("failed to trim receipt targets")); };
+      previousRequest.onerror = () => { reject(previousRequest.error ?? new Error("failed to read receipt target")); };
       transaction.oncomplete = () => { resolve(); };
       transaction.onerror = () => { reject(transaction.error ?? new Error("failed to write receipt target")); };
     });
   } finally { db.close(); }
+}
+
+export function rememberedDeliveryIds(previous: readonly string[], next: string): readonly string[] {
+  return [next, ...previous.filter((candidate) => candidate !== next)].slice(0, maxDeliveryTargetsPerMessage);
 }
 
 export async function findStoredMessageDeliveryTarget(contactId: string, deliveryId: string): Promise<StoredMessageDeliveryTarget | null> {
@@ -82,4 +98,16 @@ function transact(db: IDBDatabase, action: (store: IDBObjectStore) => void): Pro
     transaction.oncomplete = () => { resolve(); };
     transaction.onerror = () => { reject(transaction.error ?? new Error("failed to write receipt target")); };
   });
+}
+
+function trimStoredTargets(store: IDBObjectStore): void {
+  let retained = 0;
+  const cursorRequest = store.index("byCreatedAt").openCursor();
+  cursorRequest.onsuccess = () => {
+    const cursor = cursorRequest.result;
+    if (cursor === null) return;
+    retained += 1;
+    if (retained > maxStoredMessageDeliveryTargets) cursor.delete();
+    cursor.continue();
+  };
 }
