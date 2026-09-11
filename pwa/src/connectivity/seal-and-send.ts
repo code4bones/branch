@@ -13,9 +13,6 @@ import { encodeBetaPwaMessagePayload, encodeBetaPwaPresencePing, encodeBetaPwaPr
 import { armBestEffortPendingAbandonment, clearDelivery, getRelaySessionClient, trackDelivery } from "./relay-session.js";
 import { sendLiveRTCData } from "./rtc-data-runtime.js";
 
-const liveRouteIDs = new WeakMap<object, Map<string, string>>();
-const maxLiveRoutesPerAttachment = 64;
-
 export interface SealAndSendOptions {
   readonly deliveryId?: string;
   readonly senderPeerId: string;
@@ -162,11 +159,10 @@ async function sealAndSendPayload(options: SealPayloadOptions): Promise<void> {
     aad,
     expectedCiphertextBytes
   });
-  // READY.route_id is an E2EE origin nonce, not a relay lookup key. Each
-  // reachable contact receives one distinct, tab-volatile lookup route so
-  // concurrent conversations cannot overwrite one another's live binding.
-  const routeId = liveRouteID(client, options.recipientPeerId);
-  client.rendezvous(options.recipientPeerId, { routeId });
+  // The core allocates an attachment-local lookup route per recipient. Keeping
+  // that map next to the READY lifecycle prevents a reconnect from reusing a
+  // stale route and keeps the READY route ID exclusively in E2EE AAD.
+  const routeId = client.rendezvous(options.recipientPeerId);
   let sentFallback = false;
   const sendWSS = (): Promise<void> => {
     if (sentFallback) return Promise.resolve();
@@ -198,24 +194,6 @@ async function sealAndSendPayload(options: SealPayloadOptions): Promise<void> {
     clearDelivery(options.deliveryId);
     throw cause;
   }
-}
-
-function liveRouteID(client: object, peerId: string): string {
-  let routes = liveRouteIDs.get(client);
-  if (routes === undefined) {
-    routes = new Map<string, string>();
-    liveRouteIDs.set(client, routes);
-  }
-  const existing = routes.get(peerId);
-  if (existing !== undefined) {
-    return existing;
-  }
-  if (routes.size >= maxLiveRoutesPerAttachment) {
-    throw new Error("live contact route limit reached");
-  }
-  const routeId = createDeliveryID();
-  routes.set(peerId, routeId);
-  return routeId;
 }
 
 export function createDeliveryID(

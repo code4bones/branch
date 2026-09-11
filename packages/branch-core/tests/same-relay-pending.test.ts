@@ -137,6 +137,78 @@ void test("distinct peers use distinct live lookup routes while retaining the RE
   );
 });
 
+void test("core allocates target lookup routes without reusing the READY AAD nonce", () => {
+  const client = clientWithPending([]);
+  const sent: string[] = [];
+  const internals = client as unknown as {
+    ready: { sessionId: string; routeId: string; presenceTtlSeconds: number; heartbeatIntervalSeconds: number };
+    socket: { readonly readyState: number; send(frame: string): void };
+  };
+  const originRouteId = routeToken(30);
+  internals.ready = { sessionId: token(31), routeId: originRouteId, presenceTtlSeconds: 30, heartbeatIntervalSeconds: 10 };
+  internals.socket = { readyState: 1, send: (frame) => { sent.push(frame); } };
+  const firstPeer = token(32);
+  const secondPeer = token(33);
+
+  const firstRouteId = client.rendezvous(firstPeer);
+  const secondRouteId = client.rendezvous(secondPeer);
+
+  assert.notEqual(firstRouteId, originRouteId);
+  assert.notEqual(secondRouteId, originRouteId);
+  assert.notEqual(firstRouteId, secondRouteId);
+  assert.throws(() => client.rendezvous(secondPeer, { routeId: firstRouteId }), /peer already has a different relay lookup route/);
+  assert.throws(() => client.rendezvous(token(36), { routeId: firstRouteId }), /already bound to another peer/);
+  assert.throws(() => client.sendSealedEnvelope("AA", { deliveryId: routeToken(34) }), /explicit relay lookup route is required for multiple peers/);
+
+  client.sendSealedEnvelope("AA", { deliveryId: routeToken(35), routeId: secondRouteId });
+  const envelope = JSON.parse(sent.at(-1) ?? "{}") as Record<string, unknown>;
+  assert.equal(envelope.type, "ENVELOPE");
+  assert.equal(envelope.route_id, secondRouteId);
+  assert.equal(envelope.origin_route_id, originRouteId);
+});
+
+void test("single-peer compatibility selects the sole live lookup route, never READY", () => {
+  const client = clientWithPending([]);
+  const sent: string[] = [];
+  const internals = client as unknown as {
+    ready: { sessionId: string; routeId: string; presenceTtlSeconds: number; heartbeatIntervalSeconds: number };
+    socket: { readonly readyState: number; send(frame: string): void };
+  };
+  const originRouteId = routeToken(40);
+  internals.ready = { sessionId: token(41), routeId: originRouteId, presenceTtlSeconds: 30, heartbeatIntervalSeconds: 10 };
+  internals.socket = { readyState: 1, send: (frame) => { sent.push(frame); } };
+
+  const lookupRouteId = client.rendezvous(token(42));
+  client.sendSealedEnvelope("AA", { deliveryId: routeToken(43) });
+
+  const envelope = JSON.parse(sent.at(-1) ?? "{}") as Record<string, unknown>;
+  assert.notEqual(lookupRouteId, originRouteId);
+  assert.equal(envelope.route_id, lookupRouteId);
+  assert.equal(envelope.origin_route_id, originRouteId);
+  assert.throws(() => client.rendezvous(token(44), { routeId: originRouteId }), /READY route id cannot be used/);
+  assert.throws(() => client.sendSealedEnvelope("AA", { deliveryId: routeToken(45), routeId: originRouteId }), /READY route id cannot be used/);
+});
+
+void test("a relay close forgets target lookup bindings before a fresh attachment", () => {
+  const client = clientWithPending([]);
+  const internals = client as unknown as {
+    ready: { sessionId: string; routeId: string; presenceTtlSeconds: number; heartbeatIntervalSeconds: number };
+    socket: { readonly readyState: number; send(frame: string): void };
+    handleSocketClose(event: Event): void;
+  };
+  const firstOriginRouteId = routeToken(50);
+  const lookupRouteId = routeToken(51);
+  internals.ready = { sessionId: token(52), routeId: firstOriginRouteId, presenceTtlSeconds: 30, heartbeatIntervalSeconds: 10 };
+  internals.socket = { readyState: 1, send: () => undefined };
+  client.rendezvous(token(53), { routeId: lookupRouteId });
+
+  internals.handleSocketClose(new Event("close"));
+  internals.ready = { sessionId: token(54), routeId: routeToken(55), presenceTtlSeconds: 30, heartbeatIntervalSeconds: 10 };
+  internals.socket = { readyState: 1, send: () => undefined };
+
+  assert.doesNotThrow(() => client.rendezvous(token(56), { routeId: lookupRouteId }));
+});
+
 function clientWithPending(pendingEnvelopes: readonly SameRelayPendingEnvelope[], maxPendingEnvelopes?: number): SameRelayTransportClient {
   return new SameRelayTransportClient({
     route: {

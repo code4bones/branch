@@ -25,6 +25,15 @@ export function resolveLocalReplyPreview(replyToMessageId: string, messages: rea
   return { kind: "missing" };
 }
 
+/**
+ * Opens only the endpoint-owned Blob projection retained by the local image
+ * store. Reply previews never turn a message reference into a network fetch.
+ */
+export async function loadLocalReplyImagePreview(reply: ReplyPreview): Promise<string | null> {
+  if (reply.kind !== "image" || reply.objectUrl !== null || reply.loadObjectUrl === undefined) return null;
+  return reply.loadObjectUrl();
+}
+
 export function compactReplyText(value: string): string {
   const normalized = value.replaceAll(/\s+/g, " ").trim();
   return normalized.length <= maximumReplyTextCharacters ? normalized : `${normalized.slice(0, maximumReplyTextCharacters - 1)}…`;

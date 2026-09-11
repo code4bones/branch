@@ -5,7 +5,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 
 import { InlineImageMessageBubble } from "./image-message.js";
 import type { LocalImageMessageProjection } from "./image-message.js";
-import { resolveLocalReplyPreview, type ReplyPreview as ReplyPreviewModel } from "./reply-presentation.js";
+import { loadLocalReplyImagePreview, resolveLocalReplyPreview, type ReplyPreview as ReplyPreviewModel } from "./reply-presentation.js";
 import type { MessageDeliveryState, MessageSummary } from "../state/slices/conversations-slice.js";
 
 const bottomThresholdPx = 48;
@@ -350,7 +350,7 @@ function ReplyPreview({ onJump, reply }: { readonly onJump?: () => void; readonl
     }
     let disposed = false;
     let createdUrl: string | null = null;
-    void reply.loadObjectUrl().then((url) => {
+    void loadLocalReplyImagePreview(reply).then((url) => {
       if (disposed) {
         if (url !== null) URL.revokeObjectURL(url);
         return;

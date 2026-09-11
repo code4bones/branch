@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { compactReplyText, resolveLocalReplyPreview } from "../src/app/reply-presentation.js";
+import { compactReplyText, loadLocalReplyImagePreview, resolveLocalReplyPreview } from "../src/app/reply-presentation.js";
 
 const textId = "AQEBAQEBAQEBAQEBAQEBAQ";
 const imageId = "AgICAgICAgICAgICAgICAg";
@@ -19,6 +19,25 @@ void test("image reply previews retain the local-only Blob loader when the bubbl
   const loadObjectUrl = (): Promise<string | null> => Promise.resolve("blob:loaded-locally");
   const images = [{ messageId: imageId, direction: "incoming" as const, sentAt: 2, mediaType: "image/png" as const, width: 4, height: 3, loadObjectUrl }];
   assert.deepEqual(resolveLocalReplyPreview(imageId, [], images), { kind: "image", objectUrl: null, loadObjectUrl });
+});
+
+void test("an existing local image reply loads only through its retained Blob loader", async () => {
+  let loads = 0;
+  const preview = resolveLocalReplyPreview(imageId, [], [{
+    messageId: imageId,
+    direction: "incoming" as const,
+    sentAt: 2,
+    mediaType: "image/png" as const,
+    width: 4,
+    height: 3,
+    loadObjectUrl: () => {
+      loads += 1;
+      return Promise.resolve("blob:loaded-from-local-store");
+    }
+  }]);
+
+  assert.equal(await loadLocalReplyImagePreview(preview), "blob:loaded-from-local-store");
+  assert.equal(loads, 1);
 });
 
 void test("reply text preview is compact without copying more content", () => {

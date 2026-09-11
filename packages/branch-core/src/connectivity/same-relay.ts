@@ -143,6 +143,11 @@ const defaultMaxFrameBytes = 49_152;
 const defaultMaxPendingEnvelopes = 32;
 const defaultHandshakeTimeoutMs = 10_000;
 const defaultPresenceTTLSeconds = 30;
+// A route is a live relay binding, not a durable contact record. This bound is
+// deliberately independent from the pending-delivery ceiling: one attachment
+// can talk to several contacts without turning either map into a directory.
+const maxLiveTargetRoutes = 64;
+const routeAllocationAttempts = 8;
 const maxChallengeClockSkewSeconds = 30;
 const defaultStreamID = 0;
 const defaultPathEpoch = 0;
@@ -159,6 +164,11 @@ export class SameRelayTransportClient {
   private readonly handshakeTimeoutMs: number;
   private readonly listeners = new Set<SameRelayEventListener>();
   private readonly pending = new Map<string, PendingEnvelope>();
+  // These two maps model the one-to-one, attachment-local RENDEZVOUS binding.
+  // READY.route_id is deliberately absent: it is only the HPKE AAD origin
+  // nonce and must never be selected as a relay lookup route.
+  private readonly targetRoutes = new Map<string, string>();
+  private readonly routeTargets = new Map<string, string>();
   private readonly deferred: DeferredFrame[] = [];
   private socket: BrowserRelaySocket | null = null;
   private ready: ReadyState | null = null;
@@ -416,12 +426,13 @@ export class SameRelayTransportClient {
   // A same-route/same-peer repeat is intentionally idempotent at the relay.
   // Adapters call this immediately before a live ENVELOPE so a peer that
   // refreshed its WebSocket can be rebound without retaining any route state.
-  rendezvous(peerId: string, options: { readonly routeHints?: readonly RelayRouteHint[]; readonly routeId?: string } = {}): void {
+  // The returned lookup route belongs to this attachment and peer only; it is
+  // never the READY origin nonce used in E2EE AAD.
+  rendezvous(peerId: string, options: { readonly routeHints?: readonly RelayRouteHint[]; readonly routeId?: string } = {}): string {
     const ready = this.requireReady();
     const sequence = this.nextSequence();
     const routeHints = validateRouteHints(options.routeHints ?? []);
-    const routeId = options.routeId ?? ready.routeId;
-    assertRouteID(routeId, "invalid relay route id");
+    const routeId = this.lookupRouteForPeer(peerId, options.routeId, ready.routeId);
     this.sendReadyFrame({
       type: "RENDEZVOUS",
       session_id: ready.sessionId,
@@ -431,6 +442,7 @@ export class SameRelayTransportClient {
       ...(routeHints.length > 0 ? { route_hints: routeHints.map(toWireRouteHint) } : {})
     });
     this.emit({ type: "rendezvous_ready", peerId, routeId, sequence, routeHintCount: routeHints.length });
+    return routeId;
   }
 
   sendEnvelope(ciphertext: string, options: { readonly deliveryId?: string; readonly routeId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
@@ -440,7 +452,7 @@ export class SameRelayTransportClient {
   sendSealedEnvelope(sealedPayload: string, options: { readonly deliveryId?: string; readonly routeId?: string; readonly originRouteId?: string; readonly ackRequested?: boolean } = {}): string {
     decodeBase64URL(sealedPayload);
     const ready = this.requireReady();
-    const routeId = options.routeId ?? ready.routeId;
+    const routeId = this.requireEnvelopeRoute(options.routeId, ready.routeId);
     const originRouteId = options.originRouteId ?? ready.routeId;
     assertRouteID(routeId, "invalid relay route id");
     assertRouteID(originRouteId, "invalid origin route id");
@@ -493,6 +505,8 @@ export class SameRelayTransportClient {
   disconnect(): void {
     const socket = this.socket;
     this.ready = null;
+    this.targetRoutes.clear();
+    this.routeTargets.clear();
     this.contactDiscoveryEnabled = false;
     this.socket = null;
     this.rejectDeferredFrames(new Error("relay socket closed"));
@@ -519,6 +533,68 @@ export class SameRelayTransportClient {
       ack_requested: pending.ackRequested
     });
     this.emit({ type: "envelope_sent", deliveryId: pending.deliveryId, routeId: pending.routeId, originRouteId: pending.originRouteId });
+  }
+
+  private lookupRouteForPeer(peerId: string, requestedRouteId: string | undefined, readyRouteId: string): string {
+    const existingRouteId = this.targetRoutes.get(peerId);
+    if (requestedRouteId === undefined) {
+      return existingRouteId ?? this.allocateLookupRoute(peerId, readyRouteId);
+    }
+    assertRouteID(requestedRouteId, "invalid relay route id");
+    if (requestedRouteId === readyRouteId) {
+      throw new Error("READY route id cannot be used as a relay lookup route");
+    }
+    if (existingRouteId !== undefined && existingRouteId !== requestedRouteId) {
+      throw new Error("peer already has a different relay lookup route");
+    }
+    const existingPeerId = this.routeTargets.get(requestedRouteId);
+    if (existingPeerId !== undefined && existingPeerId !== peerId) {
+      throw new Error("relay lookup route is already bound to another peer");
+    }
+    if (existingRouteId === undefined) {
+      this.requireTargetRouteCapacity();
+      this.targetRoutes.set(peerId, requestedRouteId);
+      this.routeTargets.set(requestedRouteId, peerId);
+    }
+    return requestedRouteId;
+  }
+
+  private allocateLookupRoute(peerId: string, readyRouteId: string): string {
+    this.requireTargetRouteCapacity();
+    for (let attempt = 0; attempt < routeAllocationAttempts; attempt += 1) {
+      const routeId = this.randomToken(16);
+      if (routeId === readyRouteId || this.routeTargets.has(routeId)) continue;
+      this.targetRoutes.set(peerId, routeId);
+      this.routeTargets.set(routeId, peerId);
+      return routeId;
+    }
+    throw new Error("unable to allocate a unique relay lookup route");
+  }
+
+  private requireTargetRouteCapacity(): void {
+    if (this.targetRoutes.size >= maxLiveTargetRoutes) {
+      throw new Error("live relay lookup route limit reached");
+    }
+  }
+
+  private requireEnvelopeRoute(requestedRouteId: string | undefined, readyRouteId: string): string {
+    if (requestedRouteId !== undefined) {
+      assertRouteID(requestedRouteId, "invalid relay route id");
+      if (requestedRouteId === readyRouteId) {
+        throw new Error("READY route id cannot be used as a relay lookup route");
+      }
+      if (!this.routeTargets.has(requestedRouteId)) {
+        throw new Error("relay lookup route is not bound to a peer");
+      }
+      return requestedRouteId;
+    }
+    if (this.routeTargets.size === 1) {
+      return this.routeTargets.keys().next().value as string;
+    }
+    if (this.routeTargets.size === 0) {
+      throw new Error("relay lookup route is required before sending an envelope");
+    }
+    throw new Error("explicit relay lookup route is required for multiple peers");
   }
 
   private readonly handleSocketMessage = (event: RelaySocketEvent): void => {
@@ -549,6 +625,8 @@ export class SameRelayTransportClient {
 
   private readonly handleSocketClose = (event: RelaySocketEvent): void => {
     this.ready = null;
+    this.targetRoutes.clear();
+    this.routeTargets.clear();
     this.socket = null;
     this.rejectDeferredFrames(new Error("relay socket closed"));
     const details = closeDetails(event);
