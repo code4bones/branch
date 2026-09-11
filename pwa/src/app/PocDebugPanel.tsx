@@ -67,7 +67,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       settleOutboxMessage(messageId);
       void deleteStoredMessageDeliveryTarget(messageId).catch(() => {});
     }
-    if (purgeableMessageIds.length > 0) recordTransportTrace(`outbox: delivered_purged ${String(purgeableMessageIds.length)}`);
+    if (purgeableMessageIds.length > 0) recordTransportTrace(`outbox: delivery_mapping_purged ${String(purgeableMessageIds.length)}`);
   };
   const recentTrace = transportTrace
     .filter((entry) => selectedTraceCategories.includes(traceCategory(entry.detail)))
@@ -104,13 +104,13 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       <div className="pwa-poc-debug-actions">
         <Popconfirm
           cancelText="Keep"
-          description="This removes only local Delivered-awaiting-Read records. It never marks a message Read and does not affect the peer."
+          description="This drops only this device's Delivered-to-Read mapping. It never marks Read or affects the peer; a later signed Read will be shown as unmatched."
           okButtonProps={{ danger: true }}
-          okText="Purge local"
+          okText="Drop local mapping"
           onConfirm={purgeDelivered}
-          title={`Purge ${String(purgeableMessageIds.length)} delivered records?`}
+          title={`Drop ${String(purgeableMessageIds.length)} local delivery mappings?`}
         >
-          <Button danger disabled={purgeableMessageIds.length === 0} icon={<DeleteOutlined />} size="small">Purge delivered</Button>
+          <Button danger disabled={purgeableMessageIds.length === 0} icon={<DeleteOutlined />} size="small">Purge mapping</Button>
         </Popconfirm>
       </div>
       <p className="pwa-poc-debug-note">Burst is local pacing into the normal outbox; it creates no special relay traffic or retry policy.</p>

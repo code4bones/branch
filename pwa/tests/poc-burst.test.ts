@@ -71,6 +71,14 @@ void test("PoC purge targets only locally delivered records in the selected chat
   ], "contact-1"), ["delivered-here"]);
 });
 
+void test("PoC purge is explicitly labelled as dropping the local correlation, not marking Read", async () => {
+  const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
+  assert.match(panel, /Purge mapping/);
+  assert.match(panel, /signed Read will be shown as unmatched/);
+  assert.match(panel, /delivery_mapping_purged/);
+  assert.doesNotMatch(panel, /Purge delivered/);
+});
+
 class Timers implements PocBurstTimerPort {
   readonly callbacks: Array<() => void> = [];
 

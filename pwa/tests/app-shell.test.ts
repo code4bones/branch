@@ -819,6 +819,8 @@ void test("PWA persists active-chat read presentation locally and drains opted-i
   assert.match(runtime, /allowTargetRetry: true/);
   assert.match(runtime, /read_attempt_sent/);
   assert.match(runtime, /read_expired/);
+  assert.match(runtime, /read_failed_\$\{readReceiptFailure/);
+  assert.match(runtime, /relay_not_attached/);
   assert.doesNotMatch(runtime, /contactPresenceById|presencePong|sendPresencePing/);
   assert.match(transport, /startReadReceiptRuntime\(storeApi, attachedClient\)/);
   assert.match(transport, /stopReadReceiptRuntime\(\)/);

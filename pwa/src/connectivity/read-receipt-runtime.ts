@@ -134,10 +134,10 @@ async function run(runtime: ReadReceiptRuntime): Promise<void> {
         runtime.retryAtByTarget.delete(entry.targetDeliveryId);
         state.settleReadReceipt(entry.targetDeliveryId);
         state.recordTransportTrace("delivery receipt: read_skipped");
-      } catch {
+      } catch (cause) {
         const next = nextRetryAt(Date.now(), expiresAt);
         runtime.retryAtByTarget.set(entry.targetDeliveryId, next);
-        state.recordTransportTrace("delivery receipt: read_failed");
+        state.recordTransportTrace(`delivery receipt: read_failed_${readReceiptFailure(cause)}`);
         nextAttemptAt = earliest(nextAttemptAt, next);
       }
     }
@@ -153,4 +153,11 @@ function nextRetryAt(now: number, expiresAt: number): number {
 
 function earliest(current: number | null, candidate: number): number {
   return current === null ? candidate : Math.min(current, candidate);
+}
+
+function readReceiptFailure(cause: unknown): "relay_not_attached" | "invalid_local" | "crypto" | "send" {
+  if (cause instanceof Error && cause.message === "relay session is not attached") return "relay_not_attached";
+  if (cause instanceof Error && /invalid|protocol|frame/iu.test(cause.message)) return "invalid_local";
+  if (cause instanceof DOMException && /operation|key|crypto/iu.test(cause.name)) return "crypto";
+  return "send";
 }
