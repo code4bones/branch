@@ -373,7 +373,11 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 	case "LOOKUP":
 		peerID := relay.PeerID(frame["peer_id"].(string))
 		now := handler.now()
-		if _, ok := handler.hub.Lookup(peerID, now); ok {
+		lookup := handler.hub.Lookup
+		if federationAttachment {
+			lookup = handler.hub.LookupLocal
+		}
+		if _, ok := lookup(peerID, now); ok {
 			if federationAttachment {
 				return handler.writeFederationLookupAck(ctx, conn, string(sessionID))
 			}
@@ -398,13 +402,22 @@ func (handler *Handler) handleFrame(ctx context.Context, conn *connection, sessi
 			return err
 		}
 		now := handler.now()
+		if federationAttachment {
+			if _, ok := handler.hub.LookupLocal(peerID, now); !ok {
+				handler.observeFederation(ctx, FederationRendezvousRejected, "peer_unavailable")
+				return relay.ErrPeerUnavailable
+			}
+			if err := session.Rendezvous(routeID, peerID, now); err != nil {
+				if errors.Is(err, relay.ErrPeerUnavailable) {
+					handler.observeFederation(ctx, FederationRendezvousRejected, "peer_unavailable")
+				}
+				return err
+			}
+			return nil
+		}
 		if err := session.Rendezvous(routeID, peerID, now); err != nil {
 			if !errors.Is(err, relay.ErrPeerUnavailable) {
 				return err
-			}
-			if federationAttachment {
-				handler.observeFederation(ctx, FederationRendezvousRejected, "peer_unavailable")
-				return relay.ErrPeerUnavailable
 			}
 			if federatedErr := handler.announceFederatedPeer(ctx, peerID, hints, now); federatedErr != nil {
 				return err

@@ -575,6 +575,9 @@ func TestHandlerObservesFederatedRendezvousRejection(t *testing.T) {
 	handler := rawHandler.(*Handler)
 	observer := &testFederationObserver{}
 	handler.federationObserver = observer
+	if err := hub.AnnounceFederatedPresence(relay.PeerID(testPeerID), testFederationForwarder{}, time.Unix(1_789_000_000, 0)); err != nil {
+		t.Fatalf("announce federated presence: %v", err)
+	}
 
 	session := attachBridgeSession(t, hub, testB64x32)
 	raw, err := json.Marshal(map[string]any{
@@ -596,6 +599,28 @@ func TestHandlerObservesFederatedRendezvousRejection(t *testing.T) {
 	}
 	if observation := observer.observations[0]; observation.Kind != FederationRendezvousRejected || observation.Reason != "peer_unavailable" {
 		t.Fatalf("unexpected observation: %+v", observation)
+	}
+}
+
+func TestHandlerFederationLookupRejectsFederatedPresence(t *testing.T) {
+	hub, rawHandler := newTestHubAndHandler(t)
+	handler := rawHandler.(*Handler)
+	if err := hub.AnnounceFederatedPresence(relay.PeerID(testPeerID), testFederationForwarder{}, time.Unix(1_789_000_000, 0)); err != nil {
+		t.Fatalf("announce federated presence: %v", err)
+	}
+	session := attachBridgeSession(t, hub, testB64x32)
+	raw, err := json.Marshal(map[string]any{
+		"type":       "LOOKUP",
+		"session_id": testB64x32,
+		"peer_id":    testPeerID,
+		"sequence":   1,
+	})
+	if err != nil {
+		t.Fatalf("marshal lookup: %v", err)
+	}
+	err = handler.handleFrame(context.Background(), nil, session, testB64x32, relay.PeerID(testAlicePeerID), true, false, &sequenceTracker{}, raw)
+	if !errors.Is(err, relay.ErrPeerUnavailable) {
+		t.Fatalf("federated lookup error = %v, want peer unavailable", err)
 	}
 }
 

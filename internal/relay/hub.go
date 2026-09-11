@@ -295,6 +295,16 @@ func (hub *Hub) Lookup(peerID PeerID, now time.Time) (Presence, bool) {
 	return hub.lookupLocked(peerID, now)
 }
 
+// LookupLocal returns only a directly attached, currently live peer. It never
+// returns a federated presence, so relay-to-relay forwarding can enforce its
+// one-live-hop boundary without treating another relay's bridge as a target.
+func (hub *Hub) LookupLocal(peerID PeerID, now time.Time) (Presence, bool) {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+
+	return hub.lookupLocalLocked(peerID, now)
+}
+
 // PresenceTTL returns the configured live presence lifetime for diagnostics and
 // adapters that need to report freshness without mutating hub state.
 func (hub *Hub) PresenceTTL() time.Duration {
