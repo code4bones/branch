@@ -6,6 +6,9 @@ import {
   SameRelayTransportClient,
   createTrustedRelayRouteFixture,
   makeVersionOffer,
+  type BrowserRelaySocket,
+  type RelaySocketEvent,
+  type RelaySocketEventType,
   type SameRelayPendingEnvelope
 } from "../src/connectivity/same-relay.js";
 import { contactDiscoveryLiveExtension } from "../src/protocol/v0/relay-attachment.js";
@@ -108,6 +111,34 @@ void test("contact discovery remains an explicit negotiated live extension", () 
     expires_at: expiresAt
   });
   assert.deepEqual(events, ["contact_probe"]);
+});
+
+void test("an invalid relay proof cannot activate contact discovery from its unauthenticated challenge", async () => {
+  const client = clientWithPending([]);
+  const internals = client as unknown as {
+    contactDiscoveryEnabled: boolean;
+    computeTranscriptHash(): Promise<Uint8Array>;
+    verifyRelayProof(): Promise<boolean>;
+  };
+  internals.computeTranscriptHash = async () => new Uint8Array(32);
+  internals.verifyRelayProof = async () => false;
+  const socket = rejectingChallengeSocket();
+  const clientWithSocket = new SameRelayTransportClient({
+    route: createTrustedRelayRouteFixture({
+      endpointUri: "wss://relay.example/relay/v0",
+      relayPublicKey: token(41),
+      profileMultihash: developmentProfileMultihash
+    }),
+    identity: { peerId: token(42), publicKey: token(42), privateKey: {} as CryptoKey },
+    socketFactory: () => socket,
+    now: () => 100
+  });
+  const clientInternals = clientWithSocket as unknown as typeof internals;
+  clientInternals.computeTranscriptHash = internals.computeTranscriptHash;
+  clientInternals.verifyRelayProof = internals.verifyRelayProof;
+
+  await assert.rejects(clientWithSocket.attach(), /relay proof invalid/);
+  assert.equal(clientInternals.contactDiscoveryEnabled, false);
 });
 
 void test("contact lookup accepts the canonical br1 multihash BranchID", () => {
@@ -255,4 +286,34 @@ function token(value: number): string {
 
 function routeToken(value: number): string {
   return Buffer.alloc(16, value).toString("base64url");
+}
+
+function rejectingChallengeSocket(): BrowserRelaySocket {
+  const listeners = new Map<RelaySocketEventType, (event: RelaySocketEvent) => void>();
+  const socket: BrowserRelaySocket = {
+    readyState: 1,
+    send(data: string): void {
+      const hello = JSON.parse(data) as { readonly client_nonce: string; readonly offers: readonly [Record<string, unknown>] };
+      queueMicrotask(() => {
+        listeners.get("message")?.(new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "CHALLENGE",
+            client_nonce: hello.client_nonce,
+            relay_nonce: token(81),
+            issued_at: 100,
+            expires_at: 160,
+            relay_public_key: token(41),
+            selected: hello.offers[0],
+            transcript_hash: Buffer.alloc(32).toString("base64url"),
+            relay_proof: Buffer.alloc(64).toString("base64url")
+          })
+        }));
+      });
+    },
+    close(): void {},
+    addEventListener(type, listener): void { listeners.set(type, listener); },
+    removeEventListener(type): void { listeners.delete(type); }
+  };
+  queueMicrotask(() => { listeners.get("open")?.(new Event("open")); });
+  return socket;
 }

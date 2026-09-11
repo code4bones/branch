@@ -10,7 +10,7 @@ import {
   rejectUnknownEntries,
   type CborMap
 } from "../protocol/v0/cbor.js";
-import { parseBranchID } from "../protocol/v0/identity-contact.js";
+import { branchIDFromPublicKey, parseBranchID } from "../protocol/v0/identity-contact.js";
 
 // This descriptor body travels only in an existing signed application-control
 // envelope sealed by existing HPKE. It is not a relay frame or relay metadata.
@@ -51,7 +51,7 @@ export function decodeContactCard(bytes: Uint8Array): ContactCard {
 
 // This is deliberately structural and clock-free. The application adapter
 // later verifies the signed envelope, HPKE/AAD route sender, pending request,
-// one-use replay state, and async BranchID-to-Ed25519-key binding.
+// and one-use replay state.
 export function validateContactCard(card: ContactCard): void {
   if (
     decodeBase64URL(card.requestId).byteLength !== 16 ||
@@ -63,6 +63,19 @@ export function validateContactCard(card: ContactCard): void {
     throw new Error("invalid contact card");
   }
   parseBranchID(card.branchId);
+}
+
+// A contact card's peer ID is the raw Ed25519 root public key for this live
+// discovery exchange. Keep this self-certifying identity check beside the
+// card's closed-body validation so adapters do not need to reproduce it.
+// Signature, envelope recipient, HPKE/AAD route sender, and pending-request
+// checks remain adapter-owned boundaries and must run before projection.
+export async function assertContactCardBranchIDBinding(card: ContactCard): Promise<void> {
+  validateContactCard(card);
+  const branchId = await branchIDFromPublicKey(decodeBase64URL(card.peerId));
+  if (branchId !== card.branchId) {
+    throw new Error("contact card branch id mismatch");
+  }
 }
 
 function contactCardMap(card: ContactCard): CborMap {

@@ -6,6 +6,7 @@ import { useAppStoreApi } from "./StoreProvider.js";
 import { downloadVerifiedCompletedAttachment, type CompletedAttachmentDownloadResult } from "../app/transient-attachment-presentation.js";
 import type { LocalImageMessageProjection } from "../app/image-message.js";
 import { loadStoredImageMessageBlob } from "../storage/image-media-store.js";
+import type { ImageMessageProjection } from "./slices/image-message-projections-slice.js";
 import {
   conversationTimelinePageEntries,
   initialConversationTimelineEntries,
@@ -360,10 +361,8 @@ export function useCompletedAttachment(peerId: string | null): CompletedAttachme
  */
 export function useLocalImageMessages(contactId: string | null): readonly LocalImageMessageProjection[] {
   const allProjections = useAppStore((state) => state.imageMessageProjectionsById);
-  const projections = useMemo(() => Object.values(allProjections)
-    .filter((projection) => contactId !== null && projection.contactId === contactId)
-    .sort((left, right) => left.sentAt - right.sentAt || left.messageId.localeCompare(right.messageId)), [allProjections, contactId]);
-  const projectionKey = projections.map((projection) => [projection.messageId, projection.mediaType, projection.byteCount, projection.sentAt, projection.caption ?? "", projection.replyToMessageId ?? ""].join("\u0000")).join("\u0001");
+  const projections = useMemo(() => localImageProjectionsForContact(allProjections, contactId), [allProjections, contactId]);
+  const projectionKey = localImageProjectionMemoKey(projections);
 
   return useMemo(() => projections.map((projection): LocalImageMessageProjection => ({
     messageId: projection.messageId,
@@ -378,7 +377,35 @@ export function useLocalImageMessages(contactId: string | null): readonly LocalI
       const blob = await loadStoredImageMessageBlob(projection.messageId);
       return blob === null || blob.size !== projection.byteCount ? null : URL.createObjectURL(blob);
     }
-  })), [projectionKey]);
+  })), [contactId, projectionKey]);
+}
+
+/**
+ * Captures the selected local image projections only after the caller has
+ * chosen one contact. The scalar key lets the mapped projection
+ * and its Blob loader survive unrelated image-store updates without treating
+ * a genuine active-chat metadata change as unchanged.
+ */
+export function localImageProjectionMemoKey(projections: readonly ImageMessageProjection[]): string {
+  return JSON.stringify(projections.map((projection) => [
+    projection.messageId,
+    projection.direction,
+    projection.sentAt,
+    projection.mediaType,
+    projection.byteCount,
+    projection.width,
+    projection.height,
+    projection.caption ?? null,
+    projection.replyToMessageId ?? null
+  ]));
+}
+
+/** Selects the bounded local image metadata for exactly one rendered chat. */
+export function localImageProjectionsForContact(allProjections: Readonly<Record<string, ImageMessageProjection>>, contactId: string | null): readonly ImageMessageProjection[] {
+  if (contactId === null) return [];
+  return Object.values(allProjections)
+    .filter((projection) => projection.contactId === contactId)
+    .sort((left, right) => left.sentAt - right.sentAt || left.messageId.localeCompare(right.messageId));
 }
 
 export interface IncomingMessageRequestControls {

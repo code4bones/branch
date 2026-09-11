@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { attachmentManifestSigningBytes, classifyApplicationPayload, createApplicationPayloadRegistry, decodeAttachmentChunk, decodeAttachmentDecision, decodeAttachmentManifest, decodeApplicationPayload, decodeContactCard, encodeAttachmentChunk, encodeAttachmentDecision, encodeAttachmentManifest, encodeApplicationPayload, encodeContactCard, inlineBinaryKind, maxInlineBinaryBytes, type AttachmentManifest } from "../src/index.js";
+import { assertContactCardBranchIDBinding, attachmentManifestSigningBytes, branchIDFromPublicKey, classifyApplicationPayload, createApplicationPayloadRegistry, decodeAttachmentChunk, decodeAttachmentDecision, decodeAttachmentManifest, decodeApplicationPayload, decodeContactCard, encodeAttachmentChunk, encodeAttachmentDecision, encodeAttachmentManifest, encodeApplicationPayload, encodeContactCard, inlineBinaryKind, maxInlineBinaryBytes, type AttachmentManifest } from "../src/index.js";
 import { decodeBase64URL, encodeBase64URL } from "../src/protocol/v0/base64url.js";
 
 const fixtureURL = new URL("../../../../testdata/vectors/protocol-v0/application-payload-vectors.json", import.meta.url);
@@ -71,6 +71,28 @@ test("live contact-card vector is closed canonical CBOR", async () => {
     displayName: card.display_name
   });
   assert.throws(() => decodeContactCard(encoded.subarray(0, encoded.byteLength - 1)));
+});
+
+test("contact-card BranchID binding is shared, self-certifying, and bounded", async () => {
+  const fixture = await vectors();
+  const fixtureCard = fixture.valid.contact_card;
+  const peerKey = new Uint8Array(32).fill(0x3a);
+  const decoded = decodeContactCard(encodeContactCard({
+    requestId: fixtureCard.request_id,
+    branchId: await branchIDFromPublicKey(peerKey),
+    peerId: encodeBase64URL(peerKey),
+    hpkePublicKey: fixtureCard.hpke_public_key,
+    displayName: fixtureCard.display_name
+  }));
+  await assert.doesNotReject(assertContactCardBranchIDBinding(decoded));
+
+  await assert.rejects(assertContactCardBranchIDBinding({
+    ...decoded,
+    peerId: encodeBase64URL(new Uint8Array(32).fill(0xa5))
+  }), /contact card branch id mismatch/);
+
+  assert.throws(() => decodeContactCard(new Uint8Array()));
+  assert.throws(() => decodeContactCard(new Uint8Array(513)));
 });
 
 type FixturePayload = { readonly kind: string; readonly message_id: string; readonly body: string };

@@ -11,6 +11,7 @@ import {
   encodeBase64URL,
   encodeImageTransferManifest,
   encodeApplicationControl,
+  imageCapabilitiesControlKind,
   SameRelayTransportClient
 } from "@code4bones/branch-core";
 
@@ -25,6 +26,7 @@ import {
   imageTransferManifestKind,
   type ImageTransferSendRequest,
   type ImageTransferTimerPort,
+  type ImageTransferEvent,
   type VerifiedImageMessage
 } from "../src/connectivity/image-transfer.js";
 
@@ -137,6 +139,31 @@ void test("PWA image adapter delegates bounded manifest/chunk reassembly to bran
   assert.doesNotMatch(source, /chunk\.index - inbound\.nextMissingIndex/);
 });
 
+void test("image ingress is descriptor-gated and observer events contain no peer identity", async () => {
+  const source = await readFile(resolve(process.cwd(), "src/connectivity/image-transfer.ts"), "utf8");
+  assert.match(source, /createApplicationPayloadRegistry\(imageApplicationPayloadDescriptors\)/);
+  assert.match(source, /classifyApplicationPayload\(plaintext, imageApplicationPayloadRegistry\)/);
+  assert.doesNotMatch(source, /decodeApplicationPayload\(plaintext\)/);
+
+  const fixture = await transferFixture();
+  const result = await fixture.senderTransfer.sendImage({
+    peerId: fixture.receiverIdentity.peerId,
+    route: "relay",
+    mediaType: "image/png",
+    width: 1,
+    height: 1,
+    bytes: pngBytes(128)
+  });
+  assert.equal(result.status, "sent");
+  assert.deepEqual(await fixture.receiverTransfer.receive(fixture.senderIdentity.peerId, required(fixture.sent[0]).plaintext), {
+    status: "handled",
+    kind: imageInlineKind
+  });
+  assert.deepEqual(fixture.inboundRequiredCapabilities, [imageCapabilitiesControlKind]);
+  assert.ok(fixture.events.length >= 2);
+  assert.ok(fixture.events.every((event) => !Object.hasOwn(event, "peerId")));
+});
+
 interface TimerHandle { active: boolean; readonly callback: () => void; }
 
 class Timers implements ImageTransferTimerPort {
@@ -186,6 +213,8 @@ async function transferFixture(options: { readonly advertise?: boolean } = {}) {
   }
   const sent: ImageTransferSendRequest[] = [];
   const completed: VerifiedImageMessage[] = [];
+  const events: ImageTransferEvent[] = [];
+  const inboundRequiredCapabilities: string[] = [];
   const verified: Array<{ readonly width: number; readonly height: number }> = [];
   const timers = new Timers();
   const senderTransfer = new ImageTransferController({
@@ -199,7 +228,8 @@ async function transferFixture(options: { readonly advertise?: boolean } = {}) {
     send: (request) => { sent.push(request); },
     timers,
     verifyRaster: () => true,
-    onImage: () => { throw new Error("sender must not receive its own image"); }
+    onImage: () => { throw new Error("sender must not receive its own image"); },
+    onEvent: (event) => { events.push(event); }
   });
   const receiverTransfer = new ImageTransferController({
     now: () => now,
@@ -208,13 +238,17 @@ async function transferFixture(options: { readonly advertise?: boolean } = {}) {
     isKnownPeer: (peerId) => peerId === capabilities.senderIdentity.peerId,
     knownPeerSigningKey: async (peerId) => peerId === capabilities.senderIdentity.peerId ? await signingKey(capabilities.senderIdentity.peerId) : null,
     peerCapabilities: () => null,
-    inboundCapabilities: (peerId) => capabilities.receiver.inboundCapabilities(peerId),
+    inboundCapabilities: (peerId, requiredCapability) => {
+      inboundRequiredCapabilities.push(requiredCapability);
+      return capabilities.receiver.inboundCapabilities(peerId);
+    },
     send: () => { throw new Error("image receiver must not send an accept control"); },
     timers,
     verifyRaster: ({ width, height }) => { verified.push({ width, height }); return width === 1 && height === 1; },
-    onImage: (image) => { completed.push(image); }
+    onImage: (image) => { completed.push(image); },
+    onEvent: (event) => { events.push(event); }
   });
-  return { ...capabilities, senderTransfer, receiverTransfer, sent, completed, verified };
+  return { ...capabilities, senderTransfer, receiverTransfer, sent, completed, verified, events, inboundRequiredCapabilities };
 }
 
 function deterministicRandom(): (bytes: Uint8Array) => Uint8Array {

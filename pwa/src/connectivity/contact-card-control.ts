@@ -1,6 +1,7 @@
 import {
   applicationControlSigningBytes,
   applicationControlWireVersion,
+  assertContactCardBranchIDBinding,
   branchIDFromPublicKey,
   contactCardControlKind,
   decodeApplicationControl,
@@ -77,8 +78,8 @@ export async function receiveContactCard(options: {
     if (!await crypto.subtle.verify("Ed25519", publicKey, arrayBuffer(envelope.signature), arrayBuffer(applicationControlSigningBytes(envelope)))) return null;
     const card = decodeContactCard(envelope.body);
     if (card.peerId !== options.senderPeerId) return null;
-    const branchId = await branchIDFromPublicKey(decodeBase64URL(options.senderPeerId));
-    return branchId === card.branchId ? card : null;
+    await assertContactCardBranchIDBinding(card);
+    return card;
   } catch { return null; }
 }
 

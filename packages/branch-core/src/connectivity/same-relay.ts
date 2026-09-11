@@ -324,7 +324,6 @@ export class SameRelayTransportClient {
       throw new Error("relay challenge issued in the future");
     }
     const selected = readObject(challenge, "selected");
-    this.contactDiscoveryEnabled = hasExtension(selected, contactDiscoveryLiveExtension);
     const transcriptHash = await this.computeTranscriptHash(
       helloRaw,
       selected,
@@ -344,6 +343,7 @@ export class SameRelayTransportClient {
     if (!await this.verifyRelayProof(readString(challenge, "relay_proof"), transcriptHash)) {
       throw new Error("relay proof invalid");
     }
+    this.contactDiscoveryEnabled = hasExtension(selected, contactDiscoveryLiveExtension);
 
     const proof = await this.signProof(transcriptHash);
     this.sendRaw(encodeFrame({

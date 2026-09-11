@@ -5,6 +5,7 @@ import {
   maxImageHeight,
   maxImageWidth,
   maxImageCaptionBytes,
+  imageCapabilitiesControlKind,
   type RasterImageMediaType
 } from "@code4bones/branch-core";
 
@@ -155,7 +156,8 @@ function imageRuntime(storeApi: AppStoreApi): ActiveImageRuntime {
     isKnownPeer: (peerId) => knownContact(storeApi, peerId) !== null,
     knownPeerSigningKey: async (peerId) => await knownPeerSigningKey(storeApi, peerId),
     peerCapabilities: (peerId) => capabilities.peerCapabilities(peerId),
-    inboundCapabilities: (peerId) => capabilities.inboundCapabilities(peerId),
+    inboundCapabilities: (peerId, requiredCapability) =>
+      requiredCapability === imageCapabilitiesControlKind ? capabilities.inboundCapabilities(peerId) : null,
     send: async ({ peerId, plaintext }) => { await sendToKnownPeer(storeApi, peerId, plaintext); },
     timers: { schedule: (delayMs, callback) => setTimeout(callback, delayMs), cancel: (handle) => { clearTimeout(handle as ReturnType<typeof setTimeout>); } },
     verifyRaster: verifyRaster,

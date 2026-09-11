@@ -2,7 +2,8 @@ import {
   applicationPayloadVersion,
   capabilityAllowsImageTransfer,
   capabilityAllowsInlineImage,
-  decodeApplicationPayload,
+  classifyApplicationPayload,
+  createApplicationPayloadRegistry,
   decodeInlineImage,
   decodeImageTransferChunk,
   decodeImageTransferManifest,
@@ -12,6 +13,7 @@ import {
   encodeImageTransferManifest,
   encodeInlineImage,
   hasRasterImageMagic,
+  imageApplicationPayloadDescriptors,
   imageInlineKind,
   imageMessageVersion,
   imageTransferChunkKind,
@@ -33,6 +35,8 @@ import {
 export { imageInlineKind, imageTransferManifestKind, imageTransferChunkKind };
 
 const imageKinds = [imageInlineKind, imageTransferManifestKind, imageTransferChunkKind] as const;
+// Descriptors are compile-time application policy, never remote input.
+const imageApplicationPayloadRegistry = createApplicationPayloadRegistry(imageApplicationPayloadDescriptors);
 
 export type ImageTransferReason =
   | "accepted"
@@ -73,7 +77,6 @@ export interface VerifiedImageMessage {
 
 export interface ImageTransferEvent {
   readonly event: "image.inline.received" | "image.transfer.started" | "image.transfer.ended";
-  readonly peerId: string;
   readonly direction: "inbound" | "outbound";
   readonly reason: ImageTransferReason;
   /** Bounded endpoint diagnostics only; never pixels, dimensions, hashes, or identity tokens. */
@@ -92,7 +95,7 @@ export interface ImageTransferPorts {
    * The local current capability actually advertised to this peer. Returning
    * null makes inbound automatic image admission unavailable.
    */
-  readonly inboundCapabilities: (peerId: string) => ImageCapabilities | null;
+  readonly inboundCapabilities: (peerId: string, requiredCapability: string) => ImageCapabilities | null;
   readonly send: (request: ImageTransferSendRequest) => void | Promise<void>;
   readonly timers: ImageTransferTimerPort;
   /** Must decode the raster and confirm actual MIME, dimensions and no animation. */
@@ -166,12 +169,12 @@ export class ImageTransferController {
       if (inlineBody !== null && capabilityAllowsInlineImage(capabilities, inline)) {
         const messageId = options.messageId ?? this.#token(16);
         await this.#send(options.peerId, messageId, imageInlineKind, inlineBody);
-        this.#emit("image.transfer.ended", options.peerId, "outbound", "accepted", options.bytes.byteLength);
+        this.#emit("image.transfer.ended", "outbound", "accepted", options.bytes.byteLength);
         return { status: "sent", messageId, mode: "inline" };
       }
       return await this.#sendTransfer(options, capabilities, signingKey);
     } catch {
-      this.#emit("image.transfer.ended", options.peerId, "outbound", "send_failed");
+      this.#emit("image.transfer.ended", "outbound", "send_failed");
       return { status: "rejected", reason: "send_failed" };
     } finally {
       this.#outboundPeers.delete(options.peerId);
@@ -181,14 +184,14 @@ export class ImageTransferController {
   /** Invoke after HPKE opening and before legacy text compatibility parsing. */
   async receive(peerId: string, plaintext: Uint8Array, route: ImageRoute = "relay"): Promise<ImageIncomingResult> {
     if (!this.#ports.isKnownPeer(peerId)) return { status: "ignored", reason: "unknown_peer" };
-    let payload: ReturnType<typeof decodeApplicationPayload>;
-    try { payload = decodeApplicationPayload(plaintext); } catch { return { status: "ignored", reason: "invalid_payload" }; }
-    if (!imageKinds.includes(payload.kind as typeof imageKinds[number])) return { status: "ignored", reason: "unsupported" };
+    let payload: ReturnType<typeof classifyApplicationPayload>;
+    try { payload = classifyApplicationPayload(plaintext, imageApplicationPayloadRegistry); } catch { return { status: "ignored", reason: "invalid_payload" }; }
+    if (payload.status === "unknown_kind" || !imageKinds.includes(payload.envelope.kind as typeof imageKinds[number])) return { status: "ignored", reason: "unsupported" };
     try {
-      switch (payload.kind) {
-        case imageInlineKind: return await this.#receiveInline(peerId, payload.messageId, payload.body);
-        case imageTransferManifestKind: return await this.#receiveManifest(peerId, route, payload.messageId, payload.body);
-        case imageTransferChunkKind: return await this.#receiveChunk(peerId, payload.body);
+      switch (payload.envelope.kind) {
+        case imageInlineKind: return await this.#receiveInline(peerId, payload.descriptor.requiredCapability, payload.envelope.messageId, payload.envelope.body);
+        case imageTransferManifestKind: return await this.#receiveManifest(peerId, payload.descriptor.requiredCapability, route, payload.envelope.messageId, payload.envelope.body);
+        case imageTransferChunkKind: return await this.#receiveChunk(peerId, payload.descriptor.requiredCapability, payload.envelope.body);
       }
     } catch {
       return { status: "ignored", reason: "invalid_payload" };
@@ -233,7 +236,7 @@ export class ImageTransferController {
     const manifest: ImageTransferManifest = { ...unsigned, signature };
     if (!capabilityAllowsImageTransfer(capabilities, manifest, options.route)) return { status: "rejected", reason: "unsupported" };
     await this.#send(options.peerId, messageId, imageTransferManifestKind, encodeImageTransferManifest(manifest));
-    this.#emit("image.transfer.started", options.peerId, "outbound", "accepted", manifest.byteCount);
+    this.#emit("image.transfer.started", "outbound", "accepted", manifest.byteCount);
     for (let index = 0; index < manifest.chunkCount; index += 1) {
       if (this.#ports.now() >= manifest.expiresAt) return { status: "rejected", reason: "send_failed" };
       const start = index * manifest.chunkBytes;
@@ -245,24 +248,24 @@ export class ImageTransferController {
         bytes: options.bytes.slice(start, Math.min(start + manifest.chunkBytes, options.bytes.byteLength))
       }));
     }
-    this.#emit("image.transfer.ended", options.peerId, "outbound", "accepted", manifest.byteCount);
+    this.#emit("image.transfer.ended", "outbound", "accepted", manifest.byteCount);
     return { status: "sent", messageId, mode: "transfer" };
   }
 
-  async #receiveInline(peerId: string, messageId: string, body: Uint8Array): Promise<ImageIncomingResult> {
+  async #receiveInline(peerId: string, requiredCapability: string, messageId: string, body: Uint8Array): Promise<ImageIncomingResult> {
     const image = decodeInlineImage(body);
-    const capabilities = this.#ports.inboundCapabilities(peerId);
+    const capabilities = this.#ports.inboundCapabilities(peerId, requiredCapability);
     if (capabilities === null || !capabilityAllowsInlineImage(capabilities, image)) return { status: "ignored", reason: "unsupported" };
     if (!hasRasterImageMagic(image.mediaType, image.bytes) || !await this.#verifyRaster(image)) return { status: "ignored", reason: "invalid_payload" };
     await this.#ports.onImage({ peerId, messageId, mediaType: image.mediaType, width: image.width, height: image.height, bytes: copy(image.bytes), ...(image.caption === undefined ? {} : { caption: image.caption }), ...(image.replyToMessageId === undefined ? {} : { replyToMessageId: image.replyToMessageId }) });
-    this.#emit("image.inline.received", peerId, "inbound", "accepted", image.bytes.byteLength);
+    this.#emit("image.inline.received", "inbound", "accepted", image.bytes.byteLength);
     return { status: "handled", kind: imageInlineKind };
   }
 
-  async #receiveManifest(peerId: string, route: ImageRoute, messageId: string, body: Uint8Array): Promise<ImageIncomingResult> {
+  async #receiveManifest(peerId: string, requiredCapability: string, route: ImageRoute, messageId: string, body: Uint8Array): Promise<ImageIncomingResult> {
     const manifest = decodeImageTransferManifest(body);
     validateImageManifestForMessage(manifest, messageId);
-    const capabilities = this.#ports.inboundCapabilities(peerId);
+    const capabilities = this.#ports.inboundCapabilities(peerId, requiredCapability);
     if (capabilities === null || !capabilityAllowsImageTransfer(capabilities, manifest, route)) return { status: "ignored", reason: "unsupported" };
     if (!await this.#verifyManifest(peerId, manifest)) return { status: "ignored", reason: "invalid_signature" };
     const now = this.#ports.now();
@@ -274,12 +277,12 @@ export class ImageTransferController {
       this.#inboundRoutes.set(peerId, route);
       this.#inboundSizes.set(peerId, manifest.byteCount);
       this.#scheduleInboundExpiry(peerId, manifest.expiresAt - now);
-      this.#emit("image.transfer.started", peerId, "inbound", "accepted", manifest.byteCount);
+      this.#emit("image.transfer.started", "inbound", "accepted", manifest.byteCount);
     }
     return { status: "handled", kind: imageTransferManifestKind };
   }
 
-  async #receiveChunk(peerId: string, body: Uint8Array): Promise<ImageIncomingResult> {
+  async #receiveChunk(peerId: string, requiredCapability: string, body: Uint8Array): Promise<ImageIncomingResult> {
     const chunk = decodeImageTransferChunk(body);
     const reassembled = await this.#inbound.receiveChunk(peerId, chunk, this.#ports.now());
     if (reassembled.status === "chunk_stored" || reassembled.status === "duplicate_chunk") return { status: "handled", kind: imageTransferChunkKind };
@@ -288,11 +291,11 @@ export class ImageTransferController {
       this.#inboundRoutes.delete(peerId);
       this.#inboundSizes.delete(peerId);
       if (reassembled.status === "expired") {
-        this.#emit("image.transfer.ended", peerId, "inbound", "expired");
+        this.#emit("image.transfer.ended", "inbound", "expired");
         return { status: "ignored", reason: "unsupported" };
       }
       if (reassembled.status === "ignored") return { status: "ignored", reason: "unsupported" };
-      this.#emit("image.transfer.ended", peerId, "inbound", "integrity_failed");
+      this.#emit("image.transfer.ended", "inbound", "integrity_failed");
       return { status: "ignored", reason: "invalid_payload" };
     }
     this.#clearInboundExpiry(peerId);
@@ -300,15 +303,15 @@ export class ImageTransferController {
     const route = this.#inboundRoutes.get(peerId);
     this.#inboundRoutes.delete(peerId);
     this.#inboundSizes.delete(peerId);
-    const capability = this.#ports.inboundCapabilities(peerId);
+    const capability = this.#ports.inboundCapabilities(peerId, requiredCapability);
     if (route === undefined || capability === null || !capabilityAllowsImageTransfer(capability, manifest, route) ||
       !hasRasterImageMagic(manifest.mediaType, complete) ||
       !await this.#verifyRaster({ mediaType: manifest.mediaType, width: manifest.width, height: manifest.height, bytes: complete })) {
-      this.#emit("image.transfer.ended", peerId, "inbound", "integrity_failed", manifest.byteCount);
+      this.#emit("image.transfer.ended", "inbound", "integrity_failed", manifest.byteCount);
       return { status: "ignored", reason: "invalid_payload" };
     }
     await this.#ports.onImage({ peerId, messageId: manifest.messageId, mediaType: manifest.mediaType, width: manifest.width, height: manifest.height, bytes: complete, ...(manifest.caption === undefined ? {} : { caption: manifest.caption }), ...(manifest.replyToMessageId === undefined ? {} : { replyToMessageId: manifest.replyToMessageId }) });
-    this.#emit("image.transfer.ended", peerId, "inbound", "accepted", complete.byteLength);
+    this.#emit("image.transfer.ended", "inbound", "accepted", complete.byteLength);
     return { status: "handled", kind: imageTransferChunkKind };
   }
 
@@ -336,7 +339,7 @@ export class ImageTransferController {
       const byteCount = this.#inboundSizes.get(peerId);
       this.#inboundSizes.delete(peerId);
       this.#inboundExpiry.delete(peerId);
-      if (byteCount !== undefined) this.#emit("image.transfer.ended", peerId, "inbound", "expired", byteCount);
+      if (byteCount !== undefined) this.#emit("image.transfer.ended", "inbound", "expired", byteCount);
     }));
   }
 
@@ -350,9 +353,9 @@ export class ImageTransferController {
     return encodeBase64URL(this.#ports.randomBytes(new Uint8Array(size)));
   }
 
-  #emit(event: ImageTransferEvent["event"], peerId: string, direction: ImageTransferEvent["direction"], reason: ImageTransferReason, byteCount?: number): void {
+  #emit(event: ImageTransferEvent["event"], direction: ImageTransferEvent["direction"], reason: ImageTransferReason, byteCount?: number): void {
     try {
-      this.#ports.onEvent?.(byteCount === undefined ? { event, peerId, direction, reason } : { event, peerId, direction, reason, sizeBucket: imageSizeBucket(byteCount) });
+      this.#ports.onEvent?.(byteCount === undefined ? { event, direction, reason } : { event, direction, reason, sizeBucket: imageSizeBucket(byteCount) });
     } catch { /* Optional observation boundary. */ }
   }
 }
