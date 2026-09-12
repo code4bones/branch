@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { clientMonitorEvent } from "../src/app/client-monitor.js";
+import { clientMonitorEvent, clientMonitorEventForCategories } from "../src/app/client-monitor.js";
 
 void test("client monitor reduces receipt traces to an allow-listed redacted event", () => {
   assert.deepEqual(clientMonitorEvent({ at: 1_700_000_000_000, detail: "delivery receipt: read_unmatched" }), {
@@ -23,4 +23,11 @@ void test("client monitor never forwards arbitrary local trace detail", () => {
     event: "transport.relay_notice"
   });
   assert.equal(clientMonitorEvent({ at: 1_700_000_000_000, detail: "message plaintext: do not export" }), null);
+});
+
+void test("client monitor honours the selected local trace categories", () => {
+  const receipt = { at: 1_700_000_000_000, detail: "delivery receipt: read_matched" };
+  const frame = { at: 1_700_000_000_000, detail: "outbound frame: ENVELOPE" };
+  assert.notEqual(clientMonitorEventForCategories(receipt, ["receipts"]), null);
+  assert.equal(clientMonitorEventForCategories(frame, ["receipts"]), null);
 });

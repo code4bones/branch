@@ -118,6 +118,17 @@ void test("PoC panel starts redacted development monitor without a bearer contro
   assert.doesNotMatch(monitor, /authorization:|localStorage|indexedDB|entry\.detail.*JSON\.stringify/);
 });
 
+void test("PoC trace categories persist locally and style their filter labels", async () => {
+  const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+  assert.match(panel, /branch\.pwa\.poc\.trace-categories\/v1/);
+  assert.match(panel, /window\.localStorage\.getItem/);
+  assert.match(panel, /window\.localStorage\.setItem/);
+  assert.match(panel, /useClientMonitor\(transportTrace, selectedTraceCategories\)/);
+  assert.match(styles, /\.pwa-poc-debug-filter\.is-receipts/);
+  assert.match(styles, /\.pwa-poc-debug \.ant-checkbox-wrapper[\s\S]*font-size: 0\.62rem/);
+});
+
 void test("PoC reset chat is an explicit local test cleanup", async () => {
   const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
   assert.match(panel, /clearLocalConversation\(contactId\)/);

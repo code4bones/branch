@@ -33,7 +33,7 @@ interface ClientMonitorReport {
 // useClientMonitor is intentionally isolated from the transport. Reporting is
 // best-effort developer tooling: a failed POST cannot add local trace entries,
 // alter a relay session, or affect an application retry.
-export function useClientMonitor(entries: readonly TransportTraceEntry[]): "ready" | "sending" | "sent" | "failed" {
+export function useClientMonitor(entries: readonly TransportTraceEntry[], selectedCategories: readonly ClientMonitorCategory[]): "ready" | "sending" | "sent" | "failed" {
   const [status, setStatus] = useState<"ready" | "sending" | "sent" | "failed">("ready");
   const [cycle, setCycle] = useState(0);
   const clientRef = useRef(newClientMonitorRef());
@@ -44,11 +44,15 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[]): "read
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
+    // A filter change is a local observability boundary, not merely a view
+    // preference. Do not leave deselected categories queued for a later POST.
+    const selected = new Set(selectedCategories);
+    pending.current = pending.current.filter((event) => selected.has(event.category));
     const fresh = entries.flatMap((entry) => {
       const key = `${String(entry.at)}:${entry.detail}`;
       if (seen.current.has(key)) return [];
       seen.current.add(key);
-      const event = clientMonitorEvent(entry);
+      const event = clientMonitorEventForCategories(entry, selectedCategories);
       return event === null ? [] : [event];
     });
     if (fresh.length > 0) pending.current = [...pending.current, ...fresh].slice(-maxPendingEvents);
@@ -83,7 +87,7 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[]): "read
         timer.current = null;
       }
     };
-  }, [cycle, entries]);
+  }, [cycle, entries, selectedCategories]);
 
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   return status;
@@ -96,6 +100,13 @@ export function clientMonitorEvent(entry: TransportTraceEntry): ClientMonitorEve
   const event = clientMonitorEventName(entry.detail);
   if (event === null) return null;
   return { at: new Date(entry.at).toISOString(), category: clientMonitorCategory(event), event };
+}
+
+// Kept exportable so the selected-category boundary remains directly
+// testable without rendering the developer panel.
+export function clientMonitorEventForCategories(entry: TransportTraceEntry, selectedCategories: readonly ClientMonitorCategory[]): ClientMonitorEvent | null {
+  const event = clientMonitorEvent(entry);
+  return event !== null && selectedCategories.includes(event.category) ? event : null;
 }
 
 function clientMonitorEventName(detail: string): ClientMonitorEventName | null {

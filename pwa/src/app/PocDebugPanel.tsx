@@ -14,16 +14,12 @@ const traceCategories = ["messages", "presence", "receipts", "outbox", "controls
 type TraceCategory = (typeof traceCategories)[number];
 
 const defaultTraceCategories: TraceCategory[] = ["messages", "presence", "receipts", "outbox", "controls", "transport"];
+const traceCategoryPreferenceKey = "branch.pwa.poc.trace-categories/v1";
 
-const traceCategoryOptions: { label: string; value: TraceCategory }[] = [
-  { label: "Messages", value: "messages" },
-  { label: "Presence", value: "presence" },
-  { label: "Receipts", value: "receipts" },
-  { label: "Outbox", value: "outbox" },
-  { label: "Controls", value: "controls" },
-  { label: "Transport", value: "transport" },
-  { label: "Frames", value: "frames" }
-];
+const traceCategoryOptions: { label: React.JSX.Element; value: TraceCategory }[] = traceCategories.map((category) => ({
+  label: <span className={`pwa-poc-debug-filter is-${category}`}>{traceCategoryLabel(category)}</span>,
+  value: category
+}));
 
 export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEndpoint, attachStatus, queuedCount, transportTrace, onBurstMessage, onRendezvous }: {
   readonly contactId: string;
@@ -39,12 +35,12 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const runner = useMemo(() => new PocBurstRunner(browserPocBurstTimers), []);
   const [burstCount, setBurstCount] = useState<(typeof burstOptions)[number]>(8);
   const [progress, setProgress] = useState<PocBurstProgress>({ sent: 0, total: 0, running: false });
-  const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(defaultTraceCategories);
+  const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(loadTraceCategories);
   const outbox = useAppStore((state) => state.outbox);
   const settleOutboxMessage = useAppStore((state) => state.settleOutboxMessage);
   const clearLocalConversation = useAppStore((state) => state.clearLocalConversation);
   const recordTransportTrace = useAppStore((state) => state.recordTransportTrace);
-  const clientMonitorStatus = useClientMonitor(transportTrace);
+  const clientMonitorStatus = useClientMonitor(transportTrace, selectedTraceCategories);
   const { awaitingDeliveryCount, deliveredAwaitingReadCount } = useMemo(() => {
     const localOutbox = outbox.filter((entry) => entry.contactId === contactId);
     const awaiting = localOutbox.filter((entry) => entry.deliveredAt === null).length;
@@ -141,7 +137,11 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       <p className="pwa-poc-debug-monitor-status">Client monitor: {clientMonitorStatus}. Automatic redacted development reports.</p>
       <Checkbox.Group
         aria-label="Trace categories"
-        onChange={(values) => { setSelectedTraceCategories(values.filter(isTraceCategory)); }}
+        onChange={(values) => {
+          const selected = values.filter(isTraceCategory);
+          setSelectedTraceCategories(selected);
+          saveTraceCategories(selected);
+        }}
         options={traceCategoryOptions}
         value={selectedTraceCategories}
       />
@@ -175,6 +175,30 @@ export function purgeableOutboxMessageIds(entries: readonly { readonly messageId
 
 function isTraceCategory(value: unknown): value is TraceCategory {
   return typeof value === "string" && (traceCategories as readonly string[]).includes(value);
+}
+
+function traceCategoryLabel(category: TraceCategory): string {
+  return category.charAt(0).toUpperCase() + category.slice(1);
+}
+
+function loadTraceCategories(): TraceCategory[] {
+  if (typeof window === "undefined") return defaultTraceCategories;
+  try {
+    const stored = window.localStorage.getItem(traceCategoryPreferenceKey);
+    if (stored === null) return defaultTraceCategories;
+    const decoded: unknown = JSON.parse(stored);
+    return Array.isArray(decoded) ? decoded.filter(isTraceCategory) : defaultTraceCategories;
+  } catch {
+    return defaultTraceCategories;
+  }
+}
+
+function saveTraceCategories(categories: readonly TraceCategory[]): void {
+  try {
+    window.localStorage.setItem(traceCategoryPreferenceKey, JSON.stringify(categories));
+  } catch {
+    // Developer filter preferences are optional local UI state.
+  }
 }
 
 function formatTime(at: number): string {
