@@ -33,10 +33,18 @@ export const createReadReceiptOutboxSlice: StateCreator<AppStore, [], [], ReadRe
     if (uniqueIds.length === 0) return;
     const readAt = Date.now();
     const entries = uniqueIds.map((targetDeliveryId) => ({ targetDeliveryId, contactId, readAt, receiptPending: queueReceipts }));
+    const newlyRecorded: StoredReadReceiptEntry[] = [];
     const evicted: StoredReadReceiptEntry[] = [];
     set((state) => {
       const replaced = new Map(state.readReceiptOutbox.map((entry) => [entry.targetDeliveryId, entry]));
-      for (const entry of entries) replaced.set(entry.targetDeliveryId, entry);
+      for (const entry of entries) {
+        // ChatPage's foreground presentation set is intentionally ephemeral.
+        // After reload it may present retained history again, but that must
+        // never turn an already settled receipt back into outbound work.
+        if (replaced.has(entry.targetDeliveryId)) continue;
+        replaced.set(entry.targetDeliveryId, entry);
+        newlyRecorded.push(entry);
+      }
       const next = [...replaced.values()].sort((left, right) => left.readAt - right.readAt);
       while (next.length > maxStoredReadReceiptEntries) {
         const removed = next.shift();
@@ -44,7 +52,7 @@ export const createReadReceiptOutboxSlice: StateCreator<AppStore, [], [], ReadRe
       }
       return { readReceiptOutbox: next };
     });
-    for (const entry of entries) void saveStoredReadReceipt(entry).catch(() => {});
+    for (const entry of newlyRecorded) void saveStoredReadReceipt(entry).catch(() => {});
     for (const entry of evicted) void deleteStoredReadReceipt(entry.targetDeliveryId).catch(() => {});
   },
   settleReadReceipt: (targetDeliveryId) => {

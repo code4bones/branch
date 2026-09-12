@@ -822,7 +822,7 @@ void test("PWA persists active-chat read presentation locally and drains opted-i
     receiptPending: false
   }]);
   store.getState().recordIncomingMessagesRead("contact-1", ["delivery-1", "delivery-2"], true);
-  assert.equal(store.getState().readReceiptOutbox.find((entry) => entry.targetDeliveryId === "delivery-1")?.receiptPending, true);
+  assert.equal(store.getState().readReceiptOutbox.find((entry) => entry.targetDeliveryId === "delivery-1")?.receiptPending, false);
   assert.equal(store.getState().readReceiptOutbox.find((entry) => entry.targetDeliveryId === "delivery-2")?.receiptPending, true);
   store.getState().settleReadReceipt("delivery-1");
   assert.equal(store.getState().readReceiptOutbox.find((entry) => entry.targetDeliveryId === "delivery-1")?.receiptPending, false);
