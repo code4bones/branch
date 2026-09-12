@@ -874,13 +874,17 @@ void test("desktop PoC diagnostics extend their scrollable trace to the composer
   assert.match(styles, /@media \(max-width: 767px\) \{\s*\.pwa-poc-debug \{ display: none; \}/);
 });
 
-void test("desktop PoC controls stack without constraining the flexible trace", async () => {
+void test("desktop PoC controls keep compact rows without constraining the flexible trace", async () => {
   const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+  const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
 
-  assert.match(styles, /\.pwa-poc-debug-status div\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
-  assert.match(styles, /\.pwa-poc-debug-actions\s*\{[\s\S]*flex-direction: column;[\s\S]*align-items: stretch;/);
-  assert.match(styles, /\.pwa-poc-debug-actions \.ant-select,[\s\S]*\.pwa-poc-debug-actions \.ant-btn \{ width: 100%; \}/);
-  assert.match(styles, /\.pwa-poc-debug \.ant-checkbox-group\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(panel, /Outbox<\/dt><dd>\{String\(queuedCount\)\} total · \{String\(awaitingDeliveryCount\)\} deliv · \{String\(deliveredAwaitingReadCount\)\} read/);
+  assert.doesNotMatch(panel, /await delivery|await read/);
+  assert.match(styles, /\.pwa-poc-debug-status div\s*\{[\s\S]*grid-template-columns: 48px minmax\(0, 1fr\);/);
+  assert.match(styles, /\.pwa-poc-debug-actions\s*\{[\s\S]*align-items: center;/);
+  assert.match(styles, /\.pwa-poc-debug-actions \.ant-select \{ flex: 0 1 100px; min-width: 0; \}/);
+  assert.match(styles, /\[aria-label="Stop PoC burst"\] \{ flex: 0 0 32px; \}/);
+  assert.match(styles, /\.pwa-poc-debug \.ant-checkbox-group\s*\{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;/);
   assert.match(styles, /\.pwa-poc-debug-trace\s*\{[\s\S]*flex: 1 1 auto;[\s\S]*overflow-y: auto;/);
 });
 
