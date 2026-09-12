@@ -593,6 +593,12 @@ void test("adding a discovered contact emits one live consent request without an
   assert.match(sender, /This is not an outbox entry/);
 });
 
+void test("message-request link uses the standard readable foreground", async () => {
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+
+  assert.match(styles, /\.pwa-message-request-link \{[\s\S]*?color: var\(--pwa-ink\);/);
+});
+
 void test("PWA presence controls are strict encrypted ping-pong payloads and never invite unknown traffic", () => {
   const senderPeerId = Buffer.alloc(32, 8).toString("base64url");
   const pingId = Buffer.alloc(16, 13).toString("base64url");

@@ -189,7 +189,7 @@ body {
   min-height: 40px;
   margin: 2px 8px 8px;
   padding: 8px 10px;
-  color: var(--pwa-cyan);
+  color: var(--pwa-ink);
   border-radius: 10px;
   background: rgb(27 32 40 / 88%);
   box-shadow: 0 4px 18px rgb(0 0 0 / 15%);
