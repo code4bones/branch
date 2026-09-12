@@ -91,7 +91,14 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
         <div><dt>Chat</dt><dd>{contactName}</dd></div>
         <div><dt>Relay</dt><dd><Tag color={attachStatus === "attached" ? "cyan" : "default"}>{attachStatus}</Tag></dd></div>
         <div className="pwa-poc-debug-endpoint"><dd title={attachedRelayEndpoint ?? undefined}>{attachedRelayEndpoint ?? "none"}</dd></div>
-        <div><dt>Outbox</dt><dd>{String(queuedCount)} total · {String(awaitingDeliveryCount)} deliv · {String(deliveredAwaitingReadCount)} read</dd></div>
+        <div>
+          <dt>Outbox</dt>
+          <dd className="pwa-poc-debug-outbox-status">
+            <span className="pwa-poc-debug-outbox-stat is-total">{String(queuedCount)} total</span>
+            <Tooltip title="Awaiting a signed Delivered receipt"><span className="pwa-poc-debug-outbox-stat is-delivery">{String(awaitingDeliveryCount)} →deliv</span></Tooltip>
+            <Tooltip title="Delivered; awaiting a signed Read receipt"><span className="pwa-poc-debug-outbox-stat is-read">{String(deliveredAwaitingReadCount)} →read</span></Tooltip>
+          </dd>
+        </div>
       </dl>
       <div className="pwa-poc-debug-actions">
         <Select

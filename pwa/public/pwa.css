@@ -1186,6 +1186,12 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 .pwa-poc-debug-status dd { margin: 0; }
 .pwa-poc-debug-status dt { color: var(--pwa-muted); }
 .pwa-poc-debug-status dd { overflow-wrap: anywhere; }
+.pwa-poc-debug-outbox-status { display: flex; flex-wrap: wrap; gap: 4px; }
+.pwa-poc-debug-outbox-stat { white-space: nowrap; }
+.pwa-poc-debug-outbox-stat:not(:last-child)::after { content: "·"; margin-left: 4px; color: var(--pwa-muted); }
+.pwa-poc-debug-outbox-stat.is-total { color: var(--pwa-ink); }
+.pwa-poc-debug-outbox-stat.is-delivery { color: #f1cc91; }
+.pwa-poc-debug-outbox-stat.is-read { color: #9fe0f2; }
 .pwa-poc-debug-status .pwa-poc-debug-endpoint {
   grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr);

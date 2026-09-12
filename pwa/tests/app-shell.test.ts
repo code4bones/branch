@@ -892,7 +892,8 @@ void test("desktop PoC controls keep compact rows without constraining the flexi
   const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
   const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
 
-  assert.match(panel, /Outbox<\/dt><dd>\{String\(queuedCount\)\} total · \{String\(awaitingDeliveryCount\)\} deliv · \{String\(deliveredAwaitingReadCount\)\} read/);
+  assert.match(panel, /pwa-poc-debug-outbox-stat is-delivery">\{String\(awaitingDeliveryCount\)\} →deliv/);
+  assert.match(panel, /pwa-poc-debug-outbox-stat is-read">\{String\(deliveredAwaitingReadCount\)\} →read/);
   assert.doesNotMatch(panel, /await delivery|await read/);
   assert.match(styles, /\.pwa-poc-debug-status div\s*\{[\s\S]*grid-template-columns: 48px minmax\(0, 1fr\);/);
   assert.match(styles, /\.pwa-poc-debug-actions\s*\{[\s\S]*align-items: center;/);
