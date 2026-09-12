@@ -1186,7 +1186,10 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 .pwa-poc-debug-status dd { margin: 0; }
 .pwa-poc-debug-status dt { color: var(--pwa-muted); }
 .pwa-poc-debug-status dd { overflow-wrap: anywhere; }
-.pwa-poc-debug-endpoint { grid-column: 1 / -1; }
+.pwa-poc-debug-status .pwa-poc-debug-endpoint {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+}
 
 .pwa-poc-debug-actions {
   display: flex;

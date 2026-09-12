@@ -103,7 +103,7 @@ void test("PoC title provides an explicit local trace copy action with readable 
   assert.doesNotMatch(panel, /<dt>Attached<\/dt>/);
   assert.match(css, /\.pwa-poc-debug-heading\s*\{[\s\S]*color: var\(--pwa-ink\);/);
   assert.match(css, /\.pwa-poc-debug-copy \{ margin-left: auto; \}/);
-  assert.match(css, /\.pwa-poc-debug-endpoint \{ grid-column: 1 \/ -1; \}/);
+  assert.match(css, /\.pwa-poc-debug-status \.pwa-poc-debug-endpoint\s*\{[\s\S]*grid-column: 1 \/ -1;[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
 });
 
 void test("PoC reset chat is an explicit local test cleanup", async () => {
