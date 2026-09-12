@@ -70,9 +70,18 @@ type ClientMonitorOutboxItem struct {
 // ClientMonitorEvent contains only an allow-listed diagnostic outcome and a
 // browser wall-clock timestamp. Event names are not arbitrary trace strings.
 type ClientMonitorEvent struct {
-	At       time.Time `json:"at"`
-	Category string    `json:"category"`
-	Event    string    `json:"event"`
+	At       time.Time             `json:"at"`
+	Category string                `json:"category"`
+	Event    string                `json:"event"`
+	Message  *ClientMonitorMessage `json:"message,omitempty"`
+}
+
+// ClientMonitorMessage is an opaque browser-session-only handle and closed
+// state. It has no message, delivery, contact or peer identifier.
+type ClientMonitorMessage struct {
+	Ref       string `json:"ref"`
+	Direction string `json:"direction"`
+	Status    string `json:"status"`
 }
 
 // ClientMonitorObservation is the process-local operator view for one tab.
@@ -174,7 +183,7 @@ func validClientMonitorReport(report ClientMonitorReport) bool {
 		return false
 	}
 	for _, event := range report.Events {
-		if event.At.IsZero() || !validClientMonitorCategory(event.Category) || !validClientMonitorEvent(event.Event) {
+		if event.At.IsZero() || !validClientMonitorCategory(event.Category) || !validClientMonitorEvent(event.Event) || !validClientMonitorEventMessage(event) {
 			return false
 		}
 	}
@@ -237,11 +246,25 @@ func validClientMonitorCategory(category string) bool {
 
 func validClientMonitorEvent(event string) bool {
 	switch event {
-	case "client.session_started", "receipt.read_expired", "receipt.read_attempt_sent", "receipt.read_skipped", "receipt.read_failed", "receipt.read_matched", "receipt.read_unmatched", "receipt.delivered_failed", "receipt.delivered_sent", "receipt.delivered_matched", "receipt.delivered_unmatched", "outbox.expired", "outbox.retry_deferred", "outbox.retry_sent", "message.received", "message.duplicate", "message.request", "transport.attached", "transport.attach_failed", "transport.relay_notice", "transport.disconnected", "frame.outbound", "frame.incoming", "control.capability", "control.typing", "control.rtc", "poc.burst_started", "poc.burst_queued", "poc.rendezvous_sent", "poc.rendezvous_failed":
+	case "client.session_started", "receipt.read_expired", "receipt.read_attempt_sent", "receipt.read_skipped", "receipt.read_failed", "receipt.read_matched", "receipt.read_unmatched", "receipt.read_accepted", "receipt.read_duplicate_terminal", "receipt.delivered_failed", "receipt.delivered_sent", "receipt.delivered_matched", "receipt.delivered_unmatched", "outbox.expired", "outbox.retry_deferred", "outbox.retry_sent", "message.received", "message.duplicate", "message.request", "message.observed", "message.status_changed", "transport.attached", "transport.attach_failed", "transport.relay_notice", "transport.disconnected", "frame.outbound", "frame.incoming", "control.capability", "control.typing", "control.rtc", "poc.burst_started", "poc.burst_queued", "poc.rendezvous_sent", "poc.rendezvous_failed":
 		return true
 	default:
 		return false
 	}
+}
+
+func validClientMonitorEventMessage(event ClientMonitorEvent) bool {
+	if event.Message == nil {
+		return event.Event != "message.observed" && event.Event != "message.status_changed"
+	}
+	message := event.Message
+	if event.Category != "messages" || (event.Event != "message.observed" && event.Event != "message.status_changed") || !clientMonitorOutboxRefPattern.MatchString(message.Ref) {
+		return false
+	}
+	if message.Direction == "incoming" {
+		return message.Status == "received"
+	}
+	return message.Direction == "outgoing" && oneOf(message.Status, "pending", "relayed", "delivered", "read", "unavailable")
 }
 
 func cloneClientMonitorSnapshot(snapshot ClientMonitorSnapshot) ClientMonitorSnapshot {
@@ -255,6 +278,10 @@ func cloneClientMonitorEvents(events []ClientMonitorEvent) []ClientMonitorEvent 
 	copy(cloned, events)
 	for index := range cloned {
 		cloned[index].At = cloned[index].At.UTC()
+		if events[index].Message != nil {
+			message := *events[index].Message
+			cloned[index].Message = &message
+		}
 	}
 	return cloned
 }

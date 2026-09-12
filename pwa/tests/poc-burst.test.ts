@@ -126,7 +126,7 @@ void test("PoC trace categories persist locally and style their filter labels", 
   assert.match(panel, /branch\.pwa\.poc\.trace-categories\/v1/);
   assert.match(panel, /window\.localStorage\.getItem/);
   assert.match(panel, /window\.localStorage\.setItem/);
-  assert.match(panel, /useClientMonitor\(transportTrace, selectedTraceCategories, monitorSnapshot\)/);
+  assert.match(panel, /useClientMonitor\(transportTrace, selectedTraceCategories, monitorSnapshot, messagesByContactId\)/);
   assert.match(styles, /\.pwa-poc-debug-filter\.is-receipts/);
   assert.match(styles, /\.pwa-poc-debug \.ant-checkbox-wrapper[\s\S]*font-size: 0\.62rem/);
 });

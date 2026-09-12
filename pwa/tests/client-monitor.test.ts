@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { clientMonitorCountBucket, clientMonitorEvent, clientMonitorEventForCategories, clientMonitorOutboxItems } from "../src/app/client-monitor.js";
+import { clientMonitorCountBucket, clientMonitorEvent, clientMonitorEventForCategories, clientMonitorMessageEvents, clientMonitorOutboxItems, type ClientMonitorMessage } from "../src/app/client-monitor.js";
 
 void test("client monitor reduces receipt traces to an allow-listed redacted event", () => {
   assert.deepEqual(clientMonitorEvent({ at: 1_700_000_000_000, detail: "delivery receipt: read_unmatched" }), {
@@ -55,4 +55,43 @@ void test("client monitor assigns only ephemeral outbox display refs", () => {
     { ref: "m2", state: "awaiting_read" }
   ]);
   assert.doesNotMatch(JSON.stringify(items), /canonical|another/);
+});
+
+void test("client monitor correlates only session-local message status transitions", () => {
+  const previous = new Map<string, ClientMonitorMessage>();
+  const outgoing = {
+    messageId: "message-id-stays-local",
+    contactId: "contact-stays-local",
+    direction: "outgoing" as const,
+    body: "never export this",
+    sentAt: 1,
+    deliveryState: "pending" as const
+  };
+  const initial = {
+    "contact-stays-local": [outgoing]
+  };
+  assert.deepEqual(clientMonitorMessageEvents(initial, previous, false), []);
+  const changed = clientMonitorMessageEvents({
+    "contact-stays-local": [{ ...outgoing, deliveryState: "delivered" as const }]
+  }, previous, true);
+  assert.deepEqual(changed.map((event) => ({ category: event.category, event: event.event, message: event.message })), [{
+    category: "messages",
+    event: "message.status_changed",
+    message: { ref: "m3", direction: "outgoing", status: "delivered" }
+  }]);
+  assert.doesNotMatch(JSON.stringify(changed), /contact|message-id|never export/);
+});
+
+void test("client monitor observes a new incoming bubble without its content", () => {
+  const previous = new Map<string, ClientMonitorMessage>();
+  void clientMonitorMessageEvents({}, previous, false);
+  const events = clientMonitorMessageEvents({
+    local: [{ messageId: "incoming-message", contactId: "local", direction: "incoming", body: "private", sentAt: 1, deliveryState: "received" }]
+  }, previous, true);
+  assert.deepEqual(events.map((event) => ({ category: event.category, event: event.event, message: event.message })), [{
+    category: "messages",
+    event: "message.observed",
+    message: { ref: "m4", direction: "incoming", status: "received" }
+  }]);
+  assert.doesNotMatch(JSON.stringify(events), /incoming-message|private/);
 });

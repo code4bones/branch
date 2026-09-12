@@ -130,9 +130,11 @@ never written. A project-controlled relay is recorded only as a short test
 label such as `relay04`, never a URL. The journal contains closed event names,
 selected trace categories, and a fixed state snapshot (identity readiness,
 page, route/attachment, discovery, observed RTC signaling, and bounded count
-buckets). Pending outbox entries may receive `mN` display handles that exist
-only in that one browser process; the message IDs that produced them never
-leave the browser.
+buckets). Pending outbox entries and the closed `message.observed` /
+`message.status_changed` development events may receive `mN` display handles
+that exist only in that one browser process. Those events contain only `mN`,
+`incoming` or `outgoing`, and a closed local delivery state; the message IDs,
+delivery IDs, text and media that produced them never leave the browser.
 
 The default journal capacity is 8 MiB per file with three rotated files and a
 256-report queue. The path is absolute and has mode `0600`; its operator is

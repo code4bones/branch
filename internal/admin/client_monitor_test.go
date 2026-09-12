@@ -47,6 +47,35 @@ func TestClientMonitorRegistryRejectsRawTraceAndIdentifiers(t *testing.T) {
 	}
 }
 
+func TestClientMonitorRegistryAcceptsOnlyClosedSessionLocalMessageTransitions(t *testing.T) {
+	registry := NewClientMonitorRegistry(ClientMonitorConfig{})
+	report := sampleClientMonitorReport()
+	report.Snapshot.Filters = []string{"messages"}
+	report.Events = []ClientMonitorEvent{{
+		At: time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC), Category: "messages", Event: "message.status_changed",
+		Message: &ClientMonitorMessage{Ref: "m12", Direction: "outgoing", Status: "delivered"},
+	}}
+	if err := registry.Accept(report, time.Now()); err != nil {
+		t.Fatalf("accept closed message transition: %v", err)
+	}
+
+	for _, message := range []*ClientMonitorMessage{
+		{Ref: "message-id", Direction: "outgoing", Status: "delivered"},
+		{Ref: "m3", Direction: "incoming", Status: "read"},
+		{Ref: "m3", Direction: "outgoing", Status: "received"},
+	} {
+		report.Events[0].Message = message
+		if err := registry.Accept(report, time.Now()); err != ErrClientMonitorInvalidReport {
+			t.Fatalf("invalid message %+v error = %v, want %v", message, err, ErrClientMonitorInvalidReport)
+		}
+	}
+
+	report.Events[0].Message = nil
+	if err := registry.Accept(report, time.Now()); err != ErrClientMonitorInvalidReport {
+		t.Fatalf("missing message metadata error = %v, want %v", err, ErrClientMonitorInvalidReport)
+	}
+}
+
 func TestClientMonitorHTTPUsesDedicatedIngestBearerAndAdminListing(t *testing.T) {
 	now := time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC)
 	registry := NewClientMonitorRegistry(ClientMonitorConfig{})

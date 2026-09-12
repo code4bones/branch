@@ -44,6 +44,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const contactPresenceById = useAppStore((state) => state.contactPresenceById);
   const readReceiptOutbox = useAppStore((state) => state.readReceiptOutbox);
   const inboundAttachmentOffersByPeerId = useAppStore((state) => state.inboundAttachmentOffersByPeerId);
+  const messagesByContactId = useAppStore((state) => state.messagesByContactId);
   const settleOutboxMessage = useAppStore((state) => state.settleOutboxMessage);
   const clearLocalConversation = useAppStore((state) => state.clearLocalConversation);
   const recordTransportTrace = useAppStore((state) => state.recordTransportTrace);
@@ -61,7 +62,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
     read_work: clientMonitorCountBucket(readReceiptOutbox.filter((entry) => entry.receiptPending).length),
     attachments: clientMonitorCountBucket(Object.keys(inboundAttachmentOffersByPeerId).length)
   }), [attachStatus, attachedRelayEndpoint, contactDiscoveryAvailability, contactPresenceById, contacts.length, identityStatus, inboundAttachmentOffersByPeerId, outbox.length, readReceiptOutbox, routeStatus]);
-  const clientMonitorStatus = useClientMonitor(transportTrace, selectedTraceCategories, monitorSnapshot);
+  const clientMonitorStatus = useClientMonitor(transportTrace, selectedTraceCategories, monitorSnapshot, messagesByContactId);
   const { awaitingDeliveryCount, deliveredAwaitingReadCount } = useMemo(() => {
     const localOutbox = outbox.filter((entry) => entry.contactId === contactId);
     const awaiting = localOutbox.filter((entry) => entry.deliveredAt === null).length;

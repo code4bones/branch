@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { pwaReleaseVersion } from "./pwa-release.js";
 import type { TransportTraceEntry } from "../state/slices/transport-slice.js";
+import type { MessageDeliveryState, MessageSummary } from "../state/slices/conversations-slice.js";
 
 const clientMonitorEndpoint = "/node-admin/client-monitor/reports";
 const maxBatchEvents = 24;
@@ -14,7 +15,7 @@ export type ClientMonitorEventName =
   | "receipt.read_expired" | "receipt.read_attempt_sent" | "receipt.read_skipped" | "receipt.read_failed" | "receipt.read_matched" | "receipt.read_unmatched" | "receipt.read_accepted" | "receipt.read_duplicate_terminal"
   | "receipt.delivered_failed" | "receipt.delivered_sent" | "receipt.delivered_matched" | "receipt.delivered_unmatched"
   | "outbox.expired" | "outbox.retry_deferred" | "outbox.retry_sent"
-  | "message.received" | "message.duplicate" | "message.request"
+  | "message.received" | "message.duplicate" | "message.request" | "message.observed" | "message.status_changed"
   | "transport.attached" | "transport.attach_failed" | "transport.relay_notice" | "transport.disconnected"
   | "frame.outbound" | "frame.incoming" | "control.capability" | "control.typing" | "control.rtc"
   | "poc.burst_started" | "poc.burst_queued" | "poc.rendezvous_sent" | "poc.rendezvous_failed";
@@ -23,7 +24,18 @@ export interface ClientMonitorEvent {
   readonly at: string;
   readonly category: ClientMonitorCategory;
   readonly event: ClientMonitorEventName;
+  // This is deliberately only a live-tab handle and a closed local state.
+  // Neither the message ID nor any part of its body is serializable here.
+  readonly message?: ClientMonitorMessage;
 }
+
+export interface ClientMonitorMessage {
+  readonly ref: `m${number}`;
+  readonly direction: "incoming" | "outgoing";
+  readonly status: ClientMonitorMessageStatus;
+}
+
+export type ClientMonitorMessageStatus = MessageDeliveryState;
 
 export type ClientMonitorCountBucket = "zero" | "one" | "two_to_four" | "five_to_eight" | "nine_plus";
 
@@ -63,7 +75,7 @@ interface ClientMonitorReport {
 // useClientMonitor is intentionally isolated from the transport. Reporting is
 // best-effort developer tooling: a failed POST cannot add local trace entries,
 // alter a relay session, or affect an application retry.
-export function useClientMonitor(entries: readonly TransportTraceEntry[], selectedCategories: readonly ClientMonitorCategory[], snapshot: Omit<ClientMonitorSnapshot, "filters" | "rtc">): "ready" | "sending" | "sent" | "failed" {
+export function useClientMonitor(entries: readonly TransportTraceEntry[], selectedCategories: readonly ClientMonitorCategory[], snapshot: Omit<ClientMonitorSnapshot, "filters" | "rtc">, messagesByContactId: Readonly<Record<string, readonly MessageSummary[]>>): "ready" | "sending" | "sent" | "failed" {
   const [status, setStatus] = useState<"ready" | "sending" | "sent" | "failed">("ready");
   const [cycle, setCycle] = useState(0);
   const sessionRef = useRef(newClientMonitorRef());
@@ -73,6 +85,8 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[], select
   const sending = useRef(false);
   const lastSentAt = useRef(0);
   const timer = useRef<number | null>(null);
+  const messageStates = useRef(new Map<string, ClientMonitorMessage>());
+  const messageObserverReady = useRef(false);
 
   useEffect(() => {
     // A filter change is a local observability boundary, not merely a view
@@ -86,7 +100,10 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[], select
       const event = clientMonitorEventForCategories(entry, selectedCategories);
       return event === null ? [] : [event];
     });
-    if (fresh.length > 0) pending.current = [...pending.current, ...fresh].slice(-maxPendingEvents);
+    const messageEvents = clientMonitorMessageEvents(messagesByContactId, messageStates.current, messageObserverReady.current);
+    messageObserverReady.current = true;
+    const selectedMessageEvents = selected.has("messages") ? messageEvents : [];
+    if (fresh.length > 0 || selectedMessageEvents.length > 0) pending.current = [...pending.current, ...fresh, ...selectedMessageEvents].slice(-maxPendingEvents);
     if (pending.current.length === 0 || sending.current || timer.current !== null) {
       if (pending.current.length === 0) setStatus("ready");
       return;
@@ -125,7 +142,7 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[], select
         timer.current = null;
       }
     };
-  }, [cycle, entries, selectedCategories, snapshot]);
+  }, [cycle, entries, messagesByContactId, selectedCategories, snapshot]);
 
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   return status;
@@ -209,26 +226,73 @@ export function clientMonitorCountBucket(count: number): ClientMonitorCountBucke
   return "nine_plus";
 }
 
-const outboxRefs = new Map<string, `m${number}`>();
-let nextOutboxRef = 1;
+const messageRefs = new Map<string, `m${number}`>();
+let nextMessageRef = 1;
+const maxSessionMessageRefs = 128;
 
 // This mapping exists only in the live JavaScript process. The real message
 // ID never enters a report or a JSONL line; mN lets a developer follow the
 // same pending item while this one refresh session is active.
 export function clientMonitorOutboxItems(entries: readonly { readonly messageId: string; readonly deliveredAt: number | null }[]): readonly ClientMonitorOutboxItem[] {
-  const active = new Set(entries.map((entry) => entry.messageId));
-  for (const messageId of outboxRefs.keys()) {
-    if (!active.has(messageId)) outboxRefs.delete(messageId);
-  }
   return entries.slice(0, 32).map((entry) => {
-    const existing = outboxRefs.get(entry.messageId);
-    const ref: `m${number}` = existing ?? `m${nextOutboxRef.toString()}` as `m${number}`;
-    if (existing === undefined) {
-      nextOutboxRef += 1;
-      outboxRefs.set(entry.messageId, ref);
-    }
-    return { ref, state: entry.deliveredAt === null ? "awaiting_delivery" : "awaiting_read" };
+    return { ref: clientMonitorMessageRef(entry.messageId), state: entry.deliveredAt === null ? "awaiting_delivery" : "awaiting_read" };
   });
+}
+
+// The map intentionally remains in JavaScript memory only. Its keys are raw
+// local message IDs, but those keys never enter a report, trace, JSONL record
+// or React output. Retaining a small recently-settled tail makes the final
+// Delivered -> Read transition use the same mN as the preceding outbox state.
+function clientMonitorMessageRef(messageId: string): `m${number}` {
+  const existing = messageRefs.get(messageId);
+  if (existing !== undefined) {
+    messageRefs.delete(messageId);
+    messageRefs.set(messageId, existing);
+    return existing;
+  }
+  const ref = `m${nextMessageRef.toString()}` as `m${number}`;
+  nextMessageRef += 1;
+  messageRefs.set(messageId, ref);
+  if (messageRefs.size > maxSessionMessageRefs) {
+    const oldest = messageRefs.keys().next().value;
+    if (oldest !== undefined) messageRefs.delete(oldest);
+  }
+  return ref;
+}
+
+// Exported for the privacy-boundary tests. Callers pass only local state; this
+// function's output is the complete serializable projection.
+export function clientMonitorMessageEvents(messagesByContactId: Readonly<Record<string, readonly MessageSummary[]>>, previous: Map<string, ClientMonitorMessage>, ready: boolean): readonly ClientMonitorEvent[] {
+  const current = new Map<string, ClientMonitorMessage>();
+  const events: ClientMonitorEvent[] = [];
+  // The conversation projection itself is bounded. Take its newest 128
+  // entries, preserving a hard observer limit even if a caller changes that
+  // UI bound later.
+  const messages = Object.values(messagesByContactId).flat().slice(-maxSessionMessageRefs);
+  for (const message of messages) {
+    if (message.direction === "service") continue;
+    const observed: ClientMonitorMessage = {
+      ref: clientMonitorMessageRef(message.messageId),
+      direction: message.direction,
+      status: message.deliveryState
+    };
+    current.set(message.messageId, observed);
+    const prior = previous.get(message.messageId);
+    if (!ready || prior === undefined) {
+      if (ready) events.push(clientMonitorMessageEvent("message.observed", observed));
+      continue;
+    }
+    if (prior.direction !== observed.direction || prior.status !== observed.status) {
+      events.push(clientMonitorMessageEvent("message.status_changed", observed));
+    }
+  }
+  previous.clear();
+  for (const [messageId, state] of current) previous.set(messageId, state);
+  return events.slice(-maxBatchEvents);
+}
+
+function clientMonitorMessageEvent(event: "message.observed" | "message.status_changed", message: ClientMonitorMessage): ClientMonitorEvent {
+  return { at: new Date().toISOString(), category: "messages", event, message };
 }
 
 // The app does not infer that signaling means a data channel is usable. This
