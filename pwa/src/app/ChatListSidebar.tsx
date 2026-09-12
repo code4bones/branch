@@ -10,9 +10,11 @@ import { formatChatListTimestamp } from "./format-time.js";
 import { DeliveryStateIcon } from "./MessageLog.js";
 import { chatPath, MESSAGE_REQUESTS_PATH, SETTINGS_PATH } from "./paths.js";
 import { pwaReleaseVersion } from "./pwa-release.js";
+import { sendContactRequest } from "../connectivity/seal-and-send.js";
 import { useBranchID } from "../identity/use-branch-id.js";
 import { useChatList, useContactDiscoveries, useContactFolders, useContactPresence, useContactTyping, useContacts, useIdentity, useInboundAttachmentOffer, useIncomingMessageRequests, useTransportStatus, type ChatListEntry } from "../state/hooks.js";
 import { filterChatListByFolder } from "../state/contact-folder-filter.js";
+import { useAppStoreApi } from "../state/StoreProvider.js";
 import { parseBranchID } from "@code4bones/branch-core";
 
 export function ChatListSidebar(): React.JSX.Element {
@@ -286,6 +288,8 @@ function IncomingAttachmentBadge({ peerId }: { readonly peerId: string }): React
 function AddContactModal({ open, onClose }: { readonly open: boolean; readonly onClose: () => void }): React.JSX.Element {
   const contacts = useContacts();
   const discovery = useContactDiscoveries();
+  const identity = useIdentity();
+  const storeApi = useAppStoreApi();
   const [branchId, setBranchId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -303,8 +307,28 @@ function AddContactModal({ open, onClose }: { readonly open: boolean; readonly o
 
   const add = (row: typeof discovery.rows[number]): void => {
     if (row.displayName === null || row.peerId === null || row.hpkePublicKey === null) return;
-    if (!contacts.contacts.some((contact) => contact.peerId === row.peerId)) contacts.upsertContact({ contactId: crypto.randomUUID(), displayName: row.displayName, peerId: row.peerId, hpkePublicKey: row.hpkePublicKey, lastRouteHint: null });
+    if (contacts.contacts.some((contact) => contact.peerId === row.peerId)) {
+      discovery.remove(row.branchId);
+      return;
+    }
+    contacts.upsertContact({ contactId: crypto.randomUUID(), displayName: row.displayName, peerId: row.peerId, hpkePublicKey: row.hpkePublicKey, lastRouteHint: null });
     discovery.remove(row.branchId);
+    const localIdentity = identity.identity;
+    if (localIdentity === null || localIdentity.displayName === null) return;
+    void sendContactRequest({
+      senderPeerId: localIdentity.peerId,
+      senderHpkePublicKey: localIdentity.hpkePublicKey,
+      senderDisplayName: localIdentity.displayName,
+      recipientPeerId: row.peerId,
+      recipientHpkePublicKey: row.hpkePublicKey
+    }).then(() => {
+      storeApi.getState().recordTransportTrace("contact request: sent");
+    }).catch(() => {
+      // The contact card is still useful locally. A missed live request is
+      // neither a rejection nor an offline-delivery promise, so do not queue
+      // or fabricate an invite outcome.
+      storeApi.getState().recordTransportTrace("contact request: not sent");
+    });
   };
 
   return (

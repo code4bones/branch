@@ -32,7 +32,7 @@ import {
 } from "@code4bones/branch-core";
 
 import { openIncomingEnvelope } from "../src/connectivity/open-envelope.js";
-import { createDeliveryID } from "../src/connectivity/seal-and-send.js";
+import { contactRequestBody, createDeliveryID } from "../src/connectivity/seal-and-send.js";
 import { encodeChatTextApplicationPayload } from "../src/connectivity/application-payload.js";
 import {
   applicationCapabilitiesControlDescriptor,
@@ -570,6 +570,27 @@ void test("PWA classifies an authenticated unknown sender as a local message req
     kind: "drop_unknown_legacy"
   });
   assert.throws(() => { classifyIncomingMessage({ plaintext, senderPeerId: "bad", knownContactId: null }); });
+});
+
+void test("adding a discovered contact emits one live consent request without an outbox", async () => {
+  const senderPeerId = Buffer.alloc(32, 8).toString("base64url");
+  const replyHpkePublicKey = Buffer.alloc(32, 9).toString("base64url");
+  const plaintext = encodeBetaPwaMessagePayload({ body: contactRequestBody, replyHpkePublicKey, senderDisplayName: "Alice" });
+  const sidebar = await readFile(chatListSidebarPath, "utf8");
+  const sender = await readFile(sealAndSendPath, "utf8");
+
+  assert.equal(contactRequestBody, "Contact request");
+  assert.deepEqual(classifyIncomingMessage({ plaintext, senderPeerId, knownContactId: null }), {
+    kind: "message_request",
+    senderPeerId,
+    senderHpkePublicKey: replyHpkePublicKey,
+    senderDisplayName: "Alice",
+    body: contactRequestBody
+  });
+  assert.match(sidebar, /sendContactRequest/);
+  assert.match(sidebar, /contact request: sent/);
+  assert.match(sender, /export async function sendContactRequest/);
+  assert.match(sender, /This is not an outbox entry/);
 });
 
 void test("PWA presence controls are strict encrypted ping-pong payloads and never invite unknown traffic", () => {

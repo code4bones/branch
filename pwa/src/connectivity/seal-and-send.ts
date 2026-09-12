@@ -35,6 +35,34 @@ export interface PresenceControlOptions {
   readonly pingId: string;
 }
 
+export const contactRequestBody = "Contact request";
+
+// Contact discovery deliberately returns only the recipient's signed card to
+// the requester.  Adding that card locally must not silently make the other
+// endpoint a known contact.  Send one explicit, live-only legacy first-contact
+// payload so the recipient's existing Message Requests UI can ask for consent.
+// This is not an outbox entry: there is no offline invite queue, retry, or
+// delivery claim when the recipient has already left the live route.
+export async function sendContactRequest(options: {
+  readonly senderPeerId: string;
+  readonly senderHpkePublicKey: string;
+  readonly senderDisplayName: string;
+  readonly recipientPeerId: string;
+  readonly recipientHpkePublicKey: string;
+}): Promise<void> {
+  await sealAndSendPayload({
+    senderPeerId: options.senderPeerId,
+    recipientPeerId: options.recipientPeerId,
+    recipientHpkePublicKey: options.recipientHpkePublicKey,
+    deliveryId: createDeliveryID(),
+    plaintext: encodeBetaPwaMessagePayload({
+      body: contactRequestBody,
+      replyHpkePublicKey: options.senderHpkePublicKey,
+      senderDisplayName: options.senderDisplayName
+    })
+  });
+}
+
 // Seals a visible user message and tracks only its relay-forward outcome.
 // Control envelopes use the same HPKE boundary but deliberately have no
 // message-log state and no delivery claim.
