@@ -14,6 +14,11 @@ void test("client monitor reduces receipt traces to an allow-listed redacted eve
     category: "receipts",
     event: "receipt.read_failed"
   });
+  assert.deepEqual(clientMonitorEvent({ at: 1_700_000_000_000, detail: "delivery receipt: read_accepted_sent" }), {
+    at: "2023-11-14T22:13:20.000Z",
+    category: "receipts",
+    event: "receipt.read_accepted"
+  });
 });
 
 void test("client monitor never forwards arbitrary local trace detail", () => {
