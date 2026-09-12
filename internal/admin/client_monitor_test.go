@@ -94,6 +94,29 @@ func TestClientMonitorHTTPUsesDedicatedIngestBearerAndAdminListing(t *testing.T)
 	}
 }
 
+func TestClientMonitorHTTPAllowsAnonymousPostOnlyWhenExplicitlyConfigured(t *testing.T) {
+	registry := NewClientMonitorRegistry(ClientMonitorConfig{})
+	handler := NewHTTPHandler(
+		NewHandler(staticProvider{}, WithClientMonitorRegistry(registry)),
+		AuthorizerFunc(func(*http.Request) bool { return true }),
+		WithClientMonitorAuthorizer(AuthorizerFunc(func(*http.Request) bool { return true })),
+	)
+	request := httptest.NewRequest(http.MethodPost, ClientMonitorReportsPath, bytes.NewReader(encodeClientMonitorReport(t, sampleClientMonitorReport())))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("explicit unauthenticated post status = %d", response.Code)
+	}
+
+	defaultHandler := NewHTTPHandler(NewHandler(staticProvider{}, WithClientMonitorRegistry(NewClientMonitorRegistry(ClientMonitorConfig{}))), AuthorizerFunc(func(*http.Request) bool { return true }))
+	request = httptest.NewRequest(http.MethodPost, ClientMonitorReportsPath, bytes.NewReader(encodeClientMonitorReport(t, sampleClientMonitorReport())))
+	response = httptest.NewRecorder()
+	defaultHandler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("default unauthenticated post status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
 func TestClientMonitorHTTPRejectsUnknownFields(t *testing.T) {
 	handler := NewHTTPHandler(NewHandler(staticProvider{}, WithClientMonitorRegistry(NewClientMonitorRegistry(ClientMonitorConfig{}))), AuthorizerFunc(func(*http.Request) bool { return true }), WithClientMonitorAuthorizer(AuthorizerFunc(func(*http.Request) bool { return true })))
 	body := []byte(`{"client_ref":"0123456789abcdef0123456789abcdef","release":"0.1.0-beta.149","events":[{"at":"2026-09-12T09:00:00Z","category":"receipts","event":"receipt.read_matched","detail":"forbidden"}]}`)

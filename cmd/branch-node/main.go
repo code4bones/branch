@@ -64,6 +64,11 @@ func parseConfig() (node.Config, error) {
 		return node.Config{}, err
 	}
 	flag.BoolVar(&allowFederationWS, "federation-allow-insecure-ws", allowFederationWS, "allow ws federation peers for local development only")
+	clientMonitorUnauthenticated, err := envBool("BRANCH_CLIENT_MONITOR_UNAUTHENTICATED")
+	if err != nil {
+		return node.Config{}, err
+	}
+	flag.BoolVar(&clientMonitorUnauthenticated, "client-monitor-unauthenticated", clientMonitorUnauthenticated, "allow unauthenticated client monitor reports for local development only")
 	allowFederationPrivateAddresses, err := envBool("BRANCH_FEDERATION_ALLOW_PRIVATE_ADDRESSES")
 	if err != nil {
 		return node.Config{}, err
@@ -91,6 +96,7 @@ func parseConfig() (node.Config, error) {
 	flag.DurationVar(&config.Monitor.Interval, "monitor-interval", monitorInterval, "relay monitor reporter interval; defaults to BRANCH_MONITOR_INTERVAL")
 	flag.Parse()
 	config.WSSOrigins = splitCSV(wssOriginPatterns)
+	config.ClientMonitorUnauthenticated = clientMonitorUnauthenticated
 	config.FederationEndpointPolicy = wss.FederationEndpointPolicy{
 		AllowInsecureWS:       allowFederationWS,
 		AllowPrivateAddresses: allowFederationPrivateAddresses,

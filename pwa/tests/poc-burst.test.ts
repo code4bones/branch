@@ -106,16 +106,16 @@ void test("PoC title provides an explicit local trace copy action with readable 
   assert.match(css, /\.pwa-poc-debug-status \.pwa-poc-debug-endpoint\s*\{[\s\S]*grid-column: 1 \/ -1;[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
 });
 
-void test("PoC panel offers volatile opt-in client monitor control without storing a bearer", async () => {
+void test("PoC panel starts redacted development monitor without a bearer control", async () => {
   const [panel, monitor] = await Promise.all([
     readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8"),
     readFile(resolve(process.cwd(), "src/app/client-monitor.ts"), "utf8")
   ]);
-  assert.match(panel, /aria-label="Client monitor bearer"/);
-  assert.match(panel, /Toggle client monitor/);
+  assert.match(panel, /Automatic redacted development reports/);
   assert.match(monitor, /const clientMonitorEndpoint = "\/node-admin\/client-monitor\/reports"/);
   assert.match(monitor, /keepalive: true/);
-  assert.doesNotMatch(monitor, /localStorage|indexedDB|entry\.detail.*JSON\.stringify/);
+  assert.doesNotMatch(panel, /Client monitor bearer|Toggle client monitor/);
+  assert.doesNotMatch(monitor, /authorization:|localStorage|indexedDB|entry\.detail.*JSON\.stringify/);
 });
 
 void test("PoC reset chat is an explicit local test cleanup", async () => {

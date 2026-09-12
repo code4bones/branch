@@ -1203,9 +1203,6 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 .pwa-poc-debug-actions [aria-label="Stop PoC burst"] { flex: 0 0 32px; }
 .pwa-poc-debug-progress { flex: 1 1 0; min-width: 0; color: var(--pwa-muted); text-align: center; }
 .pwa-poc-debug-note { margin: 9px 0; color: var(--pwa-muted); font-size: 0.7rem; line-height: 1.35; }
-.pwa-poc-debug-monitor { display: flex; gap: 5px; margin-bottom: 5px; }
-.pwa-poc-debug-monitor .ant-input-affix-wrapper { min-width: 0; flex: 1 1 auto; }
-.pwa-poc-debug-monitor .ant-btn { flex: 0 0 auto; }
 .pwa-poc-debug-monitor-status { margin: 0 0 8px; color: var(--pwa-muted); font-size: 0.66rem; line-height: 1.25; }
 
 .pwa-poc-debug .ant-checkbox-group {

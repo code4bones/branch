@@ -30,22 +30,12 @@ interface ClientMonitorReport {
   readonly events: readonly ClientMonitorEvent[];
 }
 
-export interface ClientMonitorControl {
-  readonly bearer: string;
-  readonly enabled: boolean;
-  readonly status: "off" | "ready" | "sending" | "sent" | "failed";
-  readonly setBearer: (value: string) => void;
-  readonly setEnabled: (value: boolean) => void;
-}
-
 // useClientMonitor is intentionally isolated from the transport. Reporting is
 // best-effort developer tooling: a failed POST cannot add local trace entries,
 // alter a relay session, or affect an application retry.
-export function useClientMonitor(entries: readonly TransportTraceEntry[]): ClientMonitorControl {
-  const [bearer, setBearer] = useState("");
-  const [enabled, setEnabled] = useState(false);
-  const [status, setStatus] = useState<ClientMonitorControl["status"]>("off");
-	const [cycle, setCycle] = useState(0);
+export function useClientMonitor(entries: readonly TransportTraceEntry[]): "ready" | "sending" | "sent" | "failed" {
+  const [status, setStatus] = useState<"ready" | "sending" | "sent" | "failed">("ready");
+  const [cycle, setCycle] = useState(0);
   const clientRef = useRef(newClientMonitorRef());
   const seen = useRef(new Set<string>());
   const pending = useRef<ClientMonitorEvent[]>([]);
@@ -54,11 +44,6 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[]): Clien
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!enabled || bearer.trim() === "") {
-		pending.current = [];
-      setStatus("off");
-      return;
-    }
     const fresh = entries.flatMap((entry) => {
       const key = `${String(entry.at)}:${entry.detail}`;
       if (seen.current.has(key)) return [];
@@ -81,7 +66,7 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[]): Clien
       const report: ClientMonitorReport = { client_ref: clientRef.current, release: pwaReleaseVersion, events };
       void fetch(clientMonitorEndpoint, {
         method: "POST",
-        headers: { authorization: `Bearer ${bearer.trim()}`, "content-type": "application/json" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(report),
         keepalive: true
       }).then((response) => {
@@ -98,10 +83,10 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[]): Clien
         timer.current = null;
       }
     };
-  }, [bearer, cycle, enabled, entries]);
+  }, [cycle, entries]);
 
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
-  return { bearer, enabled, status, setBearer, setEnabled };
+  return status;
 }
 
 // clientMonitorEvent deliberately maps trace text to a closed vocabulary. Do

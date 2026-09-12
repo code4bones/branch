@@ -21,20 +21,21 @@ var ErrInvalidConfig = errors.New("node invalid config")
 
 // Config is parsed once at startup and then treated as immutable.
 type Config struct {
-	PublicAddr                string
-	AdminAddr                 string
-	IdentityPath              string
-	AdminToken                string
-	Relay                     relay.Config
-	Version                   string
-	Monitor                   RelayMonitorConfig
-	MonitorToken              string
-	ClientMonitorToken        string
-	WSSOrigins                []string
-	FederationEndpointPolicy  wss.FederationEndpointPolicy
-	GitHubIdentityLookup      bool
-	GitHubFederationDiscovery bool
-	ObservabilityMode         observability.Mode
+	PublicAddr                   string
+	AdminAddr                    string
+	IdentityPath                 string
+	AdminToken                   string
+	Relay                        relay.Config
+	Version                      string
+	Monitor                      RelayMonitorConfig
+	MonitorToken                 string
+	ClientMonitorToken           string
+	ClientMonitorUnauthenticated bool
+	WSSOrigins                   []string
+	FederationEndpointPolicy     wss.FederationEndpointPolicy
+	GitHubIdentityLookup         bool
+	GitHubFederationDiscovery    bool
+	ObservabilityMode            observability.Mode
 }
 
 // DefaultConfig returns development-safe defaults for a relay behind a local
@@ -199,7 +200,7 @@ func New(config Config) (*App, error) {
 			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
 		})),
 		admin.WithClientMonitorAuthorizer(admin.AuthorizerFunc(func(request *http.Request) bool {
-			return config.ClientMonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.ClientMonitorToken
+			return config.ClientMonitorUnauthenticated || (config.ClientMonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.ClientMonitorToken)
 		})),
 	)
 	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor, carrierRouter: federationCarrierMonitor}, diagnostics)

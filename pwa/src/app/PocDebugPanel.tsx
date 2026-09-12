@@ -1,5 +1,5 @@
 import { BugOutlined, CopyOutlined, DeleteOutlined, ReloadOutlined, StopOutlined, ThunderboltOutlined } from "@ant-design/icons";
-import { Button, Checkbox, Input, Popconfirm, Select, Tag, Tooltip } from "antd";
+import { Button, Checkbox, Popconfirm, Select, Tag, Tooltip } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { browserPocBurstTimers, PocBurstRunner, type PocBurstProgress } from "./poc-burst.js";
@@ -44,7 +44,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const settleOutboxMessage = useAppStore((state) => state.settleOutboxMessage);
   const clearLocalConversation = useAppStore((state) => state.clearLocalConversation);
   const recordTransportTrace = useAppStore((state) => state.recordTransportTrace);
-  const clientMonitor = useClientMonitor(transportTrace);
+  const clientMonitorStatus = useClientMonitor(transportTrace);
   const { awaitingDeliveryCount, deliveredAwaitingReadCount } = useMemo(() => {
     const localOutbox = outbox.filter((entry) => entry.contactId === contactId);
     const awaiting = localOutbox.filter((entry) => entry.deliveredAt === null).length;
@@ -138,24 +138,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
         </Popconfirm>
       </div>
       <p className="pwa-poc-debug-note">Burst is local pacing into the normal outbox; it creates no special relay traffic or retry policy.</p>
-      <div className="pwa-poc-debug-monitor">
-        <Input.Password
-          aria-label="Client monitor bearer"
-          autoComplete="off"
-          onChange={(event) => { clientMonitor.setBearer(event.target.value); }}
-          placeholder="Client monitor bearer"
-          size="small"
-          value={clientMonitor.bearer}
-        />
-        <Button
-          aria-label="Toggle client monitor"
-          danger={clientMonitor.enabled}
-          disabled={!clientMonitor.enabled && clientMonitor.bearer.trim() === ""}
-          onClick={() => { clientMonitor.setEnabled(!clientMonitor.enabled); }}
-          size="small"
-        >{clientMonitor.enabled ? "Stop monitor" : "Monitor"}</Button>
-      </div>
-      <p className="pwa-poc-debug-monitor-status">Client monitor: {clientMonitor.status}. Volatile redacted reports only.</p>
+      <p className="pwa-poc-debug-monitor-status">Client monitor: {clientMonitorStatus}. Automatic redacted development reports.</p>
       <Checkbox.Group
         aria-label="Trace categories"
         onChange={(values) => { setSelectedTraceCategories(values.filter(isTraceCategory)); }}
