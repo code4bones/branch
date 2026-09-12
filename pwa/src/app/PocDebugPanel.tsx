@@ -1,4 +1,4 @@
-import { BugOutlined, DeleteOutlined, ReloadOutlined, StopOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { BugOutlined, CopyOutlined, DeleteOutlined, ReloadOutlined, StopOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { Button, Checkbox, Popconfirm, Select, Tag, Tooltip } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
@@ -74,17 +74,25 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
     clearLocalConversation(contactId);
     recordTransportTrace("outbox: local_chat_reset");
   };
+  const copyTraceBuffer = (): void => {
+    void navigator.clipboard.writeText(traceBufferText(transportTrace));
+  };
   const recentTrace = transportTrace
     .filter((entry) => selectedTraceCategories.includes(traceCategory(entry.detail)))
     .reverse();
 
   return (
     <aside aria-label="PoC debug panel" className="pwa-poc-debug">
-      <header className="pwa-poc-debug-heading"><BugOutlined /> <span>PoC debug</span></header>
+      <header className="pwa-poc-debug-heading">
+        <BugOutlined /> <span>PoC debug</span>
+        <Tooltip title="Copy local trace buffer">
+          <Button aria-label="Copy local trace buffer" className="pwa-poc-debug-copy" disabled={transportTrace.length === 0} icon={<CopyOutlined />} onClick={copyTraceBuffer} size="small" type="text" />
+        </Tooltip>
+      </header>
       <dl className="pwa-poc-debug-status">
         <div><dt>Chat</dt><dd>{contactName}</dd></div>
         <div><dt>Relay</dt><dd><Tag color={attachStatus === "attached" ? "cyan" : "default"}>{attachStatus}</Tag></dd></div>
-        <div><dt>Attached</dt><dd title={attachedRelayEndpoint ?? undefined}>{attachedRelayEndpoint ?? "none"}</dd></div>
+        <div className="pwa-poc-debug-endpoint"><dd title={attachedRelayEndpoint ?? undefined}>{attachedRelayEndpoint ?? "none"}</dd></div>
         <div><dt>Outbox</dt><dd>{String(queuedCount)} total · {String(awaitingDeliveryCount)} deliv · {String(deliveredAwaitingReadCount)} read</dd></div>
       </dl>
       <div className="pwa-poc-debug-actions">
@@ -114,7 +122,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
           onConfirm={purgeDelivered}
           title={`Drop ${String(purgeableMessageIds.length)} local delivery mappings?`}
         >
-          <Button danger disabled={purgeableMessageIds.length === 0} icon={<DeleteOutlined />} size="small">Purge mapping</Button>
+          <Button danger disabled={purgeableMessageIds.length === 0} icon={<DeleteOutlined />} size="small">Purge</Button>
         </Popconfirm>
         <Popconfirm
           cancelText="Keep"
@@ -152,6 +160,10 @@ export function traceCategory(detail: string): TraceCategory {
   if (detail === "incoming envelope: message" || detail === "incoming envelope: duplicate message") return "messages";
   if (detail.startsWith("application capabilities:") || detail.startsWith("image capabilities:") || detail.startsWith("rtc ") || detail.startsWith("attachment:") || detail.startsWith("contact probe:")) return "controls";
   return "transport";
+}
+
+export function traceBufferText(entries: readonly TransportTraceEntry[]): string {
+  return entries.map((entry) => `${formatTime(entry.at)} ${entry.detail}`).join("\n");
 }
 
 export function purgeableOutboxMessageIds(entries: readonly { readonly messageId: string; readonly contactId: string; readonly deliveredAt: number | null }[], contactId: string): readonly string[] {

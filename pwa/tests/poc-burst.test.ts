@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { purgeableOutboxMessageIds, traceCategory } from "../src/app/PocDebugPanel.js";
+import { purgeableOutboxMessageIds, traceBufferText, traceCategory } from "../src/app/PocDebugPanel.js";
 import { maximumPocBurstMessages, PocBurstRunner, type PocBurstTimerPort } from "../src/app/poc-burst.js";
 
 void test("PoC burst is explicitly bounded, sequential, and has no hidden retry path", () => {
@@ -56,6 +56,17 @@ void test("PoC trace categories keep semantic diagnostics visible without raw fr
   assert.equal(traceCategory("relay notice: peer unavailable"), "transport");
 });
 
+void test("PoC trace clipboard text includes every already-sanitized local buffer entry", () => {
+  const copied = traceBufferText([
+    { at: 1_700_000_000_000, detail: "outbox: retry_sent" },
+    { at: 1_700_000_001_000, detail: "delivery receipt: read_matched" }
+  ]);
+
+  assert.match(copied, /outbox: retry_sent/);
+  assert.match(copied, /delivery receipt: read_matched/);
+  assert.equal(copied.split("\n").length, 2);
+});
+
 void test("PoC panel derives outbox counts after selecting the stable store array", async () => {
   const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
   assert.match(panel, /useAppStore\(\(state\) => state\.outbox\)/);
@@ -73,10 +84,26 @@ void test("PoC purge targets only locally delivered records in the selected chat
 
 void test("PoC purge is explicitly labelled as dropping the local correlation, not marking Read", async () => {
   const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
-  assert.match(panel, /Purge mapping/);
+  assert.match(panel, />Purge<\/Button>/);
   assert.match(panel, /signed Read will be shown as unmatched/);
   assert.match(panel, /delivery_mapping_purged/);
-  assert.doesNotMatch(panel, /Purge delivered/);
+  assert.doesNotMatch(panel, /Purge mapping|Purge delivered/);
+});
+
+void test("PoC title provides an explicit local trace copy action with readable contrast", async () => {
+  const [panel, css] = await Promise.all([
+    readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8"),
+    readFile(resolve(process.cwd(), "public/pwa.css"), "utf8")
+  ]);
+
+  assert.match(panel, /aria-label="Copy local trace buffer"/);
+  assert.match(panel, /navigator\.clipboard\.writeText\(traceBufferText\(transportTrace\)\)/);
+  assert.match(panel, /disabled=\{transportTrace\.length === 0\}/);
+  assert.match(panel, /className="pwa-poc-debug-endpoint"><dd title=\{attachedRelayEndpoint/);
+  assert.doesNotMatch(panel, /<dt>Attached<\/dt>/);
+  assert.match(css, /\.pwa-poc-debug-heading\s*\{[\s\S]*color: var\(--pwa-ink\);/);
+  assert.match(css, /\.pwa-poc-debug-copy \{ margin-left: auto; \}/);
+  assert.match(css, /\.pwa-poc-debug-endpoint \{ grid-column: 1 \/ -1; \}/);
 });
 
 void test("PoC reset chat is an explicit local test cleanup", async () => {
