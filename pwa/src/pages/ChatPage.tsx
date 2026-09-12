@@ -370,10 +370,10 @@ export function ChatPage(): React.JSX.Element {
     });
   };
 
-  const sendPocBurstMessage = (index: number, total: number): void => {
-    sendBody(`[PoC burst ${String(index)}/${String(total)}]`, undefined, contact, false);
-    if (index === 1) storeApi.getState().recordTransportTrace(`poc burst: started ${String(total)}`);
-    if (index === total) storeApi.getState().recordTransportTrace(`poc burst: queued ${String(total)}`);
+  const sendPocBurstMessage = (session: number, index: number, total: number): void => {
+    sendBody(`[PoC burst #${String(session)} · ${String(index)}/${String(total)}]`, undefined, contact, false);
+    if (index === 1) storeApi.getState().recordTransportTrace(`poc burst #${String(session)}: started ${String(total)}`);
+    if (index === total) storeApi.getState().recordTransportTrace(`poc burst #${String(session)}: queued ${String(total)}`);
   };
 
   const rerunRendezvous = (): void => {

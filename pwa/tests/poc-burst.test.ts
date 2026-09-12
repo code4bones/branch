@@ -9,28 +9,30 @@ import { maximumPocBurstMessages, PocBurstRunner, type PocBurstTimerPort } from 
 void test("PoC burst is explicitly bounded, sequential, and has no hidden retry path", () => {
   const timers = new Timers();
   const runner = new PocBurstRunner(timers);
-  const emitted: number[] = [];
+  const emitted: string[] = [];
   const progress: string[] = [];
 
-  assert.equal(runner.start(4, (index) => { emitted.push(index); }, (next) => { progress.push(`${String(next.sent)}/${String(next.total)}/${String(next.running)}`); }), true);
-  assert.deepEqual(emitted, [1]);
+  assert.equal(runner.start(4, (session, index) => { emitted.push(`${String(session)}:${String(index)}`); }, (next) => { progress.push(`${String(next.session)}:${String(next.sent)}/${String(next.total)}/${String(next.running)}`); }), true);
+  assert.deepEqual(emitted, ["1:1"]);
   timers.runNext();
   timers.runNext();
   timers.runNext();
-  assert.deepEqual(emitted, [1, 2, 3, 4]);
+  assert.deepEqual(emitted, ["1:1", "1:2", "1:3", "1:4"]);
   assert.equal(runner.running, false);
-  assert.deepEqual(progress.at(-1), "4/4/false");
+  assert.deepEqual(progress.at(-1), "1:4/4/false");
+  assert.equal(runner.start(1, (session, index) => { emitted.push(`${String(session)}:${String(index)}`); }, () => undefined), true);
+  assert.deepEqual(emitted.at(-1), "2:1");
   assert.equal(runner.start(maximumPocBurstMessages + 1, () => undefined, () => undefined), false);
 });
 
 void test("stopping a PoC burst cancels only future local pacing", () => {
   const timers = new Timers();
   const runner = new PocBurstRunner(timers);
-  const emitted: number[] = [];
-  assert.equal(runner.start(4, (index) => { emitted.push(index); }, () => undefined), true);
+  const emitted: string[] = [];
+  assert.equal(runner.start(4, (session, index) => { emitted.push(`${String(session)}:${String(index)}`); }, () => undefined), true);
   runner.stop();
   timers.runAll();
-  assert.deepEqual(emitted, [1]);
+  assert.deepEqual(emitted, ["1:1"]);
   assert.equal(runner.running, false);
 });
 

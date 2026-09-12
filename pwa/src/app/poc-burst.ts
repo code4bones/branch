@@ -7,6 +7,7 @@ export interface PocBurstTimerPort {
 }
 
 export interface PocBurstProgress {
+  readonly session: number;
   readonly sent: number;
   readonly total: number;
   readonly running: boolean;
@@ -21,6 +22,8 @@ export class PocBurstRunner {
   readonly #timers: PocBurstTimerPort;
   #timer: unknown = null;
   #running = false;
+  #session = 0;
+  #activeSession = 0;
   #sent = 0;
   #total = 0;
   #onProgress: ((progress: PocBurstProgress) => void) | null = null;
@@ -31,9 +34,11 @@ export class PocBurstRunner {
 
   get running(): boolean { return this.#running; }
 
-  start(count: number, emit: (index: number, total: number) => void, onProgress: (progress: PocBurstProgress) => void): boolean {
+  start(count: number, emit: (session: number, index: number, total: number) => void, onProgress: (progress: PocBurstProgress) => void): boolean {
     if (this.#running || !Number.isSafeInteger(count) || count < 1 || count > maximumPocBurstMessages) return false;
     this.#running = true;
+    this.#activeSession = this.#session + 1;
+    this.#session = this.#activeSession;
     this.#sent = 0;
     this.#total = count;
     this.#onProgress = onProgress;
@@ -50,10 +55,10 @@ export class PocBurstRunner {
     this.#onProgress = null;
   }
 
-  #next(emit: (index: number, total: number) => void): void {
+  #next(emit: (session: number, index: number, total: number) => void): void {
     if (!this.#running) return;
     this.#sent += 1;
-    emit(this.#sent, this.#total);
+    emit(this.#activeSession, this.#sent, this.#total);
     if (this.#sent >= this.#total) {
       this.#timer = null;
       this.#running = false;
@@ -69,7 +74,7 @@ export class PocBurstRunner {
   }
 
   #report(): void {
-    this.#onProgress?.({ sent: this.#sent, total: this.#total, running: this.#running });
+    this.#onProgress?.({ session: this.#activeSession, sent: this.#sent, total: this.#total, running: this.#running });
   }
 }
 

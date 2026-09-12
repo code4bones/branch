@@ -29,12 +29,12 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   readonly attachStatus: string;
   readonly queuedCount: number;
   readonly transportTrace: readonly TransportTraceEntry[];
-  readonly onBurstMessage: (index: number, total: number) => void;
+  readonly onBurstMessage: (session: number, index: number, total: number) => void;
   readonly onRendezvous: () => void;
 }): React.JSX.Element {
   const runner = useMemo(() => new PocBurstRunner(browserPocBurstTimers), []);
   const [burstCount, setBurstCount] = useState<(typeof burstOptions)[number]>(8);
-  const [progress, setProgress] = useState<PocBurstProgress>({ sent: 0, total: 0, running: false });
+  const [progress, setProgress] = useState<PocBurstProgress>({ session: 0, sent: 0, total: 0, running: false });
   const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(loadTraceCategories);
   const outbox = useAppStore((state) => state.outbox);
   const settleOutboxMessage = useAppStore((state) => state.settleOutboxMessage);
@@ -50,14 +50,13 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
 
   useEffect(() => {
     runner.stop();
-    setProgress({ sent: 0, total: 0, running: false });
+    setProgress({ session: 0, sent: 0, total: 0, running: false });
   }, [contactId, runner]);
   useEffect(() => () => { runner.stop(); }, [runner]);
 
   const startBurst = (): void => {
     if (!enabled) return;
-    const started = runner.start(burstCount, onBurstMessage, setProgress);
-    if (started) setProgress({ sent: 1, total: burstCount, running: burstCount > 1 });
+    runner.start(burstCount, onBurstMessage, setProgress);
   };
 
   const stopBurst = (): void => { runner.stop(); };
@@ -116,7 +115,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       </div>
       <div className="pwa-poc-debug-actions">
         <Button disabled={!enabled} icon={<ReloadOutlined />} onClick={onRendezvous} size="small">Rendezvous</Button>
-        <span className="pwa-poc-debug-progress">{progress.total === 0 ? "Ready" : `${String(progress.sent)}/${String(progress.total)} ${progress.running ? "queueing" : "queued"}`}</span>
+        <span className="pwa-poc-debug-progress">{progress.total === 0 ? "Ready" : `#${String(progress.session)} ${String(progress.sent)}/${String(progress.total)} ${progress.running ? "queueing" : "queued"}`}</span>
       </div>
       <div className="pwa-poc-debug-actions">
         <Popconfirm
