@@ -4,6 +4,8 @@
 // from different modules is a real way to deadlock IndexedDB upgrades.
 
 const DATABASE_NAME = "branch-pwa";
+// v17 adds the bounded terminal Read target ledger used only to acknowledge
+// duplicate signed Read controls after a local refresh.
 // v16 retains a bounded retry window of outer delivery IDs per local message,
 // so a late signed receipt can still resolve the stable message after retry.
 // v15 adds one bounded, user-owned view of already verified public relay
@@ -20,7 +22,7 @@ const DATABASE_NAME = "branch-pwa";
 // v11 adds bounded device-local deletion tombstones. They prevent an older
 // asynchronous message write from reviving a locally deleted bubble; neither
 // they nor the deletion action ever leave this browser's DB.
-const DATABASE_VERSION = 16;
+const DATABASE_VERSION = 17;
 
 export const IDENTITY_STORE = "identity";
 export const CONTACTS_STORE = "contacts";
@@ -39,6 +41,7 @@ export const MESSAGE_OUTBOX_STORE = "messageOutbox";
 export const RECEIVED_APPLICATION_MESSAGES_STORE = "receivedApplicationMessages";
 export const READ_RECEIPT_OUTBOX_STORE = "readReceiptOutbox";
 export const MESSAGE_DELIVERY_TARGETS_STORE = "messageDeliveryTargets";
+export const TERMINAL_READ_TARGETS_STORE = "terminalReadTargets";
 export const LOCALLY_DELETED_MESSAGES_STORE = "locallyDeletedMessages";
 // Projection metadata and image bytes intentionally use distinct stores. A
 // metadata bootstrap must never read every Blob into the application state.
@@ -121,6 +124,11 @@ export function openDatabase(): Promise<IDBDatabase> {
             cursor.continue();
           };
         }
+      }
+      if (!db.objectStoreNames.contains(TERMINAL_READ_TARGETS_STORE)) {
+        const terminalReadTargets = db.createObjectStore(TERMINAL_READ_TARGETS_STORE, { keyPath: "targetDeliveryId" });
+        terminalReadTargets.createIndex("byContactId", "contactId");
+        terminalReadTargets.createIndex("byExpiresAt", "expiresAt");
       }
       if (!db.objectStoreNames.contains(LOCALLY_DELETED_MESSAGES_STORE)) {
         const tombstones = db.createObjectStore(LOCALLY_DELETED_MESSAGES_STORE, { keyPath: "messageId" });

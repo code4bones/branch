@@ -451,7 +451,7 @@ void test("PWA relay bootstrap view is bounded, expiry-aware, and rejects corrup
   const view = await readFile(relayBootstrapViewPath, "utf8");
   const viewStore = await readFile(relayBootstrapViewStorePath, "utf8");
   const discovery = await readFile(findRelayRoutePath, "utf8");
-  assert.match(database, /const DATABASE_VERSION = 16/);
+  assert.match(database, /const DATABASE_VERSION = 17/);
   assert.match(database, /RELAY_BOOTSTRAP_VIEW_STORE/);
   assert.match(viewStore, /deleteStoredRelayBootstrapView/);
   assert.match(view, /maxStoredRelayBootstrapRoutes = 4/);
@@ -800,7 +800,7 @@ void test("read-receipt policy defaults on and keeps an explicit device-owned op
   const settings = await readFile(settingsPagePath, "utf8");
   const hooks = await readFile(hooksPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 16/);
+  assert.match(database, /const DATABASE_VERSION = 17/);
   assert.match(database, /RECEIPT_POLICY_STORE/);
   assert.match(policyStore, /loadStoredReadReceiptPolicy/);
   assert.match(policyStore, /saveStoredReadReceiptPolicy/);
@@ -911,7 +911,7 @@ void test("PWA persists sender receipt targets beyond outbox settlement", async 
   const contacts = await readFile(contactsSlicePath, "utf8");
 
   assert.match(database, /MESSAGE_DELIVERY_TARGETS_STORE/);
-  assert.match(database, /const DATABASE_VERSION = 16/);
+  assert.match(database, /const DATABASE_VERSION = 17/);
   assert.match(targets, /maxStoredMessageDeliveryTargets = 128/);
   assert.match(targets, /maxDeliveryTargetsPerMessage = 8/);
   assert.match(database, /multiEntry: true/);
@@ -1557,7 +1557,7 @@ void test("contacts, messages, read state, inbound requests, and local receipt w
   const lastOpenedChatStore = await readFile(lastOpenedChatStorePath, "utf8");
   const app = await readFile(appPath, "utf8");
 
-  assert.match(database, /const DATABASE_VERSION = 16/);
+  assert.match(database, /const DATABASE_VERSION = 17/);
   assert.match(database, /IDENTITY_STORE/);
   assert.match(database, /CONTACTS_STORE/);
   assert.match(database, /MESSAGES_STORE/);

@@ -11,7 +11,7 @@ const minimumReportIntervalMs = 1000;
 export type ClientMonitorCategory = "messages" | "presence" | "receipts" | "outbox" | "controls" | "transport" | "frames";
 export type ClientMonitorEventName =
   | "client.session_started"
-  | "receipt.read_expired" | "receipt.read_attempt_sent" | "receipt.read_skipped" | "receipt.read_failed" | "receipt.read_matched" | "receipt.read_unmatched"
+  | "receipt.read_expired" | "receipt.read_attempt_sent" | "receipt.read_skipped" | "receipt.read_failed" | "receipt.read_matched" | "receipt.read_unmatched" | "receipt.read_accepted" | "receipt.read_duplicate_terminal"
   | "receipt.delivered_failed" | "receipt.delivered_sent" | "receipt.delivered_matched" | "receipt.delivered_unmatched"
   | "outbox.expired" | "outbox.retry_deferred" | "outbox.retry_sent"
   | "message.received" | "message.duplicate" | "message.request"
@@ -154,6 +154,8 @@ function clientMonitorEventName(detail: string): ClientMonitorEventName | null {
     "delivery receipt: read_skipped": "receipt.read_skipped",
     "delivery receipt: read_matched": "receipt.read_matched",
     "delivery receipt: read_unmatched": "receipt.read_unmatched",
+    "delivery receipt: read_duplicate_terminal": "receipt.read_duplicate_terminal",
+    "delivery receipt: read_accepted": "receipt.read_accepted",
     "delivery receipt: delivered_failed": "receipt.delivered_failed",
     "delivery receipt: delivered_sent": "receipt.delivered_sent",
     "delivery receipt: delivered_matched": "receipt.delivered_matched",

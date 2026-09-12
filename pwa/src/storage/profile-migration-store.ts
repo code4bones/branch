@@ -6,6 +6,7 @@ import {
   MESSAGES_STORE,
   MESSAGE_REQUESTS_STORE,
   MESSAGE_DELIVERY_TARGETS_STORE,
+  TERMINAL_READ_TARGETS_STORE,
   IMAGE_MEDIA_STORE,
   IMAGE_MESSAGE_PROJECTIONS_STORE,
   RECEIVED_APPLICATION_MESSAGES_STORE,
@@ -89,6 +90,7 @@ export async function replacePortableProfileSnapshot(snapshot: PortableProfileSn
         RECEIVED_APPLICATION_MESSAGES_STORE,
         READ_RECEIPT_OUTBOX_STORE,
         MESSAGE_DELIVERY_TARGETS_STORE,
+        TERMINAL_READ_TARGETS_STORE,
         IMAGE_MESSAGE_PROJECTIONS_STORE,
         IMAGE_MEDIA_STORE
       ], "readwrite");
@@ -102,6 +104,7 @@ export async function replacePortableProfileSnapshot(snapshot: PortableProfileSn
       const receivedApplicationMessages = transaction.objectStore(RECEIVED_APPLICATION_MESSAGES_STORE);
       const readReceiptOutbox = transaction.objectStore(READ_RECEIPT_OUTBOX_STORE);
       const messageDeliveryTargets = transaction.objectStore(MESSAGE_DELIVERY_TARGETS_STORE);
+      const terminalReadTargets = transaction.objectStore(TERMINAL_READ_TARGETS_STORE);
       const imageMessageProjections = transaction.objectStore(IMAGE_MESSAGE_PROJECTIONS_STORE);
       const imageMedia = transaction.objectStore(IMAGE_MEDIA_STORE);
       identity.clear();
@@ -117,6 +120,7 @@ export async function replacePortableProfileSnapshot(snapshot: PortableProfileSn
       receivedApplicationMessages.clear();
       readReceiptOutbox.clear();
       messageDeliveryTargets.clear();
+      terminalReadTargets.clear();
       // A portable profile intentionally contains no image bytes. Remove prior
       // origin-owned media atomically with this identity replacement so it
       // cannot remain attached to an unrelated imported history.

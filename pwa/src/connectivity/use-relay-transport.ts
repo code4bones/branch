@@ -5,7 +5,7 @@ import { openIncomingEnvelope } from "./open-envelope.js";
 import { receiveApplicationCapabilities, sendApplicationCapabilities } from "./application-capabilities-control.js";
 import { attachmentTransferController, clearAttachmentTransferController } from "./attachment-runtime.js";
 import { advertiseImageCapabilities, clearImageRuntime, imageTransferController, receiveImageCapabilities, receiveImagePayload, shouldReplyToImageCapabilities } from "./image-runtime.js";
-import { receiveDeliveryReceipt, sendDeliveryReceipt } from "./delivery-receipt-control.js";
+import { receiveDeliveryReceipt, receiveReadAccepted, sendDeliveryReceipt, sendReadAccepted } from "./delivery-receipt-control.js";
 import { classifyIncomingMessage } from "./incoming-message.js";
 import { attachmentRoutesForSelection } from "./relay-route-selection.js";
 import { sendPresencePong } from "./seal-and-send.js";
@@ -41,6 +41,7 @@ import type { AppStoreApi } from "../state/store.js";
 import { useAppStoreApi } from "../state/StoreProvider.js";
 import { claimStoredReceivedApplicationMessage } from "../storage/received-application-messages-store.js";
 import { deleteStoredMessageDeliveryTarget, findStoredMessageDeliveryTarget } from "../storage/message-delivery-target-store.js";
+import { findTerminalReadTarget, rememberTerminalReadTarget } from "../storage/terminal-read-target-store.js";
 import { findRelayRouteViaGitHub, resolveRelayRouteForForeground } from "../discovery/find-relay-route.js";
 
 const reconnectBaseDelayMs = 1_000;
@@ -619,6 +620,19 @@ async function handleIncomingEnvelope(
       }
       return true;
     }
+    const readAccepted = await receiveReadAccepted({ plaintext, localPeerId: state.identity.peerId, senderPeerId, knownContactId });
+    if (readAccepted.handled) {
+      const pending = readAccepted.targetDeliveryId !== undefined && knownContactId !== null
+        ? state.readReceiptOutbox.find((entry) => entry.contactId === knownContactId && entry.targetDeliveryId === readAccepted.targetDeliveryId && entry.receiptPending)
+        : undefined;
+      if (pending !== undefined) {
+        state.settleReadReceipt(pending.targetDeliveryId);
+        state.recordTransportTrace("delivery receipt: read_accepted");
+      } else {
+        state.recordTransportTrace(`delivery receipt: read_accepted_${readAccepted.outcome ?? "unmatched"}`);
+      }
+      return true;
+    }
     const receipt = await receiveDeliveryReceipt({
       plaintext,
       localPeerId: state.identity.peerId,
@@ -637,21 +651,31 @@ async function handleIncomingEnvelope(
           ? await findStoredMessageDeliveryTarget(knownContactId, receipt.receipt.targetDeliveryId)
           : null;
         const messageId = outboxEntry?.messageId ?? storedTarget?.messageId;
-        if (messageId === undefined) {
+        const terminal = messageId === undefined && receipt.receipt.kind === "read"
+          ? await findTerminalReadTarget(knownContactId, receipt.receipt.targetDeliveryId)
+          : null;
+        if (messageId === undefined && terminal === null) {
           state.recordTransportTrace(`delivery receipt: ${receipt.receipt.kind}_unmatched`);
           return true;
         }
-        state.setMessageDeliveryState(knownContactId, messageId, receipt.receipt.kind);
-        state.recordTransportTrace(`delivery receipt: ${receipt.receipt.kind}_matched`);
+        if (messageId !== undefined) state.setMessageDeliveryState(knownContactId, messageId, receipt.receipt.kind);
+        state.recordTransportTrace(`delivery receipt: ${receipt.receipt.kind}_${terminal === null ? "matched" : "duplicate_terminal"}`);
         if (receipt.receipt.kind === "delivered") {
           // Keep only the bounded device-local outer-id correlation: a later
           // signed Read targets the same outer delivery after this Delivered
           // control has already made resend inappropriate.
-          state.markOutboxMessageDelivered(messageId, Date.now());
+          if (messageId !== undefined) state.markOutboxMessageDelivered(messageId, Date.now());
         } else {
-          state.settleOutboxMessage(messageId);
-          if (storedTarget !== null || outboxEntry !== undefined) {
-            void deleteStoredMessageDeliveryTarget(messageId).catch(() => {});
+          if (messageId !== undefined) {
+            state.settleOutboxMessage(messageId);
+            await rememberTerminalReadTarget({ targetDeliveryId: receipt.receipt.targetDeliveryId, contactId: knownContactId, expiresAt: Date.now() + 5 * 60_000 }).catch(() => {});
+            if (storedTarget !== null || outboxEntry !== undefined) void deleteStoredMessageDeliveryTarget(messageId).catch(() => {});
+          }
+          const contact = state.contacts.find((candidate) => candidate.contactId === knownContactId);
+          if (contact !== undefined && contact.peerId !== null && contact.hpkePublicKey !== null) {
+            void sendReadAccepted({ targetDeliveryId: receipt.receipt.targetDeliveryId, senderPeerId: state.identity.peerId, recipientPeerId: contact.peerId, recipientHpkePublicKey: contact.hpkePublicKey, attached: true }).then((result) => {
+              state.recordTransportTrace(`delivery receipt: read_accepted_${result}`);
+            }).catch(() => { state.recordTransportTrace("delivery receipt: read_accepted_failed"); });
           }
         }
       } else {

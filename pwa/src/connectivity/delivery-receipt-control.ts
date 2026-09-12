@@ -23,6 +23,7 @@ import { getLocalIdentityKeys } from "../identity/identity-keys.js";
 import { createDeliveryID, sendApplicationControl } from "./seal-and-send.js";
 
 export const deliveryReceiptControlKind = "branch.pwa.receipt/0.draft";
+export const readAcceptedControlKind = "branch.pwa.read-accepted/0.draft";
 export const deliveryReceiptControlTTLms = 5 * 60_000;
 const maxReplayEntries = 128;
 const maxBodyBytes = 64;
@@ -38,6 +39,13 @@ export interface ReceivedDeliveryReceipt {
   readonly handled: boolean;
   readonly outcome?: DeliveryReceiptOutcome;
   readonly receipt?: DeliveryReceiptBody;
+}
+
+export interface ReadAcceptedBody { readonly targetDeliveryId: string; }
+export interface ReceivedReadAccepted {
+  readonly handled: boolean;
+  readonly outcome?: ApplicationControlRejection | "source_mismatch" | "effect_missing";
+  readonly targetDeliveryId?: string;
 }
 
 export type DeliveryReceiptSendResult = "sent" | "skipped";
@@ -57,6 +65,18 @@ export const deliveryReceiptControlDescriptor: ApplicationControlDescriptor<Deli
 };
 
 const receiptRegistry = createApplicationControlRegistry([deliveryReceiptControlDescriptor]);
+
+export const readAcceptedControlDescriptor: ApplicationControlDescriptor<ReadAcceptedBody> = {
+  kind: readAcceptedControlKind,
+  authentication: "ed25519",
+  maximumTTLms: deliveryReceiptControlTTLms,
+  projection: "message_metadata",
+  allowedEffects: ["message_metadata"],
+  decodeBody: decodeReadAcceptedBody,
+  encodeBody: encodeReadAcceptedBody,
+  reduce: ({ body }) => [{ kind: "message_metadata", deliveryId: body.targetDeliveryId, state: "read_accepted" }]
+};
+const readAcceptedRegistry = createApplicationControlRegistry([readAcceptedControlDescriptor]);
 
 /**
  * Sends one signed receipt. The default target dedup protects the live
@@ -127,6 +147,24 @@ export async function sendDeliveryReceipt(options: {
   return "sent";
 }
 
+/** Sends endpoint proof that a signed Read was applied; it is never a relay ACK. */
+export async function sendReadAccepted(options: Omit<Parameters<typeof sendDeliveryReceipt>[0], "kind" | "allowTargetRetry">): Promise<DeliveryReceiptSendResult> {
+  if (!options.attached || !validDeliveryId(options.targetDeliveryId)) return "skipped";
+  const keys = getLocalIdentityKeys();
+  if (keys === null) return "skipped";
+  const now = Date.now();
+  let unsigned: ReturnType<typeof prepareOutboundApplicationControl<ReadAcceptedBody>>;
+  try {
+    unsigned = prepareOutboundApplicationControl({
+      kind: readAcceptedControlKind, controlId: createDeliveryID(), issuedAt: now, expiresAt: now + deliveryReceiptControlTTLms,
+      senderPeerId: options.senderPeerId, recipientPeerId: options.recipientPeerId, body: { targetDeliveryId: options.targetDeliveryId }
+    }, readAcceptedControlDescriptor, { now, localPeerId: options.senderPeerId, isKnownContact: (peerId) => peerId === options.recipientPeerId, isAllowed: () => true, consumeRateLimit: () => true, maxClockSkewMs: 1_000 });
+  } catch { return "skipped"; }
+  const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", keys.relayPrivateKey, toArrayBuffer(applicationControlSigningBytes(unsigned))));
+  await sendApplicationControl({ senderPeerId: options.senderPeerId, recipientPeerId: options.recipientPeerId, recipientHpkePublicKey: options.recipientHpkePublicKey, plaintext: encodeApplicationControl({ ...unsigned, signature }) });
+  return "sent";
+}
+
 /** Decodes and verifies one receipt before it can affect outgoing UI state. */
 export async function receiveDeliveryReceipt(options: {
   readonly plaintext: Uint8Array;
@@ -160,6 +198,24 @@ export async function receiveDeliveryReceipt(options: {
   return { handled: true, outcome: "accepted", receipt: { kind: effect.state === "read" ? "read" : "delivered", targetDeliveryId: effect.deliveryId } };
 }
 
+export async function receiveReadAccepted(options: {
+  readonly plaintext: Uint8Array; readonly localPeerId: string; readonly senderPeerId: string; readonly knownContactId: string | null;
+}): Promise<ReceivedReadAccepted> {
+  let envelope: ReturnType<typeof decodeApplicationControl>;
+  try { envelope = decodeApplicationControl(options.plaintext); } catch { return { handled: false }; }
+  if (envelope.kind !== readAcceptedControlKind) return { handled: false };
+  if (envelope.senderPeerId !== options.senderPeerId) return { handled: true, outcome: "source_mismatch" };
+  const result = await processApplicationControl(options.plaintext, readAcceptedRegistry, {
+    now: Date.now(), localPeerId: options.localPeerId,
+    isKnownContact: (peerId) => options.knownContactId !== null && peerId === options.senderPeerId,
+    verifyEd25519: verifyControlSignature, hasSeenControl: (controlId) => replayControlIds.has(controlId),
+    rememberControl: (controlId, expiresAt) => { replayControlIds.set(controlId, expiresAt); }, isAllowed: () => true, maxClockSkewMs: 1_000
+  });
+  if (result.status !== "accepted") return { handled: true, outcome: result.reason };
+  const effect = result.effects.find((candidate) => candidate.kind === "message_metadata");
+  return effect?.kind === "message_metadata" ? { handled: true, targetDeliveryId: effect.deliveryId } : { handled: true, outcome: "effect_missing" };
+}
+
 export function encodeReceiptBody(value: DeliveryReceiptBody): Uint8Array {
   if (!validReceiptKind(value.kind) || !validDeliveryId(value.targetDeliveryId)) throw new Error("invalid receipt body");
   return encodeDeterministicCbor(cborMap([
@@ -176,6 +232,17 @@ export function decodeReceiptBody(bytes: Uint8Array): DeliveryReceiptBody {
   const targetDeliveryId = encodeBase64URL(readBytes(getRequiredEntry(map, "target_delivery_id"), "target delivery id", 16));
   if (!validReceiptKind(kind)) throw new Error("invalid receipt kind");
   return { kind, targetDeliveryId };
+}
+
+export function encodeReadAcceptedBody(value: ReadAcceptedBody): Uint8Array {
+  if (!validDeliveryId(value.targetDeliveryId)) throw new Error("invalid read accepted body");
+  return encodeDeterministicCbor(cborMap([{ key: "target_delivery_id", value: decodeBase64URL(value.targetDeliveryId) }]));
+}
+export function decodeReadAcceptedBody(bytes: Uint8Array): ReadAcceptedBody {
+  if (bytes.byteLength === 0 || bytes.byteLength > maxBodyBytes) throw new Error("invalid read accepted body");
+  const map = readCborMap(decodeDeterministicCbor(bytes, maxBodyBytes), "read accepted");
+  rejectUnknownEntries(map, ["target_delivery_id"]);
+  return { targetDeliveryId: encodeBase64URL(readBytes(getRequiredEntry(map, "target_delivery_id"), "target delivery id", 16)) };
 }
 
 function validReceiptKind(value: string): value is DeliveryReceiptKind {

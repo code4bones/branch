@@ -4,6 +4,7 @@ import type { AppStore } from "../store.js";
 import { deleteStoredMessagesForContact, deleteStoredMessagesLocally, maxConversationTimelineEntries, replaceStoredMessageForRetry, saveStoredMessage } from "../../storage/messages-store.js";
 import { deleteStoredImageMessages, deleteStoredImageMessagesForContact } from "../../storage/image-media-store.js";
 import { deleteStoredMessageDeliveryTargetsForContact } from "../../storage/message-delivery-target-store.js";
+import { deleteStoredTerminalReadTargetsForContact } from "../../storage/terminal-read-target-store.js";
 import { deleteStoredOutboxForContact } from "../../storage/message-outbox-store.js";
 import { deleteStoredReadReceiptsForContact } from "../../storage/read-receipt-outbox-store.js";
 import { deleteStoredReadState } from "../../storage/read-state-store.js";
@@ -174,6 +175,7 @@ export const createConversationsSlice: StateCreator<AppStore, [], [], Conversati
       deleteStoredOutboxForContact(contactId),
       deleteStoredReadReceiptsForContact(contactId),
       deleteStoredMessageDeliveryTargetsForContact(contactId),
+      deleteStoredTerminalReadTargetsForContact(contactId),
       deleteStoredImageMessagesForContact(contactId)
     ]).catch(() => {
       // The current tab has already reset its local projection. No reset

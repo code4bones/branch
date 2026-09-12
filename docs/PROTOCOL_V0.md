@@ -604,8 +604,21 @@ client emits Delivered only after it has opened and semantically
 validated the target message; it emits Read only after that inbound message is
 rendered in the active conversation and only under its local read-receipt
 policy. Receipt absence, expiry, rejection, or a failed live send is Unknown,
-not an offline, unread, or delivery claim. A client never queues or retries a
-receipt after its live send fails.
+not an offline, unread, or delivery claim.
+
+D-BRANCH-106 adds optional endpoint-only `branch.pwa.read-accepted/0.draft`.
+Its signed deterministic-CBOR body is the closed map `{target_delivery_id}`;
+the target is exactly 16 bytes and its body is at most 64 bytes. After the
+original sender accepts a valid Read for an existing outgoing target, it may
+emit this control to the reader. The reader may settle only its matching
+device-local pending Read work after normal known-contact, recipient, expiry,
+replay and signature validation; it does not change a message presentation.
+The sender keeps at most 128 local terminal targets for five minutes, allowing
+a repeated valid Read after refresh to receive the same acknowledgement. Unknown
+targets never cause an acknowledgement. A missing acknowledgement is no
+negative claim: older implementations ignore the new kind and retain the
+bounded local retry policy. Relays remain opaque live transit and store none of
+these controls or ledgers.
 
 #### WebRTC signaling controls
 

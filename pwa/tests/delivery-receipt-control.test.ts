@@ -18,6 +18,10 @@ import {
   deliveryReceiptControlDescriptor,
   deliveryReceiptControlKind,
   encodeReceiptBody,
+  encodeReadAcceptedBody,
+  readAcceptedControlDescriptor,
+  readAcceptedControlKind,
+  receiveReadAccepted,
   receiveDeliveryReceipt
 } from "../src/connectivity/delivery-receipt-control.js";
 
@@ -100,6 +104,22 @@ void test("read receipt sender keeps default duplicate suppression but exposes o
   assert.match(source, /readonly allowTargetRetry\?: boolean/);
   assert.match(source, /!options\.allowTargetRetry && emittedReceiptTargets\.has\(emittedKey\)/);
   assert.match(source, /!options\.allowTargetRetry && emittedReceiptTargets\.has\(emittedKey\)\) return false/);
+});
+
+void test("a signed read acceptance is contact-bound and replay-safe", async () => {
+  const [sender, recipient] = await Promise.all([SameRelayTransportClient.createIdentity(), SameRelayTransportClient.createIdentity()]);
+  const targetDeliveryId = encodeBase64URL(new Uint8Array(16).fill(10));
+  const now = Date.now();
+  const unsigned = prepareOutboundApplicationControl({
+    kind: readAcceptedControlKind, controlId: encodeBase64URL(crypto.getRandomValues(new Uint8Array(16))), issuedAt: now, expiresAt: now + 10_000,
+    senderPeerId: sender.peerId, recipientPeerId: recipient.peerId, body: { targetDeliveryId }
+  }, readAcceptedControlDescriptor, { now, localPeerId: sender.peerId, isKnownContact: () => true, isAllowed: () => true, consumeRateLimit: () => true, maxClockSkewMs: 1_000 });
+  const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", sender.privateKey, arrayBuffer(applicationControlSigningBytes(unsigned))));
+  const plaintext = encodeApplicationControl({ ...unsigned, signature });
+  assert.deepEqual(await receiveReadAccepted({ plaintext, localPeerId: recipient.peerId, senderPeerId: sender.peerId, knownContactId: "alice" }), { handled: true, targetDeliveryId });
+  assert.deepEqual(await receiveReadAccepted({ plaintext, localPeerId: recipient.peerId, senderPeerId: sender.peerId, knownContactId: "alice" }), { handled: true, outcome: "replay" });
+  assert.deepEqual(decodeReceiptBody(encodeReceiptBody({ kind: "read", targetDeliveryId })).targetDeliveryId, targetDeliveryId);
+  assert.throws(() => encodeReadAcceptedBody({ targetDeliveryId: "wrong" }));
 });
 
 async function signedReceipt(
