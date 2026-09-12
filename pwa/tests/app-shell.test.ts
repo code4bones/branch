@@ -865,6 +865,15 @@ void test("PWA debug chat reset clears only one local conversation and preserves
   assert.match(panel, /Contact, identity and relay stay intact/);
 });
 
+void test("desktop PoC diagnostics extend their scrollable trace to the composer", async () => {
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+
+  assert.match(styles, /\.pwa-chat\s*\{[\s\S]*--pwa-poc-debug-compose-offset: 48px;/);
+  assert.match(styles, /\.pwa-poc-debug\s*\{[\s\S]*top: 82px;[\s\S]*bottom: var\(--pwa-poc-debug-compose-offset\);[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/);
+  assert.match(styles, /\.pwa-poc-debug-trace\s*\{[\s\S]*flex: 1 1 auto;[\s\S]*min-height: 0;[\s\S]*overflow-y: auto;/);
+  assert.match(styles, /@media \(max-width: 767px\) \{\s*\.pwa-poc-debug \{ display: none; \}/);
+});
+
 void test("PWA persists sender receipt targets beyond outbox settlement", async () => {
   const database = await readFile(databasePath, "utf8");
   const targets = await readFile(messageDeliveryTargetStorePath, "utf8");

@@ -600,6 +600,9 @@ body {
 }
 
 .pwa-chat {
+  /* The normal single-line composer is 36px tall plus its 12px bottom
+     margin. Keep the desktop diagnostic panel flush with its top edge. */
+  --pwa-poc-debug-compose-offset: 48px;
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
@@ -1139,10 +1142,13 @@ button.pwa-chat-reply-preview { cursor: pointer; }
   position: absolute;
   z-index: 3;
   top: 82px;
+  bottom: var(--pwa-poc-debug-compose-offset);
   right: 18px;
   width: 252px;
-  max-height: calc(100% - 156px);
-  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 10px;
   border: 1px solid #24596c;
   border-radius: 10px;
@@ -1191,10 +1197,11 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 .pwa-poc-debug-note { margin: 9px 0; color: var(--pwa-muted); font-size: 0.7rem; line-height: 1.35; }
 
 .pwa-poc-debug-trace {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 164px;
   margin: 0;
   padding: 7px 0 0;
   overflow-y: auto;
