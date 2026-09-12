@@ -148,7 +148,7 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
       <ol aria-label="Recent local relay trace" className="pwa-poc-debug-trace">
         {recentTrace.length === 0 ? <li>No local events yet.</li> : recentTrace.map((entry) => {
           const category = traceCategory(entry.detail);
-          return <li className={`is-${category}`} key={`${String(entry.at)}-${entry.detail}`}><time>{formatTime(entry.at)}</time> {entry.detail}</li>;
+          return <li className={`is-${category}`} key={`${String(entry.at)}-${entry.detail}`}><span>{entry.detail}</span><time>{formatTime(entry.at)}</time></li>;
         })}
       </ol>
     </aside>

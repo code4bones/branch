@@ -882,7 +882,7 @@ void test("desktop PoC trace retains all bounded local events with readable cate
   assert.match(panel, /\.filter\([\s\S]*\.reverse\(\)/);
   assert.doesNotMatch(panel, /\.slice\(-12\)/);
   assert.match(panel, /className=\{`is-\$\{category\}`\}/);
-  assert.match(styles, /\.pwa-poc-debug-trace time \{ color: #a9d7e4; font-weight: 600; \}/);
+  assert.match(styles, /\.pwa-poc-debug-trace time \{[\s\S]*position: absolute;[\s\S]*right: 4px;[\s\S]*bottom: 2px;[\s\S]*font-size: 0\.55rem;/);
   assert.match(styles, /\.pwa-poc-debug-trace li\.is-receipts \{[\s\S]*background:/);
   assert.match(styles, /\.pwa-poc-debug-trace li\.is-outbox \{[\s\S]*background:/);
   assert.match(styles, /\.pwa-poc-debug-trace\s*\{[\s\S]*overflow-y: auto;/);

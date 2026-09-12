@@ -1253,10 +1253,14 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 }
 
 .pwa-poc-debug-trace li {
+  position: relative;
   padding: 3px 4px;
+  padding-bottom: 12px;
   border-left: 2px solid transparent;
   border-radius: 3px;
 }
+
+.pwa-poc-debug-trace li > span { display: block; }
 
 .pwa-poc-debug-trace li.is-messages { border-left-color: #5ecb9c; background: rgb(94 203 156 / 12%); }
 .pwa-poc-debug-trace li.is-presence { border-left-color: #8aa4ff; background: rgb(138 164 255 / 12%); }
@@ -1266,7 +1270,15 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 .pwa-poc-debug-trace li.is-transport { border-left-color: #a4afbd; background: rgb(164 175 189 / 10%); }
 .pwa-poc-debug-trace li.is-frames { border-left-color: #87d7ed; background: rgb(135 215 237 / 12%); }
 
-.pwa-poc-debug-trace time { color: #a9d7e4; font-weight: 600; }
+.pwa-poc-debug-trace time {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  color: #7593a0;
+  font-size: 0.55rem;
+  font-weight: 400;
+  line-height: 1;
+}
 
 .pwa-attachment-send-control {
   position: relative;
