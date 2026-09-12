@@ -95,11 +95,11 @@ void test("receipt body has a closed deterministic shape", () => {
   assert.throws(() => encodeReceiptBody({ kind: "read", targetDeliveryId: "wrong" }));
 });
 
-void test("read receipt sender keeps default duplicate suppression but exposes only an explicit retry escape hatch", async () => {
+void test("read receipt sender deduplicates a successfully handed-off target", async () => {
   const source = await readFile(resolve(process.cwd(), "src/connectivity/delivery-receipt-control.ts"), "utf8");
-  assert.match(source, /readonly allowTargetRetry\?: boolean/);
-  assert.match(source, /!options\.allowTargetRetry && emittedReceiptTargets\.has\(emittedKey\)/);
-  assert.match(source, /!options\.allowTargetRetry && emittedReceiptTargets\.has\(emittedKey\)\) return false/);
+  assert.match(source, /if \(emittedReceiptTargets\.has\(emittedKey\)\) return "skipped"/);
+  assert.match(source, /if \(emittedReceiptTargets\.has\(emittedKey\)\) return false/);
+  assert.doesNotMatch(source, /allowTargetRetry/);
 });
 
 async function signedReceipt(
