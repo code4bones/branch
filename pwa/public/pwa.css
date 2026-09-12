@@ -1176,25 +1176,33 @@ button.pwa-chat-reply-preview { cursor: pointer; }
 
 .pwa-poc-debug-status div {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
 }
 
 .pwa-poc-debug-status dt,
 .pwa-poc-debug-status dd { margin: 0; }
 .pwa-poc-debug-status dt { color: var(--pwa-muted); }
-.pwa-poc-debug-status dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwa-poc-debug-status dd { overflow-wrap: anywhere; }
 
 .pwa-poc-debug-actions {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 5px;
   margin-top: 6px;
 }
 
-.pwa-poc-debug-actions .ant-select { width: 100px; }
-.pwa-poc-debug-progress { min-width: 0; color: var(--pwa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwa-poc-debug-actions .ant-select,
+.pwa-poc-debug-actions .ant-btn { width: 100%; }
+.pwa-poc-debug-progress { color: var(--pwa-muted); text-align: center; }
 .pwa-poc-debug-note { margin: 9px 0; color: var(--pwa-muted); font-size: 0.7rem; line-height: 1.35; }
+
+.pwa-poc-debug .ant-checkbox-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
 
 .pwa-poc-debug-trace {
   flex: 1 1 auto;

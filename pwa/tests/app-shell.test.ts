@@ -874,6 +874,16 @@ void test("desktop PoC diagnostics extend their scrollable trace to the composer
   assert.match(styles, /@media \(max-width: 767px\) \{\s*\.pwa-poc-debug \{ display: none; \}/);
 });
 
+void test("desktop PoC controls stack without constraining the flexible trace", async () => {
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+
+  assert.match(styles, /\.pwa-poc-debug-status div\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(styles, /\.pwa-poc-debug-actions\s*\{[\s\S]*flex-direction: column;[\s\S]*align-items: stretch;/);
+  assert.match(styles, /\.pwa-poc-debug-actions \.ant-select,[\s\S]*\.pwa-poc-debug-actions \.ant-btn \{ width: 100%; \}/);
+  assert.match(styles, /\.pwa-poc-debug \.ant-checkbox-group\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(styles, /\.pwa-poc-debug-trace\s*\{[\s\S]*flex: 1 1 auto;[\s\S]*overflow-y: auto;/);
+});
+
 void test("PWA persists sender receipt targets beyond outbox settlement", async () => {
   const database = await readFile(databasePath, "utf8");
   const targets = await readFile(messageDeliveryTargetStorePath, "utf8");
