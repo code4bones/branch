@@ -76,7 +76,6 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   };
   const recentTrace = transportTrace
     .filter((entry) => selectedTraceCategories.includes(traceCategory(entry.detail)))
-    .slice(-12)
     .reverse();
 
   return (
@@ -136,9 +135,10 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
         value={selectedTraceCategories}
       />
       <ol aria-label="Recent local relay trace" className="pwa-poc-debug-trace">
-        {recentTrace.length === 0 ? <li>No local events yet.</li> : recentTrace.map((entry) => (
-          <li key={`${String(entry.at)}-${entry.detail}`}><time>{formatTime(entry.at)}</time> {entry.detail}</li>
-        ))}
+        {recentTrace.length === 0 ? <li>No local events yet.</li> : recentTrace.map((entry) => {
+          const category = traceCategory(entry.detail);
+          return <li className={`is-${category}`} key={`${String(entry.at)}-${entry.detail}`}><time>{formatTime(entry.at)}</time> {entry.detail}</li>;
+        })}
       </ol>
     </aside>
   );

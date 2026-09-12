@@ -394,17 +394,17 @@ void test("PWA message delivery identifiers are canonical random 16-byte base64u
 
 void test("PWA relay trace is bounded local diagnostic state and never protocol state", async () => {
   const store = createAppStore();
-  for (let index = 0; index < 30; index += 1) {
+  for (let index = 0; index < 193; index += 1) {
     store.getState().recordTransportTrace(`event-${String(index)}`);
   }
   const trace = store.getState().transportTrace;
-  assert.equal(trace.length, 30);
-  assert.equal(trace[0]?.detail, "event-0");
-  assert.equal(trace.at(-1)?.detail, "event-29");
+  assert.equal(trace.length, 192);
+  assert.equal(trace[0]?.detail, "event-1");
+  assert.equal(trace.at(-1)?.detail, "event-192");
 
   const slice = await readFile(transportSlicePath, "utf8");
   const settings = await readFile(settingsPagePath, "utf8");
-  assert.match(slice, /maxTransportTraceEntries = 64/);
+  assert.match(slice, /maxTransportTraceEntries = 192/);
   assert.match(slice, /recordTransportTrace/);
   assert.doesNotMatch(slice, /IndexedDB|saveStored|fetch\(|WebSocket/);
   assert.match(settings, /Relay trace/);
@@ -872,6 +872,19 @@ void test("desktop PoC diagnostics extend their scrollable trace to the composer
   assert.match(styles, /\.pwa-poc-debug\s*\{[\s\S]*top: 82px;[\s\S]*bottom: var\(--pwa-poc-debug-compose-offset\);[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/);
   assert.match(styles, /\.pwa-poc-debug-trace\s*\{[\s\S]*flex: 1 1 auto;[\s\S]*min-height: 0;[\s\S]*overflow-y: auto;/);
   assert.match(styles, /@media \(max-width: 767px\) \{\s*\.pwa-poc-debug \{ display: none; \}/);
+});
+
+void test("desktop PoC trace retains all bounded local events with readable category treatment", async () => {
+  const styles = await readFile(resolve(process.cwd(), "public/pwa.css"), "utf8");
+  const panel = await readFile(resolve(process.cwd(), "src/app/PocDebugPanel.tsx"), "utf8");
+
+  assert.match(panel, /\.filter\([\s\S]*\.reverse\(\)/);
+  assert.doesNotMatch(panel, /\.slice\(-12\)/);
+  assert.match(panel, /className=\{`is-\$\{category\}`\}/);
+  assert.match(styles, /\.pwa-poc-debug-trace time \{ color: #a9d7e4; font-weight: 600; \}/);
+  assert.match(styles, /\.pwa-poc-debug-trace li\.is-receipts \{[\s\S]*background:/);
+  assert.match(styles, /\.pwa-poc-debug-trace li\.is-outbox \{[\s\S]*background:/);
+  assert.match(styles, /\.pwa-poc-debug-trace\s*\{[\s\S]*overflow-y: auto;/);
 });
 
 void test("desktop PoC controls keep compact rows without constraining the flexible trace", async () => {

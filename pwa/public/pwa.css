@@ -1221,7 +1221,21 @@ button.pwa-chat-reply-preview { cursor: pointer; }
   list-style: none;
 }
 
-.pwa-poc-debug-trace time { color: var(--pwa-cyan); }
+.pwa-poc-debug-trace li {
+  padding: 3px 4px;
+  border-left: 2px solid transparent;
+  border-radius: 3px;
+}
+
+.pwa-poc-debug-trace li.is-messages { border-left-color: #5ecb9c; background: rgb(94 203 156 / 12%); }
+.pwa-poc-debug-trace li.is-presence { border-left-color: #8aa4ff; background: rgb(138 164 255 / 12%); }
+.pwa-poc-debug-trace li.is-receipts { border-left-color: #68c9e8; background: rgb(104 201 232 / 12%); }
+.pwa-poc-debug-trace li.is-outbox { border-left-color: #e9b86f; background: rgb(233 184 111 / 12%); }
+.pwa-poc-debug-trace li.is-controls { border-left-color: #c79cff; background: rgb(199 156 255 / 12%); }
+.pwa-poc-debug-trace li.is-transport { border-left-color: #a4afbd; background: rgb(164 175 189 / 10%); }
+.pwa-poc-debug-trace li.is-frames { border-left-color: #87d7ed; background: rgb(135 215 237 / 12%); }
+
+.pwa-poc-debug-trace time { color: #a9d7e4; font-weight: 600; }
 
 .pwa-attachment-send-control {
   position: relative;

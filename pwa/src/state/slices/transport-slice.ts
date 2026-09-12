@@ -9,9 +9,9 @@ export interface TransportTraceEntry {
 }
 
 // This is intentionally tab-local diagnostic state, not a session log. Keep
-// enough room for one WebRTC negotiation amid ordinary heartbeats, but bound
-// it so a long-lived attachment cannot grow without limit.
-const maxTransportTraceEntries = 64;
+// enough room for several diagnostic windows amid ordinary heartbeats, but
+// still bound it so a long-lived attachment cannot grow without limit.
+const maxTransportTraceEntries = 192;
 
 export interface TransportSlice {
   readonly attachStatus: AttachStatus;
