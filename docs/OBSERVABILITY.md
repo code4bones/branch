@@ -112,6 +112,32 @@ record beacon bytes, repository names, endpoint URLs, relay keys, route or
 session identifiers, peer references, or whether a particular user was found.
 This journal does not schedule discovery or alter attachment selection.
 
+### Development client-monitor journal
+
+An explicitly configured local MASTER in `development` mode may accept the
+same redacted diagnostic batches from the PoC debug panel and append accepted
+batches to a local rotating JSONL file. This is a development exception to the
+baseline manual-export flow, not a production telemetry channel: it is off
+unless `BRANCH_CLIENT_MONITOR_JOURNAL_PATH` is set, and the writer is a bounded
+asynchronous observer. Queue pressure or disk failure drops an observation;
+it never delays a report handler or affects discovery, RTC, relay attachment,
+delivery, or retry behavior.
+
+Each browser refresh creates a random `session_ref`. It is the only client
+correlation handle and is discarded at the end of the retained files. BranchID,
+peer/contact, route, message, delivery, capability, and cryptographic IDs are
+never written. A project-controlled relay is recorded only as a short test
+label such as `relay04`, never a URL. The journal contains closed event names,
+selected trace categories, and a fixed state snapshot (identity readiness,
+page, route/attachment, discovery, observed RTC signaling, and bounded count
+buckets). Pending outbox entries may receive `mN` display handles that exist
+only in that one browser process; the message IDs that produced them never
+leave the browser.
+
+The default journal capacity is 8 MiB per file with three rotated files and a
+256-report queue. The path is absolute and has mode `0600`; its operator is
+responsible for deleting the short-lived development files after diagnosis.
+
 ## 4. Common event envelope
 
 Every structured event uses the same stable envelope where applicable:
@@ -307,7 +333,9 @@ addresses, IndexedDB contents, and browser authentication state.
 
 Export is a deliberate user action. The preview shows included categories and
 the generated bundle is redacted before it leaves the browser. Automatic upload
-is absent from the baseline.
+is absent from the baseline. The development client-monitor journal above is
+the narrow, explicitly configured local-MASTER exception; it uses no bearer in
+a local test setup and is never required for PWA operation.
 
 Frontend monitoring views derive from the local journal or a manually supplied
 redacted export. They may show event counts, reason counts, newest event time,

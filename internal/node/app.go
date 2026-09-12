@@ -31,6 +31,7 @@ type Config struct {
 	MonitorToken                 string
 	ClientMonitorToken           string
 	ClientMonitorUnauthenticated bool
+	ClientMonitorJournalPath     string
 	WSSOrigins                   []string
 	FederationEndpointPolicy     wss.FederationEndpointPolicy
 	GitHubIdentityLookup         bool
@@ -61,6 +62,7 @@ type App struct {
 	identityLookup *discovery.IdentityContactLookup
 	diagnostics    *observability.Recorder
 	exporter       *observability.AsyncSink
+	clientJournal  admin.ClientMonitorJournal
 	federationLoop interface {
 		Seed(context.Context)
 		Run(context.Context)
@@ -80,6 +82,9 @@ func New(config Config) (*App, error) {
 	}
 	if !observability.KnownMode(config.ObservabilityMode) {
 		return nil, ErrInvalidConfig
+	}
+	if config.ClientMonitorJournalPath != "" && config.ObservabilityMode != observability.ModeDevelopment {
+		return nil, fmt.Errorf("%w: client monitor journal requires development observability mode", ErrInvalidConfig)
 	}
 	diagnostics := observability.NewRecorder(observability.RecorderOptions{})
 	federationObserver, fanout := newFederationObserver(config.ObservabilityMode, diagnostics, config.Version)
@@ -182,7 +187,11 @@ func New(config Config) (*App, error) {
 	}
 	statusProvider := admin.NewRelayStatusProvider(baseStatus, hub)
 	relayMonitorRegistry := admin.NewRelayMonitorRegistry(admin.RelayMonitorConfig{})
-	clientMonitorRegistry := admin.NewClientMonitorRegistry(admin.ClientMonitorConfig{})
+	clientJournal, err := admin.NewClientMonitorJournal(admin.ClientMonitorJournalConfig{Path: config.ClientMonitorJournalPath})
+	if err != nil {
+		return nil, fmt.Errorf("create client monitor journal: %w", err)
+	}
+	clientMonitorRegistry := admin.NewClientMonitorRegistry(admin.ClientMonitorConfig{Journal: clientJournal})
 	bootstrapProvider := newBootstrapBeaconProvider(nodeIdentity)
 	adminMux := admin.NewHTTPHandler(
 		admin.NewHandler(
@@ -205,12 +214,18 @@ func New(config Config) (*App, error) {
 	)
 	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor, carrierRouter: federationCarrierMonitor}, diagnostics)
 	if err != nil {
+		if clientJournal != nil {
+			_ = clientJournal.Close()
+		}
 		return nil, err
 	}
 	var exporter *observability.AsyncSink
 	if fanout != nil {
 		exporter, err = observability.NewAsyncSink(context.Background(), observability.NewSlogSink(nil, config.ObservabilityMode), observability.DefaultExporterQueueCapacity)
 		if err != nil {
+			if clientJournal != nil {
+				_ = clientJournal.Close()
+			}
 			return nil, fmt.Errorf("create observability exporter: %w", err)
 		}
 		fanout.slog = exporter
@@ -223,6 +238,7 @@ func New(config Config) (*App, error) {
 		identityLookup: identityLookup,
 		diagnostics:    diagnostics,
 		exporter:       exporter,
+		clientJournal:  clientJournal,
 		federationLoop: federationLoop,
 		publicServer: &http.Server{
 			Addr:              config.PublicAddr,
@@ -311,6 +327,9 @@ func (app *App) Run(ctx context.Context) error {
 }
 
 func (app *App) closeObservability() {
+	if app.clientJournal != nil {
+		_ = app.clientJournal.Close()
+	}
 	if app.exporter != nil {
 		app.exporter.Close()
 	}

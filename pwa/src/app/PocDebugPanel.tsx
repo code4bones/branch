@@ -3,7 +3,7 @@ import { Button, Checkbox, Popconfirm, Select, Tag, Tooltip } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { browserPocBurstTimers, PocBurstRunner, type PocBurstProgress } from "./poc-burst.js";
-import { useClientMonitor } from "./client-monitor.js";
+import { clientMonitorCountBucket, clientMonitorOutboxItems, useClientMonitor } from "./client-monitor.js";
 import { deleteStoredMessageDeliveryTarget } from "../storage/message-delivery-target-store.js";
 import { useAppStore } from "../state/StoreProvider.js";
 import type { TransportTraceEntry } from "../state/slices/transport-slice.js";
@@ -37,10 +37,31 @@ export function PocDebugPanel({ contactId, contactName, enabled, attachedRelayEn
   const [progress, setProgress] = useState<PocBurstProgress>({ session: 0, sent: 0, total: 0, running: false });
   const [selectedTraceCategories, setSelectedTraceCategories] = useState<TraceCategory[]>(loadTraceCategories);
   const outbox = useAppStore((state) => state.outbox);
+  const identityStatus = useAppStore((state) => state.identityStatus);
+  const routeStatus = useAppStore((state) => state.routeStatus);
+  const contactDiscoveryAvailability = useAppStore((state) => state.contactDiscoveryAvailability);
+  const contacts = useAppStore((state) => state.contacts);
+  const contactPresenceById = useAppStore((state) => state.contactPresenceById);
+  const readReceiptOutbox = useAppStore((state) => state.readReceiptOutbox);
+  const inboundAttachmentOffersByPeerId = useAppStore((state) => state.inboundAttachmentOffersByPeerId);
   const settleOutboxMessage = useAppStore((state) => state.settleOutboxMessage);
   const clearLocalConversation = useAppStore((state) => state.clearLocalConversation);
   const recordTransportTrace = useAppStore((state) => state.recordTransportTrace);
-  const clientMonitorStatus = useClientMonitor(transportTrace, selectedTraceCategories);
+  const monitorSnapshot = useMemo(() => ({
+    identity: identityStatus,
+    page: "chats" as const,
+    route: routeStatus,
+    attach: attachStatus as "idle" | "attaching" | "attached" | "error",
+    relay: clientMonitorRelayLabel(attachedRelayEndpoint),
+    discovery: contactDiscoveryAvailability,
+    contacts: clientMonitorCountBucket(contacts.length),
+    presence: clientMonitorCountBucket(Object.values(contactPresenceById).filter((presence) => presence.status !== "unknown").length),
+    outbox: clientMonitorCountBucket(outbox.length),
+    outbox_items: clientMonitorOutboxItems(outbox),
+    read_work: clientMonitorCountBucket(readReceiptOutbox.filter((entry) => entry.receiptPending).length),
+    attachments: clientMonitorCountBucket(Object.keys(inboundAttachmentOffersByPeerId).length)
+  }), [attachStatus, attachedRelayEndpoint, contactDiscoveryAvailability, contactPresenceById, contacts.length, identityStatus, inboundAttachmentOffersByPeerId, outbox.length, readReceiptOutbox, routeStatus]);
+  const clientMonitorStatus = useClientMonitor(transportTrace, selectedTraceCategories, monitorSnapshot);
   const { awaitingDeliveryCount, deliveredAwaitingReadCount } = useMemo(() => {
     const localOutbox = outbox.filter((entry) => entry.contactId === contactId);
     const awaiting = localOutbox.filter((entry) => entry.deliveredAt === null).length;
@@ -209,4 +230,14 @@ function saveTraceCategories(categories: readonly TraceCategory[]): void {
 
 function formatTime(at: number): string {
   return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(at);
+}
+
+function clientMonitorRelayLabel(endpoint: string | null): "none" | `relay${number}` {
+  if (endpoint === null) return "none";
+  try {
+    const relay = new URL(endpoint).hostname.match(/^relay(\d{2})\./u)?.[1];
+    return relay === undefined ? "none" : `relay${relay}` as `relay${number}`;
+  } catch {
+    return "none";
+  }
 }

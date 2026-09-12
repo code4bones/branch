@@ -41,7 +41,7 @@ func TestClientMonitorRegistryRejectsRawTraceAndIdentifiers(t *testing.T) {
 		t.Fatalf("raw event error = %v, want %v", err, ErrClientMonitorInvalidReport)
 	}
 	report = sampleClientMonitorReport()
-	report.ClientRef = "peer-identity-or-message-id"
+	report.SessionRef = "peer-identity-or-message-id"
 	if err := registry.Accept(report, time.Now()); err != ErrClientMonitorInvalidReport {
 		t.Fatalf("identifier error = %v, want %v", err, ErrClientMonitorInvalidReport)
 	}
@@ -119,7 +119,7 @@ func TestClientMonitorHTTPAllowsAnonymousPostOnlyWhenExplicitlyConfigured(t *tes
 
 func TestClientMonitorHTTPRejectsUnknownFields(t *testing.T) {
 	handler := NewHTTPHandler(NewHandler(staticProvider{}, WithClientMonitorRegistry(NewClientMonitorRegistry(ClientMonitorConfig{}))), AuthorizerFunc(func(*http.Request) bool { return true }), WithClientMonitorAuthorizer(AuthorizerFunc(func(*http.Request) bool { return true })))
-	body := []byte(`{"client_ref":"0123456789abcdef0123456789abcdef","release":"0.1.0-beta.149","events":[{"at":"2026-09-12T09:00:00Z","category":"receipts","event":"receipt.read_matched","detail":"forbidden"}]}`)
+	body := []byte(`{"session_ref":"0123456789abcdef0123456789abcdef","release":"0.1.0-beta.149","sequence":1,"snapshot":{"identity":"ready","page":"chats","route":"found","attach":"attached","relay":"relay04","rtc":"not_observed","discovery":"ready","filters":["receipts"],"contacts":"one","presence":"one","outbox":"zero","read_work":"zero","attachments":"zero"},"events":[{"at":"2026-09-12T09:00:00Z","category":"receipts","event":"receipt.read_matched","detail":"forbidden"}]}`)
 	request := httptest.NewRequest(http.MethodPost, ClientMonitorReportsPath, bytes.NewReader(body))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -129,7 +129,15 @@ func TestClientMonitorHTTPRejectsUnknownFields(t *testing.T) {
 }
 
 func sampleClientMonitorReport() ClientMonitorReport {
-	return ClientMonitorReport{ClientRef: "0123456789abcdef0123456789abcdef", Release: "0.1.0-beta.149", Events: []ClientMonitorEvent{{At: time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC), Category: "receipts", Event: "receipt.read_matched"}}}
+	return ClientMonitorReport{
+		SessionRef: "0123456789abcdef0123456789abcdef",
+		Release:    "0.1.0-beta.149",
+		Sequence:   1,
+		Snapshot: ClientMonitorSnapshot{
+			Identity: "ready", Page: "chats", Route: "found", Attach: "attached", Relay: "relay04", RTC: "not_observed", Discovery: "ready", Filters: []string{"receipts"}, Contacts: "one", Presence: "one", Outbox: "zero", ReadWork: "zero", Attachments: "zero",
+		},
+		Events: []ClientMonitorEvent{{At: time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC), Category: "receipts", Event: "receipt.read_matched"}},
+	}
 }
 
 func encodeClientMonitorReport(t *testing.T, report ClientMonitorReport) []byte {

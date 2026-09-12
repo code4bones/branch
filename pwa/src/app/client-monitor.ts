@@ -10,6 +10,7 @@ const minimumReportIntervalMs = 1000;
 
 export type ClientMonitorCategory = "messages" | "presence" | "receipts" | "outbox" | "controls" | "transport" | "frames";
 export type ClientMonitorEventName =
+  | "client.session_started"
   | "receipt.read_expired" | "receipt.read_attempt_sent" | "receipt.read_skipped" | "receipt.read_failed" | "receipt.read_matched" | "receipt.read_unmatched"
   | "receipt.delivered_failed" | "receipt.delivered_sent" | "receipt.delivered_matched" | "receipt.delivered_unmatched"
   | "outbox.expired" | "outbox.retry_deferred" | "outbox.retry_sent"
@@ -24,21 +25,51 @@ export interface ClientMonitorEvent {
   readonly event: ClientMonitorEventName;
 }
 
+export type ClientMonitorCountBucket = "zero" | "one" | "two_to_four" | "five_to_eight" | "nine_plus";
+
+// This is intentionally a fixed snapshot, not a serialization of Zustand.
+// It contains no BranchID, contact/peer/message/delivery IDs, plaintext,
+// capability, authentication material, or browser storage data.
+export interface ClientMonitorSnapshot {
+  readonly identity: "unknown" | "missing" | "ready";
+  readonly page: "onboarding" | "discovery" | "chats" | "requests" | "settings" | "other";
+  readonly route: "idle" | "searching" | "found" | "failed";
+  readonly attach: "idle" | "attaching" | "attached" | "error";
+  readonly relay: "none" | `relay${number}`;
+  readonly rtc: "not_observed" | "signaling_observed";
+  readonly discovery: "unavailable" | "ready" | "disabled" | "unsupported";
+  readonly filters: readonly ClientMonitorCategory[];
+  readonly contacts: ClientMonitorCountBucket;
+  readonly presence: ClientMonitorCountBucket;
+  readonly outbox: ClientMonitorCountBucket;
+  readonly outbox_items: readonly ClientMonitorOutboxItem[];
+  readonly read_work: ClientMonitorCountBucket;
+  readonly attachments: ClientMonitorCountBucket;
+}
+
+export interface ClientMonitorOutboxItem {
+  readonly ref: `m${number}`;
+  readonly state: "awaiting_delivery" | "awaiting_read";
+}
+
 interface ClientMonitorReport {
-  readonly client_ref: string;
+  readonly session_ref: string;
   readonly release: string;
+  readonly sequence: number;
+  readonly snapshot: ClientMonitorSnapshot;
   readonly events: readonly ClientMonitorEvent[];
 }
 
 // useClientMonitor is intentionally isolated from the transport. Reporting is
 // best-effort developer tooling: a failed POST cannot add local trace entries,
 // alter a relay session, or affect an application retry.
-export function useClientMonitor(entries: readonly TransportTraceEntry[], selectedCategories: readonly ClientMonitorCategory[]): "ready" | "sending" | "sent" | "failed" {
+export function useClientMonitor(entries: readonly TransportTraceEntry[], selectedCategories: readonly ClientMonitorCategory[], snapshot: Omit<ClientMonitorSnapshot, "filters" | "rtc">): "ready" | "sending" | "sent" | "failed" {
   const [status, setStatus] = useState<"ready" | "sending" | "sent" | "failed">("ready");
   const [cycle, setCycle] = useState(0);
-  const clientRef = useRef(newClientMonitorRef());
+  const sessionRef = useRef(newClientMonitorRef());
+  const sequence = useRef(0);
   const seen = useRef(new Set<string>());
-  const pending = useRef<ClientMonitorEvent[]>([]);
+  const pending = useRef<ClientMonitorEvent[]>([{ at: new Date().toISOString(), category: "transport", event: "client.session_started" }]);
   const sending = useRef(false);
   const lastSentAt = useRef(0);
   const timer = useRef<number | null>(null);
@@ -67,7 +98,14 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[], select
       if (sending.current || pending.current.length === 0) return;
       sending.current = true;
       const events = pending.current.splice(0, maxBatchEvents);
-      const report: ClientMonitorReport = { client_ref: clientRef.current, release: pwaReleaseVersion, events };
+      sequence.current += 1;
+      const report: ClientMonitorReport = {
+        session_ref: sessionRef.current,
+        release: pwaReleaseVersion,
+        sequence: sequence.current,
+        snapshot: { ...snapshot, filters: [...selectedCategories], rtc: rtcState(entries) },
+        events
+      };
       void fetch(clientMonitorEndpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -87,7 +125,7 @@ export function useClientMonitor(entries: readonly TransportTraceEntry[], select
         timer.current = null;
       }
     };
-  }, [cycle, entries, selectedCategories]);
+  }, [cycle, entries, selectedCategories, snapshot]);
 
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   return status;
@@ -154,6 +192,44 @@ function clientMonitorCategory(event: ClientMonitorEventName): ClientMonitorCate
   if (event.startsWith("frame.")) return "frames";
   if (event.startsWith("control.")) return "controls";
   return "transport";
+}
+
+export function clientMonitorCountBucket(count: number): ClientMonitorCountBucket {
+  if (count <= 0) return "zero";
+  if (count === 1) return "one";
+  if (count <= 4) return "two_to_four";
+  if (count <= 8) return "five_to_eight";
+  return "nine_plus";
+}
+
+const outboxRefs = new Map<string, `m${number}`>();
+let nextOutboxRef = 1;
+
+// This mapping exists only in the live JavaScript process. The real message
+// ID never enters a report or a JSONL line; mN lets a developer follow the
+// same pending item while this one refresh session is active.
+export function clientMonitorOutboxItems(entries: readonly { readonly messageId: string; readonly deliveredAt: number | null }[]): readonly ClientMonitorOutboxItem[] {
+  const active = new Set(entries.map((entry) => entry.messageId));
+  for (const messageId of outboxRefs.keys()) {
+    if (!active.has(messageId)) outboxRefs.delete(messageId);
+  }
+  return entries.slice(0, 32).map((entry) => {
+    const existing = outboxRefs.get(entry.messageId);
+    const ref: `m${number}` = existing ?? `m${nextOutboxRef.toString()}` as `m${number}`;
+    if (existing === undefined) {
+      nextOutboxRef += 1;
+      outboxRefs.set(entry.messageId, ref);
+    }
+    return { ref, state: entry.deliveredAt === null ? "awaiting_delivery" : "awaiting_read" };
+  });
+}
+
+// The app does not infer that signaling means a data channel is usable. This
+// observer only reports the stronger statement it can prove from local trace.
+function rtcState(entries: readonly TransportTraceEntry[]): "not_observed" | "signaling_observed" {
+  return entries.some((entry) => entry.detail.startsWith("rtc ") || entry.detail.startsWith("rtc signaling:"))
+    ? "signaling_observed"
+    : "not_observed";
 }
 
 function newClientMonitorRef(): string {
