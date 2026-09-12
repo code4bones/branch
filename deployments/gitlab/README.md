@@ -83,6 +83,7 @@ To enable beta central relay monitoring, set the MASTER node with:
 
 ~~~text
 BRANCH_MONITOR_INGEST_TOKEN=<masked local secret>
+BRANCH_CLIENT_MONITOR_INGEST_TOKEN=<separate masked development secret>
 ~~~
 
 Then set these CI/CD variables for relay deploy jobs:
@@ -97,6 +98,14 @@ and `BRANCH_MONITOR_PUBLIC_ENDPOINT` from the relay public endpoint unless
 per-relay overrides are configured. Monitoring reports are optional bounded
 status snapshots, stored only in MASTER process memory with TTL. They are not a
 discovery source, routing input, bootstrap authority, or durable relay state.
+
+`BRANCH_CLIENT_MONITOR_INGEST_TOKEN` is separate from both admin and relay
+monitor credentials. It enables only the opt-in PoC debug panel's redacted
+development reports at `https://branch.undoo.ru/node-admin/client-monitor/reports`.
+Paste it manually into each test tab; it is never part of the static PWA,
+IndexedDB, relay traffic, or a report body. The MASTER keeps at most 16 tab
+views, 192 redacted events each, for 15 minutes in process memory only. Read
+the view with the normal MASTER admin bearer at `/node-admin/client-monitor/reports`.
 
 Configure NPM for relay01:
 
@@ -176,6 +185,7 @@ Set these in GitLab project CI/CD variables:
 | `BRANCH_WSS_ORIGIN_PATTERNS` | relay WSS | Optional comma-separated browser Origin host allowlist. CI defaults beta deploy jobs to `branch.undoo.ru`; leave empty for same-origin/default non-browser clients. |
 | `BRANCH_MONITOR_MASTER_URL` | relay monitor | Optional. MASTER webhook URL, usually `https://branch.undoo.ru/node-admin/relay-monitor/reports`. |
 | `BRANCH_MONITOR_PUSH_TOKEN` | relay monitor | Optional. Masked and protected. Must match MASTER `BRANCH_MONITOR_INGEST_TOKEN`. |
+| `BRANCH_CLIENT_MONITOR_INGEST_TOKEN` | MASTER client monitor | Optional, masked and protected. Separate development-only ingest bearer pasted into opted-in PoC debug tabs. |
 
 ### Optional relay-scoped TURN test profile
 

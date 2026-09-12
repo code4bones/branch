@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	RelayMonitorReportsPath        = "/relay-monitor/reports"
-	maxRelayMonitorReportBodyBytes = 16 * 1024
+	RelayMonitorReportsPath         = "/relay-monitor/reports"
+	ClientMonitorReportsPath        = "/client-monitor/reports"
+	maxRelayMonitorReportBodyBytes  = 16 * 1024
+	maxClientMonitorReportBodyBytes = 8 * 1024
 )
 
 // Authorizer decides whether a request may access protected admin endpoints.
@@ -27,10 +29,11 @@ func (fn AuthorizerFunc) Authorized(request *http.Request) bool {
 // HTTPHandler serves protected admin endpoint contracts without binding a
 // listener or owning operator authentication material.
 type HTTPHandler struct {
-	handler           *Handler
-	authorizer        Authorizer
-	monitorAuthorizer Authorizer
-	now               func() time.Time
+	handler                 *Handler
+	authorizer              Authorizer
+	monitorAuthorizer       Authorizer
+	clientMonitorAuthorizer Authorizer
+	now                     func() time.Time
 }
 
 // HTTPHandlerOption configures optional protected HTTP surfaces.
@@ -42,6 +45,12 @@ func WithRelayMonitorAuthorizer(authorizer Authorizer) HTTPHandlerOption {
 	return func(handler *HTTPHandler) {
 		handler.monitorAuthorizer = authorizer
 	}
+}
+
+// WithClientMonitorAuthorizer protects development PWA report ingestion with
+// a separate bearer, never the admin or relay-monitor bearer.
+func WithClientMonitorAuthorizer(authorizer Authorizer) HTTPHandlerOption {
+	return func(handler *HTTPHandler) { handler.clientMonitorAuthorizer = authorizer }
 }
 
 // WithClock sets the HTTP handler clock for deterministic tests.
@@ -57,16 +66,20 @@ func NewHTTPHandler(handler *Handler, authorizer Authorizer, options ...HTTPHand
 		authorizer = denyAuthorizer{}
 	}
 	httpHandler := &HTTPHandler{
-		handler:           handler,
-		authorizer:        authorizer,
-		monitorAuthorizer: denyAuthorizer{},
-		now:               time.Now,
+		handler:                 handler,
+		authorizer:              authorizer,
+		monitorAuthorizer:       denyAuthorizer{},
+		clientMonitorAuthorizer: denyAuthorizer{},
+		now:                     time.Now,
 	}
 	for _, option := range options {
 		option(httpHandler)
 	}
 	if httpHandler.monitorAuthorizer == nil {
 		httpHandler.monitorAuthorizer = denyAuthorizer{}
+	}
+	if httpHandler.clientMonitorAuthorizer == nil {
+		httpHandler.clientMonitorAuthorizer = denyAuthorizer{}
 	}
 	if httpHandler.now == nil {
 		httpHandler.now = time.Now
@@ -78,6 +91,10 @@ func NewHTTPHandler(handler *Handler, authorizer Authorizer, options ...HTTPHand
 func (handler *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == RelayMonitorReportsPath && request.Method == http.MethodPost {
 		handler.ingestRelayMonitorReport(response, request)
+		return
+	}
+	if request.URL.Path == ClientMonitorReportsPath && request.Method == http.MethodPost {
+		handler.ingestClientMonitorReport(response, request)
 		return
 	}
 	if request.Method != http.MethodGet {
@@ -115,9 +132,28 @@ func (handler *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		writeResponse(response, handler.handler.IdentityContactLookup(request.Context(), lookupRequest))
 	case RelayMonitorReportsPath:
 		writeResponse(response, handler.handler.RelayMonitorReports(handler.now()))
+	case ClientMonitorReportsPath:
+		writeResponse(response, handler.handler.ClientMonitorReports(handler.now()))
 	default:
 		http.NotFound(response, request)
 	}
+}
+
+func (handler *HTTPHandler) ingestClientMonitorReport(response http.ResponseWriter, request *http.Request) {
+	if !handler.clientMonitorAuthorizer.Authorized(request) {
+		http.Error(response, "forbidden", http.StatusForbidden)
+		return
+	}
+	defer request.Body.Close()
+	request.Body = http.MaxBytesReader(response, request.Body, maxClientMonitorReportBodyBytes)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var report ClientMonitorReport
+	if err := decoder.Decode(&report); err != nil {
+		writeResponse(response, jsonResponse(http.StatusBadRequest, map[string]string{"error": "invalid json"}))
+		return
+	}
+	writeResponse(response, handler.handler.AcceptClientMonitorReport(report, handler.now()))
 }
 
 func (handler *HTTPHandler) ingestRelayMonitorReport(response http.ResponseWriter, request *http.Request) {

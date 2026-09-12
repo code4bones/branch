@@ -29,6 +29,7 @@ type Config struct {
 	Version                   string
 	Monitor                   RelayMonitorConfig
 	MonitorToken              string
+	ClientMonitorToken        string
 	WSSOrigins                []string
 	FederationEndpointPolicy  wss.FederationEndpointPolicy
 	GitHubIdentityLookup      bool
@@ -180,6 +181,7 @@ func New(config Config) (*App, error) {
 	}
 	statusProvider := admin.NewRelayStatusProvider(baseStatus, hub)
 	relayMonitorRegistry := admin.NewRelayMonitorRegistry(admin.RelayMonitorConfig{})
+	clientMonitorRegistry := admin.NewClientMonitorRegistry(admin.ClientMonitorConfig{})
 	bootstrapProvider := newBootstrapBeaconProvider(nodeIdentity)
 	adminMux := admin.NewHTTPHandler(
 		admin.NewHandler(
@@ -188,12 +190,16 @@ func New(config Config) (*App, error) {
 			admin.WithBootstrapBeaconProvider(bootstrapProvider),
 			admin.WithIdentityContactLookupProvider(identityLookup),
 			admin.WithRelayMonitorRegistry(relayMonitorRegistry),
+			admin.WithClientMonitorRegistry(clientMonitorRegistry),
 		),
 		admin.AuthorizerFunc(func(request *http.Request) bool {
 			return config.AdminToken != "" && request.Header.Get("authorization") == "Bearer "+config.AdminToken
 		}),
 		admin.WithRelayMonitorAuthorizer(admin.AuthorizerFunc(func(request *http.Request) bool {
 			return config.MonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.MonitorToken
+		})),
+		admin.WithClientMonitorAuthorizer(admin.AuthorizerFunc(func(request *http.Request) bool {
+			return config.ClientMonitorToken != "" && request.Header.Get("authorization") == "Bearer "+config.ClientMonitorToken
 		})),
 	)
 	monitorReporter, err := newRelayMonitorReporter(config.Monitor, statusProvider, bootstrapProvider, staticFederationMonitor{router: federationMonitor, carrierRouter: federationCarrierMonitor}, diagnostics)

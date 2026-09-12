@@ -52,6 +52,7 @@ func parseConfig() (node.Config, error) {
 	flag.StringVar(&config.IdentityPath, "identity", defaultIdentityPath, "node identity file path")
 	flag.StringVar(&config.AdminToken, "admin-token", os.Getenv("BRANCH_ADMIN_TOKEN"), "admin bearer token; defaults to BRANCH_ADMIN_TOKEN")
 	flag.StringVar(&config.MonitorToken, "monitor-ingest-token", os.Getenv("BRANCH_MONITOR_INGEST_TOKEN"), "relay monitor ingest bearer token; defaults to BRANCH_MONITOR_INGEST_TOKEN")
+	flag.StringVar(&config.ClientMonitorToken, "client-monitor-ingest-token", os.Getenv("BRANCH_CLIENT_MONITOR_INGEST_TOKEN"), "development PWA client monitor ingest bearer token; defaults to BRANCH_CLIENT_MONITOR_INGEST_TOKEN")
 	flag.StringVar(&config.Monitor.RelayID, "monitor-relay-id", os.Getenv("BRANCH_MONITOR_RELAY_ID"), "relay monitor reporter id; defaults to BRANCH_MONITOR_RELAY_ID")
 	flag.StringVar(&config.Monitor.PublicEndpoint, "monitor-public-endpoint", os.Getenv("BRANCH_MONITOR_PUBLIC_ENDPOINT"), "relay monitor public endpoint; defaults to BRANCH_MONITOR_PUBLIC_ENDPOINT")
 	flag.StringVar(&config.Monitor.MasterURL, "monitor-master-url", os.Getenv("BRANCH_MONITOR_MASTER_URL"), "relay monitor MASTER webhook URL; defaults to BRANCH_MONITOR_MASTER_URL")

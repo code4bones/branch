@@ -60,6 +60,7 @@ type Handler struct {
 	bootstrapProvider   BootstrapBeaconProvider
 	identityLookup      IdentityContactLookupProvider
 	relayMonitor        *RelayMonitorRegistry
+	clientMonitor       *ClientMonitorRegistry
 }
 
 // HandlerOption configures optional protected admin surfaces.
@@ -101,6 +102,12 @@ func WithRelayMonitorRegistry(registry *RelayMonitorRegistry) HandlerOption {
 	return func(handler *Handler) {
 		handler.relayMonitor = registry
 	}
+}
+
+// WithClientMonitorRegistry attaches the optional, process-local development
+// client-monitor registry. It never participates in connectivity.
+func WithClientMonitorRegistry(registry *ClientMonitorRegistry) HandlerOption {
+	return func(handler *Handler) { handler.clientMonitor = registry }
 }
 
 // NewHandler creates an admin handler over protected operator snapshots.
@@ -180,6 +187,23 @@ func (handler *Handler) AcceptRelayMonitorReport(report RelayMonitorReport, now 
 	}
 	if err := handler.relayMonitor.Accept(report, now); err != nil {
 		return jsonResponse(httpStatusForRelayMonitorError(err), map[string]string{"error": err.Error()})
+	}
+	return jsonResponse(StatusOK, map[string]string{"status": "accepted"})
+}
+
+func (handler *Handler) ClientMonitorReports(now time.Time) Response {
+	if handler.clientMonitor == nil {
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	return jsonResponse(StatusOK, handler.clientMonitor.List(now))
+}
+
+func (handler *Handler) AcceptClientMonitorReport(report ClientMonitorReport, now time.Time) Response {
+	if handler.clientMonitor == nil {
+		return jsonResponse(StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	if err := handler.clientMonitor.Accept(report, now); err != nil {
+		return jsonResponse(httpStatusForClientMonitorError(err), map[string]string{"error": err.Error()})
 	}
 	return jsonResponse(StatusOK, map[string]string{"status": "accepted"})
 }
