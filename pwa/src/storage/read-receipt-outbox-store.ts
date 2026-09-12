@@ -27,8 +27,27 @@ export async function loadStoredReadReceiptOutbox(): Promise<readonly StoredRead
 export async function saveStoredReadReceipt(entry: StoredReadReceiptEntry): Promise<void> {
   const db = await openDatabase();
   try {
-    await transact(db, (store) => { store.put(entry); });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(READ_RECEIPT_OUTBOX_STORE, "readwrite");
+      const store = transaction.objectStore(READ_RECEIPT_OUTBOX_STORE);
+      const readCurrent = store.get(entry.targetDeliveryId);
+      readCurrent.onsuccess = () => {
+        const current = readCurrent.result as StoredReadReceiptEntry | undefined;
+        // A receipt target is immutable presentation history: once this
+        // device has settled it, an older asynchronous pending save must never
+        // downgrade it back to transport work after a refresh.
+        if (!shouldPersistReadReceipt(current, entry)) return;
+        store.put(entry);
+      };
+      readCurrent.onerror = () => { reject(readCurrent.error ?? new Error("failed to read current receipt outbox entry")); };
+      transaction.oncomplete = () => { resolve(); };
+      transaction.onerror = () => { reject(transaction.error ?? new Error("failed to write receipt outbox")); };
+    });
   } finally { db.close(); }
+}
+
+export function shouldPersistReadReceipt(current: StoredReadReceiptEntry | undefined, next: StoredReadReceiptEntry): boolean {
+  return current?.receiptPending !== false || !next.receiptPending;
 }
 
 export async function deleteStoredReadReceipt(targetDeliveryId: string): Promise<void> {
