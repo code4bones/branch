@@ -116,16 +116,16 @@ async function run(runtime: ReadReceiptRuntime): Promise<void> {
           recipientPeerId: contact.peerId,
           recipientHpkePublicKey: contact.hpkePublicKey,
           attached: true,
+          allowTargetRetry: true
         });
         if (result === "sent") {
-          // A successful hand-off has consumed this local work item. Retrying
-          // it with a fresh signed control makes a healthy recipient see an
-          // otherwise-valid duplicate after it has already consumed the
-          // delivery mapping, which is indistinguishable from an unmatched
-          // receipt. Failures below remain bounded retries because the send
-          // routine releases its local dedup key before it throws.
-          runtime.retryAtByTarget.delete(entry.targetDeliveryId);
-          state.settleReadReceipt(entry.targetDeliveryId);
+          // Local admission to the attachment does not prove the recipient
+          // received the control. Retain this device-local presentation fact
+          // for a bounded retry window; a later signed Read remains the
+          // sender's sole proof for rendering Read.
+          const next = nextRetryAt(Date.now(), expiresAt);
+          runtime.retryAtByTarget.set(entry.targetDeliveryId, next);
+          nextAttemptAt = earliest(nextAttemptAt, next);
           state.recordTransportTrace("delivery receipt: read_attempt_sent");
           continue;
         }
